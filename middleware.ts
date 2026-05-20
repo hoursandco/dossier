@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
-const PROTECTED_ROUTES = ['/preferences', '/stores', '/admin']
+// /stores is intentionally NOT here — the brand directory is public
+// (it has its own SEO metadata + OG image, and StoresBrowse handles
+// signed-out visitors with "+ Sign in" buttons rather than a wall).
+const PROTECTED_ROUTES = ['/preferences', '/admin']
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -44,5 +47,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/preferences/:path*', '/stores/:path*', '/admin/:path*'],
+  matcher: ['/preferences/:path*', '/admin/:path*'],
 }
