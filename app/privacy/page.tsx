@@ -4,6 +4,7 @@ import { Reveal } from '@/components/Reveal'
 
 export const metadata = {
   title: 'Privacy Policy — Deal Dossier',
+  description: 'Learn how Deal Dossier collects, uses, and protects your personal data, including email address, preferences, and billing information.',
 }
 
 const SECTIONS = [
@@ -13,7 +14,7 @@ const SECTIONS = [
   },
   {
     title: 'How We Use Your Information',
-    body: 'Your email address is used solely to send you the weekly Deal Dossier briefing and transactional emails (sign-in links, preference confirmations, billing receipts). We do not sell, rent, or share your personal information with third parties for marketing purposes.',
+    body: 'Your email address is used solely to send you the Deal Dossier briefing and transactional emails (sign-in links, preference confirmations, billing receipts). We do not sell or rent your personal information. We do use third-party advertising tools (Meta Pixel) that share browsing behavior with Meta (Facebook) for the purpose of measuring ad performance and reaching similar audiences. See Cookies & Analytics below for details and opt-out options.',
   },
   {
     title: 'Affiliate Relationships',
@@ -29,7 +30,7 @@ const SECTIONS = [
   },
   {
     title: 'Cookies & Analytics',
-    body: 'We use session cookies required for authentication. We also use Google Analytics to understand aggregate site usage — it sets analytics cookies (such as _ga and _ga_*) that do not identify individual users. Free-tier and anonymous visitors see advertisements delivered by Google AdSense, which uses cookies to personalize ads and measure performance; paid subscribers do not see ads. You can opt out of personalized advertising at adssettings.google.com, or block third-party cookies in your browser settings.',
+    body: 'We use session cookies required for authentication. We also use Google Analytics to understand aggregate site usage — it sets analytics cookies (such as _ga and _ga_*) that do not identify individual users. Free-tier and anonymous visitors see advertisements delivered by Google AdSense, which uses cookies to personalize ads and measure performance; paid subscribers do not see ads. We also use the Meta Pixel (Facebook), which tracks page visits and site interactions and shares that data with Meta to measure the performance of our advertising and build lookalike audiences. Meta may match this data against your Facebook profile using cookies or device identifiers. You can opt out of Meta\'s use of this data at facebook.com/privacy/policy, opt out of Google personalized advertising at adssettings.google.com, or block third-party cookies in your browser settings.',
   },
   {
     title: 'Your Rights',

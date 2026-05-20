@@ -5,12 +5,24 @@ import Link from 'next/link'
 import { Nav } from '@/components/Nav'
 import { Footer } from '@/components/Footer'
 import { Reveal } from '@/components/Reveal'
+import { createClient } from '@/lib/supabase/client'
 
-export default function PricingSuccessPage() {
+export default function WelcomePage() {
   useEffect(() => {
-    // Meta Pixel — paid subscription conversion
+    // Mark onboarding complete so this page is only shown once
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user?.email) return
+      supabase
+        .from('subscribers')
+        .update({ onboarding_completed: true })
+        .eq('email', user.email)
+        .then(() => {})
+    })
+
+    // Meta Pixel — new free signup via magic link
     if (typeof window !== 'undefined' && (window as any).fbq) {
-      ;(window as any).fbq('track', 'CompleteRegistration')
+      ;(window as any).fbq('track', 'Lead')
     }
   }, [])
 
@@ -29,7 +41,7 @@ export default function PricingSuccessPage() {
         <div className="wrap" style={{ maxWidth: 720 }}>
           <Reveal>
             <div className="t-eyebrow" style={{ color: 'var(--olive-deep)' }}>
-              ✓ Welcome to Personal Shopper
+              You&rsquo;re in
             </div>
           </Reveal>
           <Reveal delay={100}>
@@ -43,8 +55,10 @@ export default function PricingSuccessPage() {
                 letterSpacing: '-0.03em',
               }}
             >
-              You&rsquo;re{' '}
-              <em style={{ color: 'var(--olive-deep)', fontWeight: 300 }}>in.</em>
+              Let&rsquo;s build your{' '}
+              <em style={{ color: 'var(--olive-deep)', fontWeight: 300 }}>
+                watchlist.
+              </em>
             </h1>
           </Reveal>
           <Reveal delay={220}>
@@ -54,12 +68,12 @@ export default function PricingSuccessPage() {
                 color: 'var(--ink-70)',
                 fontSize: 17,
                 lineHeight: 1.55,
-                maxWidth: '46ch',
+                maxWidth: '48ch',
               }}
             >
-              Payment confirmed. Your account is being upgraded — full access to
-              all categories, custom filters, and flexible scheduling. Head to
-              your settings to dial it in.
+              Pick the categories you&rsquo;re shopping for and we&rsquo;ll
+              start watching. Hit &ldquo;send me deals now&rdquo; any time to
+              pull a fresh list from every brand on your list.
             </p>
           </Reveal>
           <Reveal delay={320}>
@@ -68,12 +82,9 @@ export default function PricingSuccessPage() {
               className="btn-primary"
               style={{ marginTop: 40 }}
             >
-              Open settings <span className="arr">→</span>
+              Set up my watchlist <span className="arr">→</span>
             </Link>
           </Reveal>
-          <div className="t-meta" style={{ marginTop: 24, color: 'var(--ink-40)' }}>
-            A confirmation email is on its way from Stripe.
-          </div>
         </div>
       </section>
 

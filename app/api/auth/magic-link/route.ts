@@ -4,10 +4,26 @@ import { Resend } from 'resend'
 
 function getResend() { return new Resend(process.env.RESEND_API_KEY) }
 
+// Simple per-instance rate limit: 3 magic links per email per hour
+const attempts = new Map<string, number[]>()
+function isRateLimited(email: string): boolean {
+  const now = Date.now()
+  const window = 60 * 60 * 1000 // 1 hour
+  const limit = 3
+  const timestamps = (attempts.get(email) ?? []).filter(t => now - t < window)
+  if (timestamps.length >= limit) return true
+  attempts.set(email, [...timestamps, now])
+  return false
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { email, redirectTo } = await req.json()
     if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+
+    if (isRateLimited(email)) {
+      return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 })
+    }
 
     const supabase = createServiceClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dossier2-amber.vercel.app'

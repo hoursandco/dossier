@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Nav } from '@/components/Nav'
 import { Footer } from '@/components/Footer'
@@ -6,6 +7,48 @@ import { UpgradeFlow } from '@/components/UpgradeFlow'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = {
+  title: 'Pricing — Deal Dossier Personal Shopper',
+  description: 'Upgrade to Personal Shopper for $4.99/month or $45/year. Unlimited watchlist categories, per-watch filters, ad-free emails, and priority alerts.',
+  alternates: { canonical: 'https://dealdossier.io/pricing' },
+}
+
+const PRICING_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name: 'Deal Dossier Personal Shopper',
+  description: 'Unlimited watchlist categories, per-watch filters, ad-free emails, and priority deal alerts.',
+  url: 'https://dealdossier.io/pricing',
+  offers: [
+    {
+      '@type': 'Offer',
+      name: 'Monthly',
+      price: '4.99',
+      priceCurrency: 'USD',
+      availability: 'https://schema.org/InStock',
+      priceSpecification: {
+        '@type': 'UnitPriceSpecification',
+        price: '4.99',
+        priceCurrency: 'USD',
+        unitText: 'MONTH',
+      },
+    },
+    {
+      '@type': 'Offer',
+      name: 'Annual',
+      price: '45.00',
+      priceCurrency: 'USD',
+      availability: 'https://schema.org/InStock',
+      priceSpecification: {
+        '@type': 'UnitPriceSpecification',
+        price: '45.00',
+        priceCurrency: 'USD',
+        unitText: 'YEAR',
+      },
+    },
+  ],
+}
 
 export default async function PricingPage() {
   const supabase = await createClient()
@@ -30,6 +73,10 @@ export default async function PricingPage() {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(PRICING_SCHEMA) }}
+      />
       <Nav />
 
       <section

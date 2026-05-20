@@ -9,6 +9,54 @@ import { Footer } from '@/components/Footer'
 import { Reveal, MaskLines } from '@/components/Reveal'
 import { FlapNumber } from '@/components/FlapNumber'
 
+// ── FAQPage structured data (plain-text mirror of FAQ_ITEMS for AI engines) ──
+const FAQ_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: [
+    {
+      '@type': 'Question',
+      name: 'How does the watchlist work?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: "You tell us what you're shopping for — bath & towels, a new mattress, mens jeans, perfume, whatever. Our AI is subscribed to over 1,000 brand newsletters. Every day it scans the inbox, extracts real discounts, tags each deal by category, and stores them. The moment you ask for an update — by hitting \"send me deals now\" or signing up for a new category — we email everything we're currently tracking that matches your watchlist. Within seconds, not Thursdays. When you find what you needed and buy it, remove that category and move on to the next thing you're hunting for.",
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Is the free tier really free?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: "Yes, absolutely. We don't ask for a credit card. The free tier covers up to 3 active watches plus the on-demand refresh — enough to track most short-term shopping projects (towels, luggage, a coat for fall) at no cost. The paid tier ($4.99/month, $45/year) lifts the cap so you can track unlimited categories simultaneously.",
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'How are deals selected?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: "AI does the window shopping for you. We're subscribed to over 1,000 brand newsletters. Every day, our system scans the inbox, filters out fluff and personalized one-time codes, and pulls out only the real discounts. We never show welcome offers, birthday codes, or anything that only works once per person. We also tag each deal with all the categories it applies to, so a Walmart grocery email reaches you if you're watching groceries, but not if you're watching mattresses.",
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'How are deals ranked in my email?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: "Two factors work together. The biggest driver is savings — a 60% off deal ranks above a 20% off deal, every time. Second, we factor in store tier. A rare sale at a higher-end retailer gets a meaningful boost over the same discount at a store that's always running promotions. Free shipping deals are always shown last — nice, but not why you're here.",
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'How does paid billing work?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: "Personal Shopper is $4.99/month or $45/year (save 25% annual). Billing is handled by Stripe — your card details never touch our servers. Cancel any time from your account settings. You keep access through the end of the period you've already paid for, then drop back to the free tier — your watchlist and history are preserved.",
+      },
+    },
+  ],
+}
+
 // ── Free tier features (label: bold, body: regular) ─────────────────────────
 const FREE_FEATURES: [string, string][] = [
   ['Watchlist of up to 3', 'Tell us what you’re shopping for. We’ll email deals as they hit your retailers.'],
@@ -179,6 +227,10 @@ export default function LandingPage() {
         }),
       })
       setSubmitted(true)
+      // Meta Pixel — free signup lead
+      if (typeof window !== 'undefined' && (window as any).fbq) {
+        ;(window as any).fbq('track', 'Lead')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -192,6 +244,10 @@ export default function LandingPage() {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_SCHEMA) }}
+      />
       <Nav />
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
