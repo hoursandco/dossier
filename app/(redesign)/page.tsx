@@ -10,6 +10,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { DossierNav } from '@/components/DossierNav'
+import { trackPixel } from '@/lib/pixel'
+import { trackEvent } from '@/lib/analytics'
 
 // 14-point starburst shape. Reused across stickers and counters.
 const STAR_POINTS =
@@ -155,6 +157,11 @@ export default function PreviewRedesign() {
         body: JSON.stringify({ email }),
       })
       setSubmitted(true)
+      // Conversion tracking — the homepage hero form is a real signup
+      // (it creates the subscriber row) and is where most ad traffic
+      // converts. Fire the same events as the /login form.
+      trackPixel('Lead')
+      trackEvent('sign_up', { method: 'email', location: 'homepage_hero' })
     } catch {
       // swallow — keep UX simple for preview
     } finally {
@@ -282,7 +289,11 @@ export default function PreviewRedesign() {
             {' '}
             <em>
               —{' '}
-              <a href="#two-ways" style={{ color: 'inherit', textDecorationThickness: '2px', textUnderlineOffset: '4px' }}>
+              <a
+                href="#two-ways"
+                onClick={() => trackEvent('cta_click', { label: 'two_ways_to_shop' })}
+                style={{ color: 'inherit', textDecorationThickness: '2px', textUnderlineOffset: '4px' }}
+              >
                 two ways to shop
               </a>
               .

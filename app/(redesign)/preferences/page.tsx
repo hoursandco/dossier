@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { groupCategories, CATEGORY_GROUP_ORDER } from '@/lib/categoryGroups'
 import { DossierNav } from '@/components/DossierNav'
+import { trackEvent } from '@/lib/analytics'
 
 const STAR_POINTS =
   '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
@@ -235,6 +236,7 @@ export default function PreviewSettings() {
         // refetch — simpler than constructing the response shape ourselves
         const w = await fetch('/api/watches').then((r) => r.json())
         setWatches(w.watches ?? [])
+        trackEvent('category_add', { category: slug })
       }
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : 'Toggle failed')
@@ -334,6 +336,7 @@ export default function PreviewSettings() {
       }
       const refreshed = await fetch('/api/store-picks').then((r) => r.json())
       setStorePicks(refreshed.store_picks ?? [])
+      trackEvent('store_add', { location: 'preferences' })
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : 'Add failed')
     }
@@ -380,6 +383,8 @@ export default function PreviewSettings() {
         throw new Error(d.error || 'Refresh failed')
       }
       const n = d.total_deals ?? d.deals ?? 0
+      // Funnel event: the on-demand "send me deals now" action fired.
+      trackEvent('deals_pull', { deals_count: n })
       setStatusMsg(
         n > 0
           ? `Sent — ${n} ${n === 1 ? 'deal' : 'deals'} across your watchlist. Check your inbox.`

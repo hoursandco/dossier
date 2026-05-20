@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DossierNav } from '@/components/DossierNav'
+import { trackEvent } from '@/lib/analytics'
 
 const FREE_PICK_LIMIT = 3
 
@@ -191,6 +192,7 @@ export function StoresBrowse() {
       // Refetch picks so the chip flips state without a full reload.
       const refreshed = await fetch('/api/store-picks').then((r) => r.json())
       setStorePicks(refreshed.store_picks ?? [])
+      trackEvent('store_add', { location: 'stores_page' })
     } finally {
       setBusyId(null)
     }

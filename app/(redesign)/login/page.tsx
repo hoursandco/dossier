@@ -13,6 +13,7 @@
 import { useState } from 'react'
 import { DossierNav } from '@/components/DossierNav'
 import { trackPixel } from '@/lib/pixel'
+import { trackEvent } from '@/lib/analytics'
 
 const STAR_POINTS =
   '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
@@ -50,9 +51,11 @@ export default function PreviewLogin() {
       })
       if (res.ok) {
         setSent(true)
-        // Meta Pixel conversion: magic-link sent = signup captured.
-        // This is the key event the launch ad optimizes for.
+        // Conversion tracking: magic-link sent = signup captured.
+        // Meta 'Lead' is what the launch ad optimizes for; GA 'sign_up'
+        // mirrors it for the funnel report.
         trackPixel('Lead')
+        trackEvent('sign_up', { method: 'magic_link', location: 'login_page' })
       } else {
         const data = await res.json().catch(() => ({}))
         setError(data.error || 'Something went wrong. Please try again.')

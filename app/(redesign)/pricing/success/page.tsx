@@ -5,6 +5,7 @@
 
 import Link from 'next/link'
 import { PixelEvent } from '@/components/PixelEvent'
+import { GaEvent } from '@/components/GaEvent'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +19,7 @@ export default function PricingSuccessPage() {
           baseline estimate (monthly plan); exact per-plan revenue would
           come from the Stripe webhook via the Conversions API. */}
       <PixelEvent event="Purchase" params={{ value: 4.99, currency: 'USD' }} />
+      <GaEvent event="purchase" params={{ value: 4.99, currency: 'USD' }} />
 
       <nav className="nav">
         <a className="brand" href="/">

@@ -8,6 +8,7 @@ import {
   useStripe,
   useElements,
 } from '@stripe/react-stripe-js'
+import { trackEvent } from '@/lib/analytics'
 
 type Plan = 'monthly' | 'annual'
 
@@ -62,6 +63,8 @@ export function UpgradeFlow() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to start checkout')
       setClientSecret(data.clientSecret)
+      // Funnel event: Stripe checkout successfully initiated.
+      trackEvent('begin_checkout', { plan, currency: 'USD' })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
