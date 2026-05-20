@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- 14-point starburst — same shape used throughout the Dossier Look.
+       Yellow body, ink stroke. Stroke is intentionally heavy (6px at
+       200-unit viewport) so the outline stays visible when rendered at
+       16-32px favicon sizes. stroke-linejoin: round prevents the spikes
+       from blurring at very small sizes. -->
+  <polygon
+    points="100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28"
+    fill="#f4c623"
+    stroke="#181612"
+    stroke-width="6"
+    stroke-linejoin="round" />
+</svg>

@@ -1,0 +1,1713 @@
+/*
+ * Dossier Look — vintage price-tag visual system.
+ *
+ * Scoped under `.dl-shell` so it never bleeds into pages still on the
+ * editorial olive/bone look (admin, emails, transactional pages).
+ * Every selector below assumes its element is inside a `.dl-shell`
+ * wrapper.
+ *
+ * Port note: this is a near-verbatim lift from the Dossier Look HTML
+ * design package. As we refactor sections into proper React components
+ * in later phases, the long inline style strings on stickers move into
+ * component props.
+ */
+
+.dl-shell {
+  --cream: #f1e6c8;
+  --cream-2: #ede0bd;
+  --paper: #f6ecd2;
+  --ink: #181612;
+  --ink-soft: #2a261f;
+  --red: #d4322a;
+  --red-deep: #b3211a;
+  --orange: #ee7c2f;
+  --yellow: #f4c623;
+  --magenta: #e8367e;
+  --green: #4ea843;
+  --green-deep: #2f7a35;
+  --blue: #2563a8;
+  --teal: #2c8f8f;
+  --pink: #f0b7c0;
+  --tan: #e3c98a;
+
+  font-family: "Special Elite", "Courier New", monospace;
+  background: var(--cream);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  position: relative;
+  min-height: 100vh;
+}
+
+.dl-shell * { box-sizing: border-box; }
+.dl-shell a { color: inherit; }
+
+/* paper grain — fixed overlay, scoped to the shell so it doesn't bleed */
+.dl-grain {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 200;
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(0,0,0,0) 0%, rgba(0,0,0,.08) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.35 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>");
+  mix-blend-mode: multiply;
+  opacity: .35;
+}
+
+.dl-shell .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; position: relative; }
+
+/* ---------- nav ---------- */
+.dl-shell .nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 22px 28px;
+  max-width: 1180px; margin: 0 auto;
+  position: relative; z-index: 5;
+}
+.dl-shell .brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  text-decoration: none;
+}
+.dl-shell .brand-badge {
+  background: var(--red);
+  color: #fff8e2;
+  font-family: "Alfa Slab One", serif;
+  padding: 8px 14px 7px;
+  letter-spacing: .04em;
+  font-size: 18px;
+  transform: rotate(-2deg);
+  box-shadow: 2px 2px 0 var(--ink);
+  border: 2px solid var(--ink);
+}
+.dl-shell .brand-sub {
+  font-family: "IM Fell English", serif;
+  font-style: italic;
+  font-size: 17px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.dl-shell .nav-links { display: flex; gap: 18px; align-items: center; }
+.dl-shell .nav-links a {
+  font-family: "Stardos Stamp", sans-serif;
+  text-decoration: none;
+  font-size: 14px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border: 1.5px solid var(--ink);
+  background: var(--yellow);
+  transform: rotate(1deg);
+  box-shadow: 2px 2px 0 var(--ink);
+  color: var(--ink);
+}
+.dl-shell .nav-links a + a { transform: rotate(-1.5deg); background: var(--green); }
+.dl-shell .nav-links a:last-child { transform: rotate(.5deg); background: var(--pink); }
+
+/* ── Hamburger (DossierNav) ────────────────────────────────────────── */
+/* Hidden on desktop; shown when the nav links row is hidden via media
+   query below. Three stacked bars that morph into an X when open. */
+.dl-shell .nav-hamburger {
+  display: none;
+  width: 44px; height: 44px;
+  padding: 0;
+  background: var(--yellow);
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-2deg);
+}
+.dl-shell .nav-hamburger > span {
+  display: flex; flex-direction: column; gap: 4px;
+  width: 22px; height: 16px;
+  justify-content: center;
+}
+.dl-shell .nav-hamburger > span > span {
+  display: block; height: 2px; background: var(--ink);
+  transition: transform .18s, opacity .18s;
+  transform-origin: center;
+}
+.dl-shell .nav-hamburger > span.is-x > span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+.dl-shell .nav-hamburger > span.is-x > span:nth-child(2) { opacity: 0; }
+.dl-shell .nav-hamburger > span.is-x > span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+/* Mobile drawer — fixed full-screen overlay with the link list.
+   Lives outside the .dl-shell scope because the drawer is portaled
+   to document.body to escape the dl-shell's stacking context. The
+   CSS variables it uses are also defined at :root in redesign-vars.css
+   (or have literal-hex fallbacks below) so they resolve outside
+   .dl-shell too. */
+.nav-drawer {
+  position: fixed; inset: 0;
+  background: rgba(13, 12, 10, 0.55);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: stretch;
+  padding-top: 88px; /* clear the nav bar */
+}
+.nav-drawer ul {
+  list-style: none; padding: 0;
+  margin: 0 16px;
+  width: 100%;
+  background: #f6ecd2;
+  border: 2px solid #181612;
+  box-shadow: 6px 6px 0 #181612;
+}
+.nav-drawer li + li {
+  border-top: 1.5px dashed rgba(0,0,0,0.15);
+}
+.nav-drawer a {
+  display: block;
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 16px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #181612;
+  text-decoration: none;
+  padding: 18px 22px;
+  min-height: 56px;
+  box-sizing: border-box;
+}
+.nav-drawer a:active { background: #fff5d4; }
+.nav-drawer a.active {
+  background: #d4322a;
+  color: #fff8e2;
+}
+
+/* ---------- hero ---------- */
+.dl-shell .hero {
+  position: relative;
+  background: #0d0c0a;
+  color: var(--cream);
+  margin-top: 8px;
+  padding: 96px 28px 120px;
+  overflow: hidden;
+  border-top: 4px solid var(--ink);
+  border-bottom: 4px solid var(--ink);
+}
+.dl-shell .hero-inner {
+  max-width: 1180px; margin: 0 auto;
+  position: relative;
+  text-align: center;
+  z-index: 5;
+  pointer-events: none;
+}
+.dl-shell .hero-inner > * { pointer-events: auto; }
+.dl-shell .hero-eyebrow {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .55em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--yellow);
+  margin: 24px 0 0;
+  text-indent: .55em;
+  opacity: .9;
+}
+.dl-shell .hero-title {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  color: #fff8e2;
+  font-size: clamp(64px, 10vw, 148px);
+  line-height: 1;
+  letter-spacing: .14em;
+  margin: 0;
+  text-indent: .14em;
+  text-shadow: 3px 3px 0 var(--red-deep), 6px 6px 0 #5a0e08;
+}
+.dl-shell .hero-title .row { display: block; }
+.dl-shell .hero-title .small {
+  display: inline-block;
+  font-family: "IM Fell English", serif;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--yellow);
+  font-size: .34em;
+  letter-spacing: .02em;
+  text-shadow: none;
+  vertical-align: middle;
+  padding: 0 .35em;
+  text-indent: 0;
+  line-height: 1.2;
+}
+.dl-shell .hero-sub {
+  font-family: "Special Elite", monospace;
+  max-width: 640px;
+  margin: 38px auto 0;
+  font-size: 17px;
+  line-height: 1.55;
+  color: #efe2bd;
+}
+.dl-shell .hero-sub em {
+  font-family: "IM Fell English", serif;
+  font-style: italic;
+  color: var(--yellow);
+  font-size: 20px;
+}
+
+/* hero CTA "ticket" */
+.dl-shell .cta-ticket {
+  display: inline-flex; align-items: stretch;
+  margin: 44px auto 0;
+  border: 3px solid var(--ink);
+  background: #fff8e2;
+  color: var(--ink);
+  box-shadow: 6px 6px 0 var(--red);
+  position: relative;
+  transform: rotate(-1.2deg);
+}
+.dl-shell .cta-ticket form {
+  display: flex; align-items: center; gap: 0;
+  padding: 0;
+}
+.dl-shell .cta-ticket input {
+  border: 0;
+  background: transparent;
+  font-family: "Special Elite", monospace;
+  font-size: 17px;
+  padding: 16px 18px;
+  width: 260px;
+  color: var(--ink);
+  outline: none;
+}
+.dl-shell .cta-ticket input::placeholder { color: #6c6353; }
+.dl-shell .cta-ticket button {
+  border: 0;
+  border-left: 3px dashed var(--ink);
+  background: var(--red);
+  color: #fff8e2;
+  font-family: "Alfa Slab One", serif;
+  font-size: 18px;
+  letter-spacing: .14em;
+  padding: 0 26px;
+  cursor: pointer;
+}
+.dl-shell .cta-fineprint {
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 11px;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: #b9a980;
+  margin: 18px 0 0;
+}
+
+/* sticker collage in hero */
+.dl-shell .sticker-bg { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.dl-shell .sticker-bg .s { position: absolute; }
+
+/* ---------- generic sticker shapes ---------- */
+.dl-shell .sticker {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+  padding: 14px 16px;
+  font-family: "Alfa Slab One", serif;
+  position: relative;
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 rgba(0,0,0,.55);
+  background: var(--yellow);
+  color: var(--ink);
+  user-select: none;
+}
+.dl-shell .sticker .lbl {
+  font-family: "Stardos Stamp", sans-serif;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-size: 11px;
+  opacity: .85;
+}
+.dl-shell .sticker .big {
+  font-family: "Alfa Slab One", serif;
+  font-size: 36px;
+  line-height: 1;
+  letter-spacing: .01em;
+}
+.dl-shell .sticker .currency { font-size: .55em; vertical-align: .55em; }
+
+.dl-shell .sh-circle { border-radius: 50%; }
+.dl-shell .sh-starburst {
+  border: none; box-shadow: none; background: transparent; padding: 0;
+  width: 200px; height: 200px; position: relative;
+}
+.dl-shell .sh-starburst .star { position: absolute; inset: 0; filter: drop-shadow(3px 3px 0 rgba(0,0,0,.55)); }
+.dl-shell .sh-starburst .star svg { width: 100%; height: 100%; }
+.dl-shell .sh-starburst .content {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; padding: 18%;
+}
+.dl-shell .sh-scallop {
+  border: none;
+  --c: var(--orange);
+  background:
+    radial-gradient(circle at 50% 0%, var(--c) 14px, transparent 14.5px) 0 0/24px 28px repeat-x,
+    radial-gradient(circle at 50% 100%, var(--c) 14px, transparent 14.5px) 0 100%/24px 28px repeat-x,
+    radial-gradient(circle at 0% 50%, var(--c) 14px, transparent 14.5px) 0 0/28px 24px repeat-y,
+    radial-gradient(circle at 100% 50%, var(--c) 14px, transparent 14.5px) 100% 0/28px 24px repeat-y,
+    var(--c);
+  background-clip: padding-box;
+  box-shadow: none;
+  filter: drop-shadow(3px 3px 0 rgba(0,0,0,.4));
+  border-radius: 4px;
+}
+.dl-shell .sh-ticket {
+  clip-path: polygon(
+    0 8px, 6px 0,
+    calc(100% - 6px) 0, 100% 8px,
+    100% calc(50% - 8px), calc(100% - 6px) 50%, 100% calc(50% + 8px),
+    100% calc(100% - 8px), calc(100% - 6px) 100%,
+    6px 100%, 0 calc(100% - 8px),
+    0 calc(50% + 8px), 6px 50%, 0 calc(50% - 8px)
+  );
+  border: none;
+  box-shadow: 3px 3px 0 rgba(0,0,0,.4);
+}
+.dl-shell .sh-tag {
+  clip-path: polygon(50% 0, 100% 14%, 100% 100%, 0 100%, 0 14%);
+  border: none;
+  box-shadow: 3px 3px 0 rgba(0,0,0,.4);
+  padding-top: 22px;
+}
+.dl-shell .sh-octagon {
+  clip-path: polygon(
+    14px 0, calc(100% - 14px) 0,
+    100% 14px, 100% calc(100% - 14px),
+    calc(100% - 14px) 100%, 14px 100%,
+    0 calc(100% - 14px), 0 14px
+  );
+  border: none;
+  box-shadow: 3px 3px 0 rgba(0,0,0,.4);
+}
+.dl-shell .sh-pricegun {
+  clip-path: polygon(
+    0 6px, 6px 0, calc(100% - 6px) 0, 100% 6px,
+    100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px)
+  );
+  border: none;
+  box-shadow: 3px 3px 0 rgba(0,0,0,.5);
+}
+
+.dl-shell .bg-red { background: var(--red); color: #fff8e2; }
+.dl-shell .bg-yellow { background: var(--yellow); color: var(--ink); }
+.dl-shell .bg-orange { background: var(--orange); color: var(--ink); }
+.dl-shell .bg-green { background: var(--green); color: #fff8e2; }
+.dl-shell .bg-blue { background: var(--blue); color: #fff8e2; }
+.dl-shell .bg-magenta { background: var(--magenta); color: #fff8e2; }
+.dl-shell .bg-pink { background: var(--pink); color: var(--ink); }
+.dl-shell .bg-cream { background: #fff5d4; color: var(--ink); }
+.dl-shell .bg-ink { background: var(--ink); color: var(--cream); }
+.dl-shell .bg-tan { background: var(--tan); color: var(--ink); }
+
+.dl-shell .t-1 { transform: rotate(-3deg); }
+.dl-shell .t-2 { transform: rotate(2deg); }
+.dl-shell .t-3 { transform: rotate(-1deg); }
+.dl-shell .t-4 { transform: rotate(4deg); }
+.dl-shell .t-5 { transform: rotate(-5deg); }
+.dl-shell .t-6 { transform: rotate(1.5deg); }
+
+/* ---------- counters strip ---------- */
+.dl-shell .counters { background: var(--cream); padding: 64px 28px 24px; position: relative; z-index: 2; }
+.dl-shell .counters-inner {
+  max-width: 1180px; margin: -120px auto 0;
+  display: flex; justify-content: center; gap: 32px;
+  flex-wrap: wrap;
+  position: relative; z-index: 10;
+}
+.dl-shell .counter {
+  width: 240px; height: 240px;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column;
+  text-align: center;
+  position: relative;
+  isolation: isolate;
+}
+.dl-shell .counter .shape { position: absolute; inset: 0; z-index: 1; filter: drop-shadow(4px 4px 0 rgba(0,0,0,.4)); }
+.dl-shell .counter .shape svg { width: 100%; height: 100%; }
+.dl-shell .counter .content { position: relative; z-index: 2; }
+.dl-shell .counter .n { font-family: "Alfa Slab One", serif; font-size: 56px; line-height: 1; }
+.dl-shell .counter .l {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  font-size: 11px;
+  margin-top: 8px;
+  opacity: .9;
+  max-width: 130px;
+  line-height: 1.25;
+}
+
+/* ---------- marquee strip ---------- */
+.dl-shell .marquee {
+  background: var(--ink);
+  color: var(--yellow);
+  padding: 14px 0;
+  border-top: 3px solid var(--ink);
+  border-bottom: 3px solid var(--ink);
+  overflow: hidden;
+  position: relative;
+  margin-top: 60px;
+}
+.dl-shell .marquee-track {
+  display: flex; gap: 36px;
+  font-family: "Bungee", sans-serif;
+  font-size: 18px;
+  letter-spacing: .12em;
+  white-space: nowrap;
+  animation: dl-scroll 30s linear infinite;
+}
+.dl-shell .marquee-track span { display: inline-flex; gap: 36px; align-items: center; }
+.dl-shell .marquee-track .dot { width: 10px; height: 10px; background: var(--red); border-radius: 50%; display: inline-block; }
+@keyframes dl-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+/* ---------- section headers ---------- */
+.dl-shell .section { padding: 96px 28px; position: relative; }
+.dl-shell .section h2.kicker {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .4em;
+  text-transform: uppercase;
+  font-size: 13px;
+  margin: 0 0 22px;
+  text-align: center;
+  color: var(--red-deep);
+}
+.dl-shell .section h2.title {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  text-align: center;
+  font-size: clamp(40px, 5.6vw, 80px);
+  line-height: 1;
+  letter-spacing: .06em;
+  margin: 0 0 56px;
+  text-indent: .06em;
+}
+.dl-shell .section h2.title em {
+  font-family: "Alfa Slab One", serif;
+  font-style: normal;
+  font-weight: 400;
+  color: var(--ink);
+  letter-spacing: .06em;
+  text-shadow: 2px 2px 0 var(--red), 4px 4px 0 var(--red-deep);
+  padding: 0 .04em;
+}
+
+/* ---------- brief ---------- */
+.dl-shell .brief { background: var(--cream); }
+.dl-shell .brief-grid {
+  max-width: 1080px; margin: 0 auto;
+  display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; align-items: start;
+}
+.dl-shell .brief p {
+  font-family: "IM Fell English", serif;
+  font-size: 22px; line-height: 1.5; margin: 0 0 22px; max-width: 56ch;
+}
+.dl-shell .brief p em { font-style: italic; color: var(--red-deep); }
+.dl-shell .brief-stickers { position: relative; height: 460px; }
+.dl-shell .brief-stickers .sticker,
+.dl-shell .brief-stickers .sh-starburst { position: absolute; }
+
+/* ---------- system (how it works) ---------- */
+.dl-shell .system { background: #fff5d4; border-top: 4px solid var(--ink); border-bottom: 4px solid var(--ink); position: relative; }
+.dl-shell .system-grid {
+  max-width: 1100px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;
+}
+.dl-shell .step { display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: 20px; }
+.dl-shell .step .num { width: 110px; height: 110px; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; }
+.dl-shell .step .num span { font-family: "Alfa Slab One", serif; font-size: 58px; line-height: 1; color: #fff8e2; }
+.dl-shell .step h3 {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  font-size: 34px;
+  letter-spacing: .12em;
+  margin: 0 0 12px;
+  text-transform: uppercase;
+  text-indent: .12em;
+}
+.dl-shell .step h3 .ribbon {
+  background: var(--red); color: #fff8e2;
+  padding: 4px 12px 2px;
+  display: inline-block;
+  transform: rotate(-1deg);
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.dl-shell .step p {
+  font-family: "Special Elite", monospace;
+  font-size: 15px; line-height: 1.55;
+  max-width: 30ch; margin: 0;
+  color: var(--ink-soft);
+}
+
+/* ---------- pricing ---------- */
+.dl-shell .pricing { background: var(--cream); }
+.dl-shell .pricing-grid {
+  max-width: 1080px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 48px; align-items: stretch;
+}
+.dl-shell .plan {
+  position: relative;
+  border: 3px solid var(--ink);
+  background: #fff5d4;
+  padding: 48px 36px 40px;
+  box-shadow: 8px 8px 0 var(--ink);
+}
+.dl-shell .plan.featured { background: var(--ink); color: var(--cream); box-shadow: 8px 8px 0 var(--red); }
+.dl-shell .plan .corner { position: absolute; top: -22px; left: -22px; width: 110px; height: 110px; }
+.dl-shell .plan .corner-2 { position: absolute; top: -18px; right: -18px; transform: rotate(8deg); }
+.dl-shell .plan h3.plan-name {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  font-size: 14px; margin: 0 0 14px;
+  color: var(--red);
+}
+.dl-shell .plan.featured h3.plan-name { color: var(--yellow); }
+.dl-shell .plan .price { font-family: "Alfa Slab One", serif; font-size: 78px; line-height: 1; letter-spacing: .03em; margin: 0; }
+.dl-shell .plan .price .cur { font-size: .45em; vertical-align: .85em; margin-right: 4px; }
+.dl-shell .plan .price .per { font-family: "IM Fell English", serif; font-style: italic; font-size: .22em; vertical-align: .9em; margin-left: 6px; letter-spacing: 0; }
+.dl-shell .plan .price-sub { font-family: "IM Fell English", serif; font-style: italic; margin: 6px 0 28px; font-size: 18px; color: var(--ink-soft); }
+.dl-shell .plan.featured .price-sub { color: #d8caa1; }
+.dl-shell .plan ul { list-style: none; padding: 0; margin: 0 0 32px; border-top: 1.5px dashed var(--ink); }
+.dl-shell .plan.featured ul { border-top-color: #6c604a; }
+.dl-shell .plan li { padding: 16px 0; border-bottom: 1.5px dashed var(--ink); display: grid; grid-template-columns: 24px 1fr; gap: 12px; }
+.dl-shell .plan.featured li { border-bottom-color: #6c604a; }
+.dl-shell .plan li .check { font-family: "Alfa Slab One", serif; font-size: 22px; line-height: 1; color: var(--red); }
+.dl-shell .plan.featured li .check { color: var(--yellow); }
+.dl-shell .plan li h4 { font-family: "Stardos Stamp", sans-serif; letter-spacing: .15em; text-transform: uppercase; margin: 0 0 4px; font-size: 13px; }
+.dl-shell .plan li p { font-family: "Special Elite", monospace; font-size: 14px; line-height: 1.5; margin: 0; color: var(--ink-soft); }
+.dl-shell .plan.featured li p { color: #c9bb91; }
+.dl-shell .plan .btn {
+  display: inline-block;
+  font-family: "Alfa Slab One", serif;
+  font-size: 18px;
+  letter-spacing: .14em;
+  padding: 14px 22px 12px;
+  text-indent: .14em;
+  text-decoration: none;
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  background: var(--red);
+  color: #fff8e2;
+}
+.dl-shell .plan.featured .btn { background: var(--yellow); color: var(--ink); border-color: var(--yellow); box-shadow: 4px 4px 0 var(--red); }
+
+/* ---------- FAQ ---------- */
+.dl-shell .faq { background: #0d0c0a; color: var(--cream); border-top: 4px solid var(--ink); }
+.dl-shell .faq h2.kicker { color: var(--yellow); }
+.dl-shell .faq h2.title { color: #fff8e2; }
+.dl-shell .faq h2.title em { color: #fff8e2; }
+.dl-shell .faq-list { max-width: 860px; margin: 0 auto; display: grid; gap: 20px; }
+.dl-shell .faq-item {
+  background: #fff5d4; color: var(--ink);
+  border: 3px solid #fff5d4;
+  padding: 26px 28px;
+  position: relative;
+  box-shadow: 4px 4px 0 rgba(0,0,0,.5);
+}
+.dl-shell .faq-item:nth-child(2n) { transform: rotate(-.4deg); background: #f0e1ad; border-color: #f0e1ad; }
+.dl-shell .faq-item:nth-child(3n) { transform: rotate(.5deg); }
+.dl-shell .faq-item summary {
+  cursor: pointer;
+  font-family: "Alfa Slab One", serif;
+  font-size: 20px;
+  letter-spacing: .04em;
+  list-style: none;
+  display: flex; justify-content: space-between; align-items: center; gap: 18px;
+}
+.dl-shell .faq-item summary::-webkit-details-marker { display: none; }
+.dl-shell .faq-item summary::after {
+  content: "+";
+  font-family: "Alfa Slab One", serif;
+  font-size: 28px;
+  color: var(--red);
+  transition: transform .2s;
+  line-height: 1;
+}
+.dl-shell .faq-item[open] summary::after { content: "–"; }
+.dl-shell .faq-item .ans {
+  margin-top: 16px;
+  padding-top: 18px;
+  border-top: 2px dashed var(--ink);
+  font-family: "IM Fell English", serif;
+  font-size: 18px;
+  line-height: 1.55;
+}
+.dl-shell .faq-item .ans p { margin: 0 0 12px; }
+.dl-shell .faq-tag {
+  position: absolute;
+  top: -14px; right: 20px;
+  background: var(--red);
+  color: #fff8e2;
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  font-size: 11px;
+  padding: 5px 10px 3px;
+  border: 2px solid var(--ink);
+  transform: rotate(-2deg);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.dl-shell .faq-item:nth-child(2n) .faq-tag { background: var(--blue); transform: rotate(2deg); }
+.dl-shell .faq-item:nth-child(3n) .faq-tag { background: var(--green); transform: rotate(-1deg); }
+.dl-shell .faq-item:nth-child(4n) .faq-tag { background: var(--magenta); transform: rotate(1deg); }
+.dl-shell .faq-item:nth-child(5n) .faq-tag { background: var(--orange); transform: rotate(-3deg); }
+
+/* ---------- footer ---------- */
+.dl-shell .dl-footer { background: var(--cream); padding: 80px 28px 64px; text-align: center; border-top: 4px solid var(--ink); }
+.dl-shell .footer-wordmark {
+  font-family: "Alfa Slab One", serif;
+  font-size: clamp(40px, 9vw, 130px);
+  letter-spacing: .1em;
+  line-height: .9;
+  color: var(--ink);
+  margin: 0 0 22px;
+  text-indent: .1em;
+  opacity: .92;
+  white-space: nowrap;
+}
+.dl-shell .footer-wordmark span { display: inline-block; }
+.dl-shell .footer-wordmark .o { color: var(--red); }
+.dl-shell .footer-meta {
+  font-family: "Special Elite", monospace;
+  font-size: 13px;
+  color: var(--ink-soft);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.dl-shell .footer-meta a { text-decoration: none; padding: 0 6px; }
+.dl-shell .footer-meta a:hover { background: var(--yellow); }
+
+/* ---------- date stamp ---------- */
+.dl-shell .date-stamp {
+  position: absolute;
+  bottom: 40px; right: 40px;
+  transform: rotate(-6deg);
+  font-family: "Stardos Stamp", sans-serif;
+  border: 2px solid var(--yellow);
+  color: var(--yellow);
+  padding: 8px 14px 6px;
+  font-size: 11px;
+  letter-spacing: .35em;
+  text-transform: uppercase;
+  z-index: 4;
+  background: rgba(13,12,10,.7);
+}
+.dl-shell .date-stamp::before {
+  content: "";
+  position: absolute; inset: -4px;
+  border: 1px dashed rgba(244,198,35,.5);
+  pointer-events: none;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 980px) {
+  .dl-shell .hero { padding: 72px 22px 90px; }
+  .dl-shell .hero-title { font-size: clamp(46px, 11vw, 96px) !important; }
+  .dl-shell .sticker-bg .s { transform-origin: center; }
+  .dl-shell .sticker-bg .s:nth-child(2),
+  .dl-shell .sticker-bg .s:nth-child(5),
+  .dl-shell .sticker-bg .s:nth-child(7) { display: none; }
+  /* Headline/CTA must paint above the sticker layer, not behind it.
+     Without explicit position+z-index, the absolute .sticker-bg
+     (z-index:1) can cover in-flow content. */
+  .dl-shell .hero .hero-inner { position: relative; z-index: 3; }
+  /* Pull the sticker layer back so it reads as background texture,
+     not foreground competition. Still visible, just not shouting. */
+  .dl-shell .sticker-bg .s { opacity: 0.55; }
+}
+
+@media (max-width: 700px) {
+  /* Phone-sized: even more aggressive sticker pruning. Keep just
+     two — one top-left, one bottom-right — to anchor the brand
+     identity without crowding the headline. */
+  .dl-shell .sticker-bg .s:nth-child(3),
+  .dl-shell .sticker-bg .s:nth-child(4),
+  .dl-shell .sticker-bg .s:nth-child(6) { display: none; }
+  .dl-shell .sticker-bg .s { opacity: 0.4; transform: scale(0.75); }
+}
+@media (max-width: 880px) {
+  /* DossierNav: swap desktop links for hamburger when room runs out.
+     Pages using the legacy inline <nav> (no DossierNav, no hamburger
+     button) keep the original stacked-wrap behavior via the second
+     rule. */
+  .dl-shell .nav { padding: 16px 22px; }
+  .dl-shell .nav:has(.nav-hamburger) { flex-direction: row; gap: 0; }
+  .dl-shell .nav:has(.nav-hamburger) .nav-links-desktop { display: none; }
+  .dl-shell .nav:has(.nav-hamburger) .nav-hamburger { display: inline-flex; }
+  .dl-shell .nav:not(:has(.nav-hamburger)) { flex-direction: column; gap: 14px; }
+  .dl-shell .nav-links { gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .dl-shell .nav-links a { font-size: 12px; padding: 5px 10px; }
+  .dl-shell .brief-grid,
+  .dl-shell .pricing-grid { grid-template-columns: 1fr; gap: 64px; }
+  .dl-shell .system-grid { grid-template-columns: 1fr; gap: 56px; }
+  .dl-shell .brief-stickers { height: 420px; max-width: 320px; margin: 0 auto; }
+  .dl-shell .cta-ticket { flex-direction: column; transform: rotate(-1deg); }
+  .dl-shell .cta-ticket form { flex-direction: column; width: 100%; }
+  .dl-shell .cta-ticket input { width: 100%; min-width: 240px; border-bottom: 3px dashed var(--ink); }
+  .dl-shell .cta-ticket button { width: 100%; padding: 16px; border-left: 0; border-top: 3px dashed var(--ink); }
+  .dl-shell .date-stamp { right: 16px; bottom: 16px; font-size: 10px; padding: 6px 10px 4px; }
+  .dl-shell .section { padding: 72px 22px; }
+  .dl-shell .section h2.title { font-size: clamp(34px, 8vw, 56px); margin-bottom: 40px; }
+  .dl-shell .dl-footer { padding: 56px 22px 48px; }
+  .dl-shell .footer-wordmark { font-size: clamp(36px, 11vw, 80px); letter-spacing: .08em; text-indent: .08em; }
+  .dl-shell .counters-inner { gap: 16px; margin-top: -80px; }
+  .dl-shell .counter { width: 180px; height: 180px; }
+  .dl-shell .counter .n { font-size: 42px; }
+  .dl-shell .plan { padding: 40px 26px 32px; }
+  .dl-shell .plan .price { font-size: 60px; }
+  .dl-shell .step .num { width: 96px; height: 96px; margin-bottom: 16px; }
+  .dl-shell .step h3 { font-size: 28px; }
+  .dl-shell .faq-item summary { font-size: 17px; }
+  .dl-shell .faq-item .ans { font-size: 16px; }
+}
+@media (max-width: 560px) {
+  .dl-shell .hero { padding: 60px 18px 80px; }
+  .dl-shell .hero-title { font-size: clamp(38px, 12vw, 64px) !important; letter-spacing: .08em; text-indent: .08em; }
+  .dl-shell .hero-sub { font-size: 15px; }
+  .dl-shell .counters-inner { flex-direction: column; align-items: center; margin-top: -60px; }
+  .dl-shell .brand-sub { display: none; }
+}
+
+/* ---------- scroll reveal ---------- */
+.dl-shell .reveal {
+  opacity: 0;
+  transform: translateY(28px) rotate(var(--r, 0deg)) scale(.85);
+  transition:
+    opacity .7s cubic-bezier(.2,.7,.2,1),
+    transform .7s cubic-bezier(.2,.7,.2,1);
+  transition-delay: var(--d, 0ms);
+  will-change: transform, opacity;
+}
+.dl-shell .reveal.in {
+  opacity: 1;
+  transform: translateY(0) rotate(var(--r, 0deg)) scale(1);
+}
+.dl-shell .sticker-pop {
+  opacity: 0;
+  transform: translateY(-40px) rotate(calc(var(--r, 0deg) + -18deg)) scale(.5);
+  transition:
+    opacity .55s cubic-bezier(.2,.9,.3,1.25),
+    transform .8s cubic-bezier(.2,.9,.3,1.25);
+  transition-delay: var(--d, 0ms);
+  will-change: transform, opacity;
+}
+.dl-shell .sticker-pop.in {
+  opacity: 1;
+  transform: translateY(0) rotate(var(--r, 0deg)) scale(1);
+  animation: dl-wiggle 4.5s var(--d, 0ms) ease-in-out infinite alternate;
+}
+@keyframes dl-wiggle {
+  from { transform: translateY(0) rotate(var(--r, 0deg)); }
+  to { transform: translateY(-2px) rotate(calc(var(--r, 0deg) + 1deg)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-shell .reveal,
+  .dl-shell .sticker-pop { opacity: 1 !important; transform: none !important; animation: none !important; }
+}
+
+/* ============================================================ */
+/* Settings (preferences) page                                  */
+/* ============================================================ */
+
+.dl-shell .nav-links a.active { background: var(--red); color: #fff8e2; }
+
+/* page header — dark hero with sticker scatter */
+.dl-shell .page-head {
+  position: relative;
+  background: #0d0c0a;
+  color: var(--cream);
+  border-top: 4px solid var(--ink);
+  border-bottom: 4px solid var(--ink);
+  padding: 92px 28px 110px;
+  text-align: center;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.dl-shell .page-head-inner { max-width: 880px; margin: 0 auto; position: relative; z-index: 3; }
+.dl-shell .page-kicker {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .55em; text-transform: uppercase;
+  font-size: 12px; color: var(--yellow);
+  margin: 0 0 22px; text-indent: .55em;
+}
+.dl-shell .page-title {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  font-size: clamp(48px, 8vw, 108px);
+  line-height: .98; letter-spacing: .06em;
+  margin: 0; text-indent: .06em;
+  color: #fff8e2;
+}
+.dl-shell .page-title em {
+  font-family: "Alfa Slab One", serif; font-style: normal;
+  color: #fff8e2; padding: 0 .04em;
+  text-shadow: 2px 2px 0 var(--red), 4px 4px 0 var(--red-deep);
+}
+.dl-shell .page-sub {
+  font-family: "IM Fell English", serif;
+  font-size: 22px; line-height: 1.5;
+  margin: 28px auto 0; max-width: 56ch;
+  color: #efe2bd;
+}
+.dl-shell .head-stickers { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.dl-shell .head-stickers .s { position: absolute; }
+
+/* form card — lifted into the dark header */
+.dl-shell .form-section { background: var(--cream); padding: 96px 28px 80px; position: relative; }
+.dl-shell .form-wrap { max-width: 820px; margin: 0 auto; position: relative; }
+.dl-shell .form-card {
+  background: #fff5d4;
+  border: 3px solid var(--ink);
+  box-shadow: 10px 10px 0 var(--ink);
+  padding: 56px 56px 48px;
+  position: relative;
+  margin-top: -180px;
+  z-index: 4;
+}
+.dl-shell .form-card::before,
+.dl-shell .form-card::after {
+  content: ""; position: absolute; left: -3px; right: -3px;
+  height: 16px;
+  background-image: radial-gradient(circle at 8px center, var(--cream) 0 6px, transparent 6.5px);
+  background-size: 16px 16px; background-repeat: repeat-x;
+}
+.dl-shell .form-card::before { top: -10px; }
+.dl-shell .form-card::after { bottom: -10px; transform: rotate(180deg); }
+.dl-shell .form-tag { position: absolute; top: -28px; right: -32px; z-index: 5; }
+
+.dl-shell .form-step {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .35em; text-transform: uppercase;
+  font-size: 11px; color: var(--red-deep);
+  margin: 0 0 12px;
+}
+.dl-shell .form-h {
+  font-family: "Alfa Slab One", serif; font-weight: 400;
+  font-size: 30px; letter-spacing: .04em;
+  margin: 0 0 28px; text-indent: .04em; line-height: 1.05;
+}
+
+.dl-shell .dl-field { display: block; margin-bottom: 26px; }
+.dl-shell .dl-field label.lbl-top {
+  display: block;
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .2em; text-transform: uppercase;
+  font-size: 12px; margin-bottom: 8px; color: var(--ink);
+}
+.dl-shell .dl-field input[type=email],
+.dl-shell .dl-field input[type=text],
+.dl-shell .dl-field input[type=url] {
+  width: 100%;
+  border: 2px solid var(--ink);
+  background: #fffbe6;
+  font-family: "Special Elite", monospace;
+  font-size: 18px; padding: 16px 18px;
+  color: var(--ink); outline: none;
+  box-shadow: 4px 4px 0 var(--ink);
+  transition: box-shadow .15s;
+}
+.dl-shell .dl-field input:focus { box-shadow: 5px 5px 0 var(--red); }
+.dl-shell .dl-field input::placeholder { color: #8a7c5a; }
+
+/* chip + accordion category picker */
+.dl-shell .chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.dl-shell .chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 2px solid var(--ink);
+  background: #fffbe6;
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  padding: 7px 12px;
+  cursor: pointer; user-select: none;
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: transform .12s, opacity .12s;
+  position: relative;
+}
+.dl-shell .chip:hover { transform: translate(-1px, -1px); }
+.dl-shell .chip:disabled { opacity: .5; cursor: wait; }
+.dl-shell .chip.on::after {
+  content: "✱";
+  margin-left: 6px;
+  font-family: "Alfa Slab One", serif;
+  font-size: 12px;
+}
+.dl-shell .cat-list { display: grid; gap: 12px; }
+.dl-shell .cat {
+  border: 2px solid var(--ink);
+  background: #fffbe6;
+  box-shadow: 3px 3px 0 var(--ink);
+  position: relative;
+  transition: box-shadow .15s, transform .15s;
+}
+.dl-shell .cat:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.dl-shell .cat-head {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px 18px;
+  cursor: pointer;
+  user-select: none;
+}
+.dl-shell .cat-head .swatch {
+  width: 22px; height: 22px;
+  border: 2px solid var(--ink);
+  display: inline-block;
+}
+.dl-shell .cat:nth-child(8n+1) .swatch { background: var(--yellow); }
+.dl-shell .cat:nth-child(8n+2) .swatch { background: var(--orange); }
+.dl-shell .cat:nth-child(8n+3) .swatch { background: var(--green); }
+.dl-shell .cat:nth-child(8n+4) .swatch { background: var(--pink); }
+.dl-shell .cat:nth-child(8n+5) .swatch { background: var(--blue); }
+.dl-shell .cat:nth-child(8n+6) .swatch { background: var(--magenta); }
+.dl-shell .cat:nth-child(8n+7) .swatch { background: var(--red); }
+.dl-shell .cat:nth-child(8n+8) .swatch { background: var(--teal); }
+.dl-shell .cat-head h4 {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  font-size: 18px;
+  letter-spacing: .04em;
+  margin: 0;
+  line-height: 1;
+}
+.dl-shell .cat-count {
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.dl-shell .cat-count.has {
+  background: var(--ink);
+  color: var(--yellow);
+  padding: 4px 8px 3px;
+  letter-spacing: .14em;
+}
+.dl-shell .cat-chevron {
+  font-family: "Alfa Slab One", serif;
+  font-size: 22px;
+  color: var(--red);
+  line-height: 1;
+  transition: transform .2s;
+}
+.dl-shell .cat.open .cat-chevron { transform: rotate(45deg); }
+.dl-shell .cat-body {
+  display: none;
+  padding: 4px 18px 18px;
+  border-top: 2px dashed var(--ink);
+}
+.dl-shell .cat.open .cat-body { display: block; }
+.dl-shell .cat-body .chip-group { margin-top: 14px; }
+
+/* selected chip color follows parent category */
+.dl-shell .cat:nth-child(8n+1) .chip.on { background: var(--yellow); color: var(--ink); }
+.dl-shell .cat:nth-child(8n+2) .chip.on { background: var(--orange); color: var(--ink); }
+.dl-shell .cat:nth-child(8n+3) .chip.on { background: var(--green); color: #fff8e2; }
+.dl-shell .cat:nth-child(8n+4) .chip.on { background: var(--pink); color: var(--ink); }
+.dl-shell .cat:nth-child(8n+5) .chip.on { background: var(--blue); color: #fff8e2; }
+.dl-shell .cat:nth-child(8n+6) .chip.on { background: var(--magenta); color: #fff8e2; }
+.dl-shell .cat:nth-child(8n+7) .chip.on { background: var(--red); color: #fff8e2; }
+.dl-shell .cat:nth-child(8n+8) .chip.on { background: var(--teal); color: #fff8e2; }
+
+.dl-shell .selected-summary {
+  margin: 0 0 16px;
+  font-family: "IM Fell English", serif;
+  font-style: italic;
+  font-size: 17px;
+  color: var(--ink-soft);
+}
+.dl-shell .selected-summary b {
+  font-family: "Alfa Slab One", serif;
+  font-style: normal;
+  background: var(--ink);
+  color: var(--yellow);
+  padding: 2px 8px 1px;
+  margin-right: 6px;
+  letter-spacing: .04em;
+}
+
+/* magic / save buttons */
+.dl-shell .magic-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 22px;
+  border-top: 2px dashed var(--ink);
+}
+.dl-shell .magic {
+  display: inline-block;
+  font-family: "Alfa Slab One", serif;
+  font-size: 22px; letter-spacing: .14em; text-indent: .14em;
+  padding: 18px 32px 16px;
+  background: var(--red); color: #fff8e2;
+  border: 2px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+  cursor: pointer; text-decoration: none;
+  transition: transform .12s, box-shadow .12s;
+}
+.dl-shell .magic:hover { transform: translate(-2px, -2px); box-shadow: 8px 8px 0 var(--ink); }
+.dl-shell .magic:active { transform: translate(2px, 2px); box-shadow: 3px 3px 0 var(--ink); }
+.dl-shell .magic:disabled { opacity: .5; cursor: wait; }
+.dl-shell .fine {
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 11px; letter-spacing: .25em; text-transform: uppercase;
+  color: var(--ink-soft); max-width: 240px; line-height: 1.6;
+}
+
+/* signed-in banner */
+.dl-shell .sub-banner {
+  background: var(--green);
+  color: #fff8e2;
+  border: 2px solid var(--ink);
+  padding: 18px 22px;
+  margin-bottom: 28px;
+  display: flex; align-items: center; gap: 14px;
+  box-shadow: 4px 4px 0 var(--ink);
+  font-family: "Special Elite", monospace;
+  font-size: 15px;
+}
+.dl-shell .sub-banner strong {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .22em; text-transform: uppercase;
+  font-size: 12px;
+}
+
+/* radio rows for plan + cadence */
+.dl-shell .radio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.dl-shell .radio-card {
+  border: 2px solid var(--ink);
+  background: #fffbe6;
+  padding: 18px 20px;
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
+  position: relative;
+}
+.dl-shell .radio-card input { display: none; }
+.dl-shell .radio-card h4 {
+  font-family: "Alfa Slab One", serif; font-weight: 400;
+  font-size: 18px; letter-spacing: .04em;
+  margin: 0 0 4px;
+}
+.dl-shell .radio-card p {
+  font-family: "IM Fell English", serif; font-style: italic;
+  font-size: 15px; color: var(--ink-soft); margin: 0;
+}
+.dl-shell .radio-card.on { background: var(--yellow); }
+.dl-shell .radio-card.on::before {
+  content: ""; position: absolute;
+  top: 10px; right: 10px;
+  width: 16px; height: 16px;
+  background: var(--red);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+
+/* danger zone */
+.dl-shell .danger {
+  margin-top: 24px;
+  border-top: 2px dashed var(--ink);
+  padding-top: 22px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+}
+.dl-shell .danger p {
+  margin: 0;
+  font-family: "IM Fell English", serif;
+  font-size: 16px; color: var(--ink-soft);
+}
+.dl-shell .btn-ghost-tag {
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 12px; letter-spacing: .25em; text-transform: uppercase;
+  padding: 10px 16px;
+  background: #fffbe6; color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer; text-decoration: none;
+}
+
+/* why no password */
+.dl-shell .why { background: #fff5d4; border-top: 4px solid var(--ink); border-bottom: 4px solid var(--ink); padding: 96px 28px; }
+.dl-shell .why h2.kicker {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .4em; text-transform: uppercase;
+  font-size: 13px; margin: 0 0 22px;
+  text-align: center; color: var(--red-deep);
+}
+.dl-shell .why h2.title {
+  font-family: "Alfa Slab One", serif; font-weight: 400;
+  text-align: center;
+  font-size: clamp(40px, 5.6vw, 72px);
+  line-height: 1; letter-spacing: .06em;
+  margin: 0 0 56px; text-indent: .06em;
+}
+.dl-shell .why h2.title em {
+  font-family: "Alfa Slab One", serif; font-style: normal;
+  color: var(--ink); padding: 0 .04em;
+  text-shadow: 2px 2px 0 var(--red), 4px 4px 0 var(--red-deep);
+}
+.dl-shell .why-grid {
+  max-width: 1080px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;
+}
+.dl-shell .why-item { text-align: center; }
+.dl-shell .why-item .icon { width: 130px; height: 130px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; }
+.dl-shell .why-item h3 {
+  font-family: "Alfa Slab One", serif; font-weight: 400;
+  font-size: 22px; letter-spacing: .12em; text-transform: uppercase;
+  margin: 0 0 8px; text-indent: .12em;
+}
+.dl-shell .why-item p {
+  font-family: "Special Elite", monospace;
+  font-size: 14px; line-height: 1.55;
+  margin: 0 auto; max-width: 30ch; color: var(--ink-soft);
+}
+
+@media (max-width: 880px) {
+  .dl-shell .form-card { padding: 40px 28px 32px; margin-top: -120px; }
+  .dl-shell .form-tag { top: -22px; right: -10px; }
+  .dl-shell .form-tag .sticker { width: 110px !important; height: 110px !important; }
+  .dl-shell .radio-grid { grid-template-columns: 1fr; }
+  .dl-shell .why-grid { grid-template-columns: 1fr; gap: 56px; }
+  .dl-shell .page-head { padding: 70px 22px 100px; }
+  /* Tame head-stickers on tablet — pull back so headline reads cleanly.
+     page-head-inner already has z-index:3 so text wins, but lower
+     opacity makes stickers feel like background texture, not foreground
+     competition. */
+  .dl-shell .head-stickers .s { opacity: 0.55; }
+  .dl-shell .head-stickers .s:nth-child(2),
+  .dl-shell .head-stickers .s:nth-child(4) { display: none; }
+}
+@media (max-width: 700px) {
+  /* Phone: hide more head-stickers + scale down + lower opacity, same
+     pattern as the homepage hero. Keeps brand identity present
+     without crowding the headline. */
+  .dl-shell .head-stickers .s:nth-child(3),
+  .dl-shell .head-stickers .s:nth-child(5) { display: none; }
+  .dl-shell .head-stickers .s { opacity: 0.4; transform: scale(0.75); }
+}
+@media (max-width: 560px) {
+  .dl-shell .magic-row { flex-direction: column; align-items: flex-start; }
+  .dl-shell .fine { max-width: 100%; }
+}
+
+/* ============================================================ */
+/* Suggest-a-Store page                                         */
+/* ============================================================ */
+
+/* Lighter variant of the page-head — cream background instead of dark,
+ * for pages where the form sits flush below rather than overlapping. */
+.dl-shell .page-head.light {
+  background: #fff5d4;
+  color: var(--ink);
+}
+.dl-shell .page-head.light .page-kicker { color: var(--red-deep); }
+.dl-shell .page-head.light .page-title { color: var(--ink); }
+.dl-shell .page-head.light .page-title em { color: var(--ink); }
+.dl-shell .page-head.light .page-sub { color: var(--ink-soft); }
+
+/* Form variant: sits flush below the header instead of lifting into a
+ * dark hero. Used by /suggest. */
+.dl-shell .form-card.flush { margin-top: 0; }
+
+/* Tag anchored on the left rather than the right — matches the design
+ * for the Suggest form's "TAKES 2 MIN" sticker. */
+.dl-shell .form-tag.left { right: auto; left: -28px; }
+
+/* Smaller form-wrap for /suggest — narrower than settings */
+.dl-shell .form-wrap-narrow { max-width: 760px; margin: 0 auto; position: relative; }
+
+/* Hint text inline beside labels */
+.dl-shell .dl-field .hint {
+  font-family: "IM Fell English", serif; font-style: italic;
+  font-size: 15px; color: var(--ink-soft);
+  margin-left: 8px; text-transform: none; letter-spacing: 0;
+}
+.dl-shell .dl-field textarea {
+  width: 100%;
+  border: 2px solid var(--ink);
+  background: #fffbe6;
+  font-family: "Special Elite", monospace;
+  font-size: 16px; padding: 14px 16px;
+  color: var(--ink); outline: none;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: box-shadow .15s;
+  min-height: 110px; resize: vertical; line-height: 1.5;
+}
+.dl-shell .dl-field textarea:focus { box-shadow: 4px 4px 0 var(--red); }
+.dl-shell .dl-field textarea::placeholder { color: #8a7c5a; }
+
+/* Autofill match banner — small sticker-style callout below brand name
+ * when we already know the store the user is typing about. */
+.dl-shell .autofill-banner {
+  margin: 14px 0 0;
+  padding: 14px 18px;
+  border: 2px solid var(--ink);
+  background: #fff8e2;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-family: "IM Fell English", serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.dl-shell .autofill-banner.active { background: var(--yellow); color: var(--ink); }
+.dl-shell .autofill-banner.no-email { background: #fde0de; color: var(--red-deep); }
+.dl-shell .autofill-banner strong {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  font-size: 16px;
+  letter-spacing: .02em;
+  color: var(--ink);
+}
+.dl-shell .autofill-meta {
+  margin-top: 6px;
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* FYI ships-USA note — soft inline note instead of a required checkbox */
+.dl-shell .ships-note {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 0 4px;
+  margin-bottom: 24px;
+  border-top: 2px dashed var(--ink);
+  padding-top: 18px;
+  margin-top: 8px;
+}
+.dl-shell .ships-note .seal {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--red); color: #fff8e2;
+  border: 2px solid var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  font-family: "Alfa Slab One", serif;
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.dl-shell .ships-note p {
+  margin: 0;
+  font-family: "IM Fell English", serif;
+  font-size: 16px; line-height: 1.45;
+  color: var(--ink-soft);
+}
+.dl-shell .ships-note p strong {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+/* Submit row */
+.dl-shell .submit-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap;
+  margin-top: 8px;
+}
+.dl-shell .submit-btn {
+  display: inline-block;
+  font-family: "Alfa Slab One", serif;
+  font-size: 22px;
+  letter-spacing: .14em;
+  text-indent: .14em;
+  padding: 18px 32px 16px;
+  background: var(--red);
+  color: #fff8e2;
+  border: 2px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform .12s, box-shadow .12s;
+}
+.dl-shell .submit-btn:hover { transform: translate(-2px, -2px); box-shadow: 8px 8px 0 var(--ink); }
+.dl-shell .submit-btn:active { transform: translate(2px, 2px); box-shadow: 3px 3px 0 var(--ink); }
+.dl-shell .submit-btn:disabled { opacity: .6; cursor: wait; }
+
+/* How we evaluate / criteria section */
+.dl-shell .eval {
+  background: #fff5d4;
+  border-top: 4px solid var(--ink);
+  border-bottom: 4px solid var(--ink);
+  padding: 96px 28px;
+  position: relative;
+}
+.dl-shell .eval h2.kicker {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .4em; text-transform: uppercase;
+  font-size: 13px; margin: 0 0 22px;
+  text-align: center; color: var(--red-deep);
+}
+.dl-shell .eval h2.title {
+  font-family: "Alfa Slab One", serif; font-weight: 400;
+  text-align: center;
+  font-size: clamp(40px, 5.6vw, 72px);
+  line-height: 1; letter-spacing: .06em;
+  margin: 0 0 56px; text-indent: .06em;
+}
+.dl-shell .eval h2.title em {
+  font-family: "Alfa Slab One", serif; font-style: normal;
+  color: var(--ink); padding: 0 .04em;
+  text-shadow: 2px 2px 0 var(--red), 4px 4px 0 var(--red-deep);
+}
+.dl-shell .criteria {
+  max-width: 1080px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;
+}
+.dl-shell .crit { text-align: center; }
+.dl-shell .crit .icon {
+  width: 130px; height: 130px;
+  margin: 0 auto 20px;
+  display: flex; align-items: center; justify-content: center;
+}
+.dl-shell .crit h3 {
+  font-family: "Alfa Slab One", serif; font-weight: 400;
+  font-size: 24px; letter-spacing: .12em; text-transform: uppercase;
+  margin: 0 0 8px; text-indent: .12em;
+}
+.dl-shell .crit p {
+  font-family: "Special Elite", monospace;
+  font-size: 14px; line-height: 1.55;
+  margin: 0 auto; max-width: 30ch; color: var(--ink-soft);
+}
+
+/* Recently added strip */
+.dl-shell .recent {
+  background: var(--cream);
+  padding: 96px 28px;
+  position: relative;
+}
+.dl-shell .recent h2.kicker {
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .4em; text-transform: uppercase;
+  font-size: 13px; margin: 0 0 22px;
+  text-align: center; color: var(--red-deep);
+}
+.dl-shell .recent h2.title {
+  font-family: "Alfa Slab One", serif; font-weight: 400;
+  text-align: center;
+  font-size: clamp(38px, 5.4vw, 64px);
+  line-height: 1; letter-spacing: .06em;
+  margin: 0 0 48px; text-indent: .06em;
+}
+.dl-shell .recent h2.title em {
+  font-family: "Alfa Slab One", serif; font-style: normal;
+  color: var(--ink); padding: 0 .04em;
+  text-shadow: 2px 2px 0 var(--red), 4px 4px 0 var(--red-deep);
+}
+.dl-shell .recent-grid {
+  max-width: 1080px; margin: 0 auto;
+  display: flex; justify-content: center;
+  flex-wrap: wrap;
+  gap: 36px 28px;
+}
+.dl-shell .recent-card {
+  width: 200px;
+  background: #fff5d4;
+  border: 2.5px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+  padding: 20px 18px 18px;
+  position: relative;
+}
+.dl-shell .recent-card:nth-child(2n) { transform: rotate(-1.5deg); background: #f0e1ad; }
+.dl-shell .recent-card:nth-child(3n) { transform: rotate(1deg); }
+.dl-shell .recent-card:nth-child(5n) { transform: rotate(-2deg); }
+.dl-shell .recent-card .since {
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 10px;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 6px;
+}
+.dl-shell .recent-card .name {
+  font-family: "Alfa Slab One", serif;
+  font-size: 20px;
+  letter-spacing: .04em;
+  line-height: 1.05;
+  margin: 0 0 12px;
+}
+.dl-shell .recent-card .meta {
+  font-family: "IM Fell English", serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.dl-shell .recent-card .seal {
+  position: absolute;
+  top: -16px; right: -16px;
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--red);
+  color: #fff8e2;
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  text-align: center;
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  transform: rotate(8deg);
+  line-height: 1.05;
+}
+.dl-shell .recent-card:nth-child(2n) .seal { background: var(--green); transform: rotate(-6deg); }
+.dl-shell .recent-card:nth-child(3n) .seal { background: var(--blue); transform: rotate(4deg); }
+.dl-shell .recent-card:nth-child(4n) .seal { background: var(--magenta); transform: rotate(-3deg); }
+.dl-shell .recent-card:nth-child(5n) .seal { background: var(--orange); transform: rotate(7deg); }
+
+@media (max-width: 980px) {
+  .dl-shell .criteria { grid-template-columns: 1fr; gap: 56px; }
+}
+@media (max-width: 880px) {
+  .dl-shell .recent-card { width: 160px; }
+  .dl-shell .form-tag.left { top: -22px; left: -10px; }
+}
+@media (max-width: 560px) {
+  .dl-shell .submit-row { flex-direction: column; align-items: flex-start; }
+}
+
+/* ============================================================ */
+/* Admin pages — restyle the existing layout classes to the     */
+/* Dossier palette/fonts. No structural rewrites; just adopt    */
+/* the new visual system over the existing card/stat/table grid */
+/* layout the admin pages were built on.                        */
+/* ============================================================ */
+
+.dl-shell .admin-route { background: var(--cream); }
+
+/* Editorial typography (the t-* family used heavily in admin) */
+.dl-shell .t-eyebrow {
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 11px;
+  letter-spacing: .4em;
+  text-transform: uppercase;
+  color: var(--red-deep);
+  margin: 0;
+}
+.dl-shell .t-meta {
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 11px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.dl-shell .t-mono {
+  font-family: "Stardos Stamp", "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: .08em;
+  color: var(--ink);
+}
+.dl-shell .t-display {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  letter-spacing: .04em;
+  color: var(--ink);
+}
+
+/* Admin header (top of page) */
+.dl-shell .admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.dl-shell .admin-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+/* Section labels — "01 Subscribers" style headers */
+.dl-shell .admin-section-label {
+  margin-top: 56px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--ink);
+}
+.dl-shell .admin-section-label .t-meta { color: var(--red-deep); font-size: 12px; letter-spacing: .3em; }
+
+/* Card grid — used for the 3-column stats / list layouts */
+.dl-shell .admin-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+@media (max-width: 880px) {
+  .dl-shell .admin-3col { grid-template-columns: 1fr; }
+}
+
+/* Cards — sticker-style with ink border + hard drop shadow */
+.dl-shell .admin-card {
+  background: #fff5d4;
+  border: 2.5px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+  padding: 28px;
+  position: relative;
+}
+.dl-shell .admin-card-tight { padding: 20px; }
+
+/* Stat tiles inside cards */
+.dl-shell .admin-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.dl-shell .admin-stat-row-4 { grid-template-columns: repeat(4, 1fr); }
+.dl-shell .admin-stat-row-5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 980px) {
+  .dl-shell .admin-stat-row-5 { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 700px) {
+  .dl-shell .admin-stat-row,
+  .dl-shell .admin-stat-row-4,
+  .dl-shell .admin-stat-row-5 { grid-template-columns: repeat(2, 1fr); }
+}
+.dl-shell .admin-stat {
+  padding: 16px 14px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  text-align: left;
+}
+.dl-shell .admin-stat-num {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+.dl-shell .admin-stat-label {
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 10px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0;
+}
+.dl-shell .admin-stat-sub {
+  font-family: "IM Fell English", serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 4px 0 0;
+}
+
+/* List rows — ranked retailers / categories */
+.dl-shell .admin-list { display: flex; flex-direction: column; }
+.dl-shell .admin-list-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1.5px dashed var(--ink-15);
+  align-items: baseline;
+}
+.dl-shell .admin-list-row:last-child { border-bottom: 0; }
+
+/* Table layouts (store suggestions, etc.) */
+.dl-shell .admin-table {
+  background: var(--paper);
+  border: 2.5px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+.dl-shell .admin-table-head {
+  display: grid;
+  padding: 14px 18px;
+  background: var(--ink);
+  color: var(--yellow);
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 10.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.dl-shell .admin-table-row {
+  display: grid;
+  padding: 14px 18px;
+  border-bottom: 1.5px dashed var(--ink-15);
+  font-family: "Special Elite", monospace;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.dl-shell .admin-table-row:last-child { border-bottom: 0; }
+
+/* Button styling — keep btn-primary/btn-ghost from globals.css working
+ * but give them the sticker treatment. These get used inside admin
+ * forms + as action buttons. */
+.dl-shell .btn-primary {
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  font-size: 14px;
+  letter-spacing: .14em;
+  text-indent: .14em;
+  text-transform: uppercase;
+  padding: 12px 22px 10px;
+  background: var(--red);
+  color: #fff8e2;
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: transform .12s, box-shadow .12s;
+}
+.dl-shell .btn-primary:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+.dl-shell .btn-primary:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
+.dl-shell .btn-primary:disabled { opacity: .55; cursor: wait; transform: none; box-shadow: 4px 4px 0 var(--ink); }
+
+.dl-shell .btn-ghost {
+  font-family: "Stardos Stamp", sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  padding: 9px 14px;
+  background: #fffbe6;
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: transform .12s, box-shadow .12s;
+}
+.dl-shell .btn-ghost:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+.dl-shell .btn-ghost:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+
+/* Wrap helper — admin uses `.wrap` for content width */
+.dl-shell .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+
+/* Field input styling for inputs nested under .field (used by admin
+ * components). Adopts the dl-field input look. */
+.dl-shell .field input,
+.dl-shell .field textarea,
+.dl-shell .field select {
+  width: 100%;
+  border: 2px solid var(--ink);
+  background: #fffbe6;
+  font-family: "Special Elite", monospace;
+  font-size: 15px;
+  padding: 12px 14px;
+  color: var(--ink);
+  outline: none;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: box-shadow .15s;
+}
+.dl-shell .field input:focus,
+.dl-shell .field textarea:focus,
+.dl-shell .field select:focus { box-shadow: 4px 4px 0 var(--red); }
