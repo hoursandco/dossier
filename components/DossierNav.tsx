@@ -115,7 +115,6 @@ export function DossierNav({
     <nav className="nav">
       <a className="brand" href="/">
         <span className="brand-badge">DEAL DOSSIER</span>
-        <span className="brand-sub">Today&rsquo;s sales, on demand.</span>
       </a>
 
       {/* Desktop link row — hidden on mobile via .nav-links-desktop CSS */}

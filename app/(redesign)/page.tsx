@@ -276,7 +276,7 @@ export default function PreviewRedesign() {
             </span>
             <span className="row">EVERY LIVE SALE.</span>
           </h1>
-          <p className="hero-eyebrow">— Less email. More markdown. —</p>
+          <p className="hero-eyebrow">— Today&rsquo;s sales, on demand. —</p>
           <p className="hero-sub">
             Tell us what you shop. Tap to pull the latest sales from 1,700 brands
             {' '}
