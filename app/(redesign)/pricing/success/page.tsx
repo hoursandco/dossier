@@ -4,6 +4,7 @@
 // before the user heads into /preferences.
 
 import Link from 'next/link'
+import { PixelEvent } from '@/components/PixelEvent'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +14,11 @@ const STAR_POINTS =
 export default function PricingSuccessPage() {
   return (
     <>
+      {/* Meta Pixel conversion: paid subscription completed. Value is a
+          baseline estimate (monthly plan); exact per-plan revenue would
+          come from the Stripe webhook via the Conversions API. */}
+      <PixelEvent event="Purchase" params={{ value: 4.99, currency: 'USD' }} />
+
       <nav className="nav">
         <a className="brand" href="/">
           <span className="brand-badge">DEAL DOSSIER</span>
