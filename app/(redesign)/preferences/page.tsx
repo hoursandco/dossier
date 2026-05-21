@@ -59,32 +59,10 @@ const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
 const DISCOUNT_OPTIONS = [20, 30, 40, 50, 60] as const
 const FREE_PICK_LIMIT = 3
 
-// Compact countdown formatter for the send-cooldown button. Shows the
-// two largest non-zero units so it reads naturally:
-//   6d 23h    (anything > 1 day shows days + hours)
-//   23h 15m   (under a day shows hours + minutes)
-//   15m 30s   (under an hour shows minutes + seconds)
-//   30s       (under a minute shows just seconds)
-function formatCooldown(ms: number): string {
-  if (ms <= 0) return '0s'
-  const totalSec = Math.ceil(ms / 1000)
-  const d = Math.floor(totalSec / 86400)
-  const h = Math.floor((totalSec % 86400) / 3600)
-  const m = Math.floor((totalSec % 3600) / 60)
-  const s = totalSec % 60
-  if (d > 0) return `${d}D ${h}H`
-  if (h > 0) return `${h}H ${m}M`
-  if (m > 0) return `${m}M ${s}S`
-  return `${s}S`
-}
-
 interface AccountInfo {
   email: string
   tier: 'free' | 'paid'
   weekly_email_enabled: boolean
-  // ISO string of when the free user can send again, or null if they're
-  // not in cooldown (either paid, or never sent / window expired).
-  next_ondemand_send_at: string | null
 }
 
 export default function PreviewSettings() {
@@ -110,15 +88,6 @@ export default function PreviewSettings() {
   const [refreshing, setRefreshing] = useState(false)
   const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [errMsg, setErrMsg] = useState<string | null>(null)
-  // Ticks every second so the send-cooldown countdown text stays live.
-  // Cheap — only re-renders the small countdown number. Reset to 0
-  // anchors the interval so React's StrictMode-double-mount doesn't
-  // produce duplicate intervals.
-  const [, setNowTick] = useState(0)
-  useEffect(() => {
-    const id = setInterval(() => setNowTick((n) => n + 1), 1000)
-    return () => clearInterval(id)
-  }, [])
 
   // Bootstrap: auth check, then load everything in parallel
   useEffect(() => {
@@ -147,14 +116,12 @@ export default function PreviewSettings() {
             email: accountRes.email,
             tier: accountRes.tier ?? 'free',
             weekly_email_enabled: !!accountRes.weekly_email_enabled,
-            next_ondemand_send_at: accountRes.next_ondemand_send_at ?? null,
           })
         } else {
           setAccount({
             email: user.email!,
             tier: 'free',
             weekly_email_enabled: true,
-            next_ondemand_send_at: null,
           })
         }
         setIsAdmin(!!adminRes.isAdmin)
@@ -365,16 +332,8 @@ export default function PreviewSettings() {
       const res = await fetch('/api/deals/refresh', { method: 'POST' })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) {
-        // Custom-formatted errors for the two free-tier guardrails so
-        // the user sees actionable copy, not just a generic failure.
-        if (res.status === 429 && d.retry_after_iso) {
-          const when = new Date(d.retry_after_iso).toLocaleDateString(undefined, {
-            weekday: 'long',
-            month: 'short',
-            day: 'numeric',
-          })
-          throw new Error(`Free tier sends 1 email per week. Next send: ${when}. Upgrade for unlimited.`)
-        }
+        // Custom-formatted error for the free-tier pick-limit guardrail
+        // so the user sees actionable copy, not just a generic failure.
         if (res.status === 403 && d.over_limit) {
           throw new Error(
             `You have ${d.current_picks} picks but free tier allows ${d.allowed_picks}. Remove ${d.current_picks - d.allowed_picks} to send.`
@@ -390,21 +349,6 @@ export default function PreviewSettings() {
           ? `Sent — ${n} ${n === 1 ? 'deal' : 'deals'} across your watchlist. Check your inbox.`
           : `Nothing fresh right now. We'll keep watching and email when something lands.`
       )
-      // Refetch account so next_ondemand_send_at populates and the
-      // countdown starts ticking immediately on the button below.
-      try {
-        const fresh = await fetch('/api/account').then((r) => r.ok ? r.json() : null)
-        if (fresh?.email) {
-          setAccount({
-            email: fresh.email,
-            tier: fresh.tier ?? 'free',
-            weekly_email_enabled: !!fresh.weekly_email_enabled,
-            next_ondemand_send_at: fresh.next_ondemand_send_at ?? null,
-          })
-        }
-      } catch {
-        // Non-fatal — countdown will sync on next page load.
-      }
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : 'Refresh failed')
     } finally {
@@ -984,22 +928,9 @@ export default function PreviewSettings() {
             )}
 
             {/* ACTIONS */}
-            {/* Cooldown math — derived from the live setNowTick state
-                above. Paid users have no cooldown so cooldownMs stays
-                <= 0 and the button reads normally. */}
             {(() => {
-              const cooldownMs = account?.next_ondemand_send_at
-                ? new Date(account.next_ondemand_send_at).getTime() - Date.now()
-                : 0
-              const inCooldown = cooldownMs > 0 && !isPaid
-              const buttonText = refreshing
-                ? 'SENDING…'
-                : inCooldown
-                ? `NEXT SEND IN ${formatCooldown(cooldownMs)}`
-                : 'SEND ME DEALS NOW →'
-              const fineLine = inCooldown
-                ? `Free tier: one self-send per week. Upgrade for unlimited.`
-                : pickCount === 0
+              const buttonText = refreshing ? 'SENDING…' : 'SEND ME DEALS NOW →'
+              const fineLine = pickCount === 0
                 ? `Pick at least one above first.`
                 : `Pulls fresh deals matching\nyour ${pickCount} active ${pickCount === 1 ? 'pick' : 'picks'}.`
               return (
@@ -1008,7 +939,7 @@ export default function PreviewSettings() {
                     className="magic"
                     type="button"
                     onClick={refreshDeals}
-                    disabled={refreshing || inCooldown || pickCount === 0 || overLimit}
+                    disabled={refreshing || pickCount === 0 || overLimit}
                   >
                     {buttonText}
                   </button>
