@@ -131,7 +131,6 @@ export default async function PreviewPricing() {
                 }}
               >
                 {[
-                  { title: 'Unlimited deal pulls', body: 'Tap "send me deals now" as often as you want. Free tier gets one a week — paid is unlimited.' },
                   { title: 'Unlimited picks', body: 'Watch every category AND every favorite store — no 3-pick cap.' },
                   { title: 'Per-pick modifiers', body: 'Narrow each pick by sub-type, price tier ($–$$$$), and minimum discount.' },
                   { title: 'Ad-free emails', body: 'No sponsored slots, no inline ads — just the deals.' },

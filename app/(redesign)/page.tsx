@@ -325,9 +325,9 @@ export default function PreviewRedesign() {
           to the three numbers that actually sell the product:
             1. Coverage breadth     — total brands in directory
             2. Live activity        — deals surfaced this week
-            3. Brand promise        — "1 email per week. Max." — the
-                                      smallest number is also the most
-                                      important: it's why someone signs up. */}
+            3. Brand promise        — "0 daily blasts" — the anti-spam
+                                      promise: emails arrive on demand,
+                                      never as an unprompted daily push. */}
       <section className="counters">
         <div className="counters-inner">
 
@@ -364,8 +364,8 @@ export default function PreviewRedesign() {
               </svg>
             </div>
             <div className="content" style={{ color: '#fff8e2' }}>
-              <div className="n">1</div>
-              <div className="l">Email per week.<br />Max.</div>
+              <div className="n">0</div>
+              <div className="l">Daily blasts.<br />Ever.</div>
             </div>
           </div>
 
@@ -633,7 +633,7 @@ export default function PreviewRedesign() {
             <p className="price-sub">Enough to try. Built to outgrow.</p>
             <ul>
               <li><span className="check">✱</span><div><h4>3 picks total</h4><p>Any mix of categories or specific stores.</p></div></li>
-              <li><span className="check">✱</span><div><h4>1 self-send per week</h4><p>Plus the auto-Thursday digest. Save the button for when it counts.</p></div></li>
+              <li><span className="check">✱</span><div><h4>Unlimited on-demand sends</h4><p>Tap &ldquo;send me deals&rdquo; before every shopping trip — as often as you want.</p></div></li>
               <li><span className="check">✱</span><div><h4>Includes light ads</h4><p>Small, on-site only. Never in your email.</p></div></li>
               <li><span className="check">✱</span><div><h4>No credit card, ever</h4><p>Free means free. Upgrade only if you want more.</p></div></li>
             </ul>
@@ -658,7 +658,7 @@ export default function PreviewRedesign() {
             <p className="price-sub">or $45/year — save 25%</p>
             <ul>
               <li><span className="check">✱</span><div><h4>Unlimited picks</h4><p>Every category AND every favorite store. Watch all of them.</p></div></li>
-              <li><span className="check">✱</span><div><h4>Unlimited self-sends</h4><p>Hit &ldquo;send me deals&rdquo; whenever you want. No weekly cooldown.</p></div></li>
+              <li><span className="check">✱</span><div><h4>Priority alerts</h4><p>Time-sensitive deals — flash sales, exclusive codes — surface first.</p></div></li>
               <li><span className="check">✱</span><div><h4>Per-watch modifiers</h4><p>Narrow each pick by sub-type, price tier ($–$$$$), minimum discount %.</p></div></li>
               <li><span className="check">✱</span><div><h4>Zero ads anywhere</h4><p>Clean site experience. Clean emails. Just the deals.</p></div></li>
               <li><span className="check">✱</span><div><h4>Cancel anytime</h4><p>One click from settings. Keep your watchlist, drop the bill.</p></div></li>
