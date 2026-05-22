@@ -27,36 +27,72 @@ export interface StoreRow {
 
 export async function GET() {
   const supabase = createServiceClient()
-  const { data, error } = await supabase
-    .from('stores')
-    .select(
-      'id, name, website, categories, sub_types, price_tier, age_group, date_added, status, is_active'
-    )
-    .neq('status', 'declined')
-    .order('name', { ascending: true })
 
-  if (error) {
-    // status column missing → migration 019 not applied yet. Fall back
-    // to the pre-019 query so the autofill keeps working during the
-    // mid-deploy gap.
-    const code = (error as { code?: string }).code
-    if (code === '42703') {
-      console.warn('[stores] status column missing — falling back. Run migration 019.')
-      const fallback = await supabase
+  // PostgREST caps every request at ~1000 rows regardless of .limit(),
+  // and the directory is 1700+. Page through with .range() — otherwise
+  // the brand picker / autofill only ever sees the first 1000 stores
+  // alphabetically, so everything from ~"S" onward (Zara included) is
+  // silently invisible.
+  const PAGE_SIZE = 1000
+
+  const primaryPage = (i: number) =>
+    supabase
+      .from('stores')
+      .select(
+        'id, name, website, categories, sub_types, price_tier, age_group, date_added, status, is_active'
+      )
+      .neq('status', 'declined')
+      .order('name', { ascending: true })
+      .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+
+  const page0 = await primaryPage(0)
+
+  if (!page0.error) {
+    const all = [...(page0.data ?? [])]
+    let lastCount = page0.data?.length ?? 0
+    let i = 1
+    while (lastCount === PAGE_SIZE && i < 10) {
+      const next = await primaryPage(i)
+      if (next.error) {
+        console.error('[stores] pagination error page', i, JSON.stringify(next.error))
+        break
+      }
+      const rows = next.data ?? []
+      all.push(...rows)
+      lastCount = rows.length
+      i++
+    }
+    return NextResponse.json({ stores: all })
+  }
+
+  // 42703 = status column missing → migration 019 not applied yet. Fall
+  // back to the pre-019 query so the autofill keeps working.
+  if ((page0.error as { code?: string }).code === '42703') {
+    console.warn('[stores] status column missing — falling back. Run migration 019.')
+    const fbPage = (i: number) =>
+      supabase
         .from('stores')
         .select('id, name, website, categories, sub_types, price_tier, age_group, date_added, is_active')
         .eq('is_active', true)
         .order('name', { ascending: true })
-      if (fallback.error) {
-        console.error('[stores] fallback error:', JSON.stringify(fallback.error))
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    const all: Array<Record<string, unknown>> = []
+    let lastCount = PAGE_SIZE
+    let i = 0
+    while (lastCount === PAGE_SIZE && i < 10) {
+      const fb = await fbPage(i)
+      if (fb.error) {
+        console.error('[stores] fallback error:', JSON.stringify(fb.error))
         return NextResponse.json({ stores: [], error: 'Failed to load stores' }, { status: 200 })
       }
-      const stores = (fallback.data ?? []).map((s) => ({ ...s, status: 'active' }))
-      return NextResponse.json({ stores })
+      const rows = fb.data ?? []
+      all.push(...rows.map((s) => ({ ...s, status: 'active' })))
+      lastCount = rows.length
+      i++
     }
-    console.error('[stores] lookup error:', JSON.stringify(error))
-    return NextResponse.json({ stores: [], error: 'Failed to load stores' }, { status: 200 })
+    return NextResponse.json({ stores: all })
   }
 
-  return NextResponse.json({ stores: data ?? [] })
+  console.error('[stores] lookup error:', JSON.stringify(page0.error))
+  return NextResponse.json({ stores: [], error: 'Failed to load stores' }, { status: 200 })
 }
