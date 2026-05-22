@@ -441,10 +441,16 @@ export default function PreviewSettings() {
   // again in the "add" list).
   const pickedStoreIds = useMemo(() => new Set(storePicks.map((p) => p.store_id)), [storePicks])
   const filteredStores = useMemo(() => {
-    const q = storeSearch.trim().toLowerCase()
+    // Strip non-alphanumerics from both query and name so "dr martens",
+    // "drmartens", and "Dr. Martens" all match the same store.
+    const q = storeSearch.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
     if (!q) return []
     return storeDirectory
-      .filter((s) => !pickedStoreIds.has(s.id) && s.name.toLowerCase().includes(q))
+      .filter(
+        (s) =>
+          !pickedStoreIds.has(s.id) &&
+          s.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(q)
+      )
       .slice(0, 40)
   }, [storeSearch, storeDirectory, pickedStoreIds])
 

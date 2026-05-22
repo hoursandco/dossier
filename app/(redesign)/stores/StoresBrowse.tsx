@@ -106,7 +106,12 @@ export function StoresBrowse() {
   // Debounce search so we don't filter on every keystroke (1700+ stores
   // is still snappy but the user-perceived smoothness improves).
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim().toLowerCase()), 180)
+    // Strip non-alphanumerics so "dr martens" / "drmartens" / "Dr. Martens"
+    // all match — punctuation in store names shouldn't break search.
+    const t = setTimeout(
+      () => setDebouncedSearch(search.trim().toLowerCase().replace(/[^a-z0-9]/g, '')),
+      180
+    )
     return () => clearTimeout(t)
   }, [search])
 
@@ -124,7 +129,7 @@ export function StoresBrowse() {
   // order so we only pay for the sort when they switch modes).
   const filteredStores = useMemo(() => {
     const filtered = stores.filter((s) => {
-      if (debouncedSearch && !s.name.toLowerCase().includes(debouncedSearch)) return false
+      if (debouncedSearch && !s.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(debouncedSearch)) return false
       if (categoryFilter && !(s.categories ?? []).includes(categoryFilter)) return false
       if (priceTierFilter && s.price_tier !== priceTierFilter) return false
       return true
