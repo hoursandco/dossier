@@ -27,6 +27,7 @@ export default function PreviewRedesign() {
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [subscribeError, setSubscribeError] = useState('')
   const [stats, setStats] = useState<Stats | null>(null)
   // Brand directory size + a sample of recognizable names — drives
   // BOTH the social-proof number strip AND the scrolling brand
@@ -150,20 +151,37 @@ export default function PreviewRedesign() {
     e.preventDefault()
     if (!email) return
     setSubmitting(true)
+    setSubscribeError('')
     try {
+      // 1. Create/update the subscriber row.
       await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       })
-      setSubmitted(true)
-      // Conversion tracking — the homepage hero form is a real signup
-      // (it creates the subscriber row) and is where most ad traffic
-      // converts. Fire the same events as the /login form.
-      trackPixel('Lead')
-      trackEvent('sign_up', { method: 'email', location: 'homepage_hero' })
+      // 2. Send the magic-link sign-in email. Without this step the
+      //    signup never completes — the button would say "CHECK INBOX"
+      //    while no email was ever sent.
+      const res = await fetch('/api/auth/magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          redirectTo: `${window.location.origin}/auth/callback`,
+        }),
+      })
+      if (res.ok) {
+        setSubmitted(true)
+        // Conversion tracking — the homepage hero form is where most
+        // ad traffic converts. Fire the same events as the /login form.
+        trackPixel('Lead')
+        trackEvent('sign_up', { method: 'magic_link', location: 'homepage_hero' })
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setSubscribeError(data.error || 'Something went wrong. Please try again.')
+      }
     } catch {
-      // swallow — keep UX simple for preview
+      setSubscribeError('Something went wrong. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -316,6 +334,11 @@ export default function PreviewRedesign() {
               </button>
             </form>
           </div>
+          {subscribeError && (
+            <p className="cta-fineprint" style={{ color: 'var(--red, #d4322a)' }}>
+              {subscribeError}
+            </p>
+          )}
           <p className="cta-fineprint">No credit card · No password · Unsubscribe anytime</p>
         </div>
       </section>
