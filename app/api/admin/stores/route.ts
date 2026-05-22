@@ -29,27 +29,56 @@ export async function GET(request: NextRequest) {
 
   const url = new URL(request.url)
   const search = url.searchParams.get('q')?.trim() ?? ''
+  const status = url.searchParams.get('status')?.trim() ?? ''
+  const category = url.searchParams.get('category')?.trim() ?? ''
 
   const service = createServiceClient()
   const safeSearch = search ? search.replace(/[\\%_]/g, '\\$&') : null
 
-  // Primary path: post-019 schema with status column.
-  let primaryQuery = service
-    .from('stores')
-    .select(
-      'id, name, website, categories, sub_types, price_tier, is_active, status, age_group, affiliate_id, date_added, updated_at'
-    )
-    .order('name', { ascending: true })
-  if (safeSearch) primaryQuery = primaryQuery.ilike('name', `%${safeSearch}%`)
-  const primary = await primaryQuery
+  // PostgREST caps every request at ~1000 rows regardless of .limit(),
+  // and the directory is 1700+. Page through with .range() — and apply
+  // the status/category filters in SQL — so the admin list (and the
+  // auto-added review panel, which filters status=auto_added) see the
+  // whole table instead of a silently-truncated, unfiltered first 1000.
+  const PAGE_SIZE = 1000
+  const SELECT_COLS =
+    'id, name, website, categories, sub_types, price_tier, is_active, status, age_group, affiliate_id, date_added, updated_at'
 
-  if (!primary.error) {
-    return NextResponse.json({ stores: primary.data ?? [] })
+  const buildQuery = (pageIndex: number) => {
+    let q = service
+      .from('stores')
+      .select(SELECT_COLS)
+      .order('name', { ascending: true })
+      .range(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE - 1)
+    if (safeSearch) q = q.ilike('name', `%${safeSearch}%`)
+    if (category) q = q.contains('categories', [category])
+    if (status) q = q.eq('status', status)
+    return q
   }
 
-  // 42703 = column doesn't exist → migration 019 not applied yet. Fall
-  // back to the pre-019 query so the admin UI works during the gap.
-  if ((primary.error as { code?: string }).code === '42703') {
+  const page0 = await buildQuery(0)
+
+  if (!page0.error) {
+    const all = [...(page0.data ?? [])]
+    let lastCount = page0.data?.length ?? 0
+    let pageIndex = 1
+    while (lastCount === PAGE_SIZE && pageIndex < 10) {
+      const next = await buildQuery(pageIndex)
+      if (next.error) {
+        console.error('[admin stores] pagination error page', pageIndex, JSON.stringify(next.error))
+        break
+      }
+      const rows = next.data ?? []
+      all.push(...rows)
+      lastCount = rows.length
+      pageIndex++
+    }
+    return NextResponse.json({ stores: all })
+  }
+
+  // 42703 = status column doesn't exist → migration 019 not applied
+  // yet. Fall back to the pre-019 query so the admin UI still works.
+  if ((page0.error as { code?: string }).code === '42703') {
     console.warn('[admin stores] status column missing — falling back. Run migration 019.')
     let fallbackQuery = service
       .from('stores')
@@ -58,19 +87,22 @@ export async function GET(request: NextRequest) {
       )
       .order('name', { ascending: true })
     if (safeSearch) fallbackQuery = fallbackQuery.ilike('name', `%${safeSearch}%`)
+    if (category) fallbackQuery = fallbackQuery.contains('categories', [category])
     const fallback = await fallbackQuery
     if (fallback.error) {
       console.error('[admin stores] fallback error:', JSON.stringify(fallback.error))
       return NextResponse.json({ error: 'Failed to load stores' }, { status: 500 })
     }
-    const stores = (fallback.data ?? []).map((s) => ({
+    let stores = (fallback.data ?? []).map((s) => ({
       ...s,
       status: s.is_active ? 'active' : 'pending',
     }))
+    // Pre-019 has no status column — apply the status filter in memory.
+    if (status) stores = stores.filter((s) => s.status === status)
     return NextResponse.json({ stores })
   }
 
-  console.error('[admin stores] list error:', JSON.stringify(primary.error))
+  console.error('[admin stores] list error:', JSON.stringify(page0.error))
   return NextResponse.json({ error: 'Failed to load stores' }, { status: 500 })
 }
 

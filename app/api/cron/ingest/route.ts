@@ -153,9 +153,33 @@ export async function GET(request: NextRequest) {
     //   2. Auto-activate pending stores when their first email arrives
     //      (so the directory self-validates — pending = "we suspect they
     //      send promo email" → confirmed when ingest sees one)
-    const { data: storeRows } = await supabase
-      .from('stores')
-      .select('id, name, categories, is_active, status')
+    // PostgREST caps each request at ~1000 rows and the directory is
+    // 1700+. Page through — otherwise the ingest only "sees" the first
+    // 1000 stores, so every brand beyond that looks unknown: it never
+    // category-routes them and never auto-activates their pending row.
+    type StoreLoadRow = {
+      id: string
+      name: string | null
+      categories: string[] | null
+      is_active: boolean
+      status: string | null
+    }
+    const STORE_PAGE = 1000
+    const storeRows: StoreLoadRow[] = []
+    for (let p = 0; p < 10; p++) {
+      const { data: page, error: pageErr } = await supabase
+        .from('stores')
+        .select('id, name, categories, is_active, status')
+        .order('name', { ascending: true })
+        .range(p * STORE_PAGE, (p + 1) * STORE_PAGE - 1)
+      if (pageErr) {
+        console.error('[ingest] store-load page error', p, JSON.stringify(pageErr))
+        break
+      }
+      if (!page || page.length === 0) break
+      storeRows.push(...(page as StoreLoadRow[]))
+      if (page.length < STORE_PAGE) break
+    }
     interface StoreMatch {
       id: string
       categories: string[]
