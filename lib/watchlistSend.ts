@@ -4,10 +4,14 @@
 //   - /api/deals/refresh   (on-demand, user-triggered)
 //   - /api/cron/weekly     (Thursday cron, all-subscribers)
 //
-// The logic — load watches, pull recent non-expired deals, filter per watch,
-// rank, generate the email, send via Resend, bump per-watch
-// last_email_sent_at — lives in exactly one place so the on-demand and
-// scheduled paths can't drift apart.
+// The watchlist is the union of two things:
+//   - category watches (subscriber_watches) — "I'm shopping for Skincare"
+//   - store picks       (subscriber_stores) — "I'm watching J.Crew"
+// Both produce sections in the email. The empty-watchlist nudge only
+// fires when BOTH are empty.
+//
+// Keeping this in one place means the on-demand and scheduled paths
+// can't drift apart.
 
 import { format } from 'date-fns'
 import type { Deal } from '@/types'
@@ -27,8 +31,8 @@ const MAX_DEALS_PER_WATCH = 15
 export interface WatchlistSendResult {
   sent: boolean
   reason?: string                 // e.g. 'email_send_failed'
-  was_empty_nudge: boolean        // true if subscriber had 0 watches
-  watches_count: number
+  was_empty_nudge: boolean        // true if subscriber had 0 watches + 0 picks
+  watches_count: number           // category watches + store picks
   total_deals: number
   breakdown: Array<{ watch: string; deals: number }>
 }
@@ -42,12 +46,18 @@ interface WatchRow {
   category_label: string
 }
 
+// Loose retailer/store name match — lowercase, strip non-alphanumerics —
+// so "J.Crew" / "J. Crew" / "JCrew" all collapse to the same key.
+function normName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
 export async function sendWatchlistEmailForSubscriber(
   service: SupabaseClient,
   appUrl: string,
   subscriber: { id: string; email: string },
 ): Promise<WatchlistSendResult> {
-  // ── Load watches ─────────────────────────────────────────────────────
+  // ── Load category watches ────────────────────────────────────────────
   const { data: watchRows } = await service
     .from('subscriber_watches')
     .select(`
@@ -72,8 +82,28 @@ export async function sendWatchlistEmailForSubscriber(
     }
   })
 
-  // ── Empty watchlist → send nudge email ───────────────────────────────
-  if (watches.length === 0) {
+  // ── Load store picks ─────────────────────────────────────────────────
+  const { data: storeRows, error: storeErr } = await service
+    .from('subscriber_stores')
+    .select('store_id, stores!inner(id, name)')
+    .eq('subscriber_id', subscriber.id)
+
+  if (storeErr) {
+    // 42P01 / PGRST205 = subscriber_stores table missing (migration 028
+    // not applied). Degrade to category-only rather than crash.
+    console.warn('[watchlistSend] store-picks load failed:', JSON.stringify(storeErr))
+  }
+
+  type PickedStore = { id: string; name: string }
+  const storePicks: PickedStore[] = (storeRows ?? [])
+    .map((r) => {
+      const s = Array.isArray(r.stores) ? r.stores[0] : r.stores
+      return s as PickedStore | undefined
+    })
+    .filter((s): s is PickedStore => !!s && !!s.name)
+
+  // ── Both empty → send the nudge email ────────────────────────────────
+  if (watches.length === 0 && storePicks.length === 0) {
     const html = generateEmptyWatchlistNudgeEmail({ appUrl })
     const result = await sendEmail({
       to: subscriber.email,
@@ -104,7 +134,8 @@ export async function sendWatchlistEmailForSubscriber(
 
   const { storeTiers } = await fetchStoreData(appUrl)
 
-  const watchSections: WatchSection[] = watches.map((w) => {
+  // ── Category sections: deals whose categories include the watch slug ──
+  const categorySections: WatchSection[] = watches.map((w) => {
     const matching = allDeals.filter((d) => {
       const cats = (d.categories ?? []) as string[]
       if (!cats.includes(w.category_slug)) return false
@@ -118,6 +149,16 @@ export async function sendWatchlistEmailForSubscriber(
     return { label, deals: ranked }
   })
 
+  // ── Store-pick sections: deals whose retailer matches the picked store ─
+  const storeSections: WatchSection[] = storePicks.map((sp) => {
+    const target = normName(sp.name)
+    const matching = allDeals.filter((d) => d.retailer && normName(d.retailer) === target)
+    const ranked = rankDeals(matching, storeTiers).slice(0, MAX_DEALS_PER_WATCH)
+    return { label: sp.name, deals: ranked }
+  })
+
+  const watchSections: WatchSection[] = [...categorySections, ...storeSections]
+
   const totalDeals = watchSections.reduce((sum, s) => sum + s.deals.length, 0)
   const html = generateWatchlistEmail({ appUrl, watchSections })
 
@@ -130,7 +171,8 @@ export async function sendWatchlistEmailForSubscriber(
   })
 
   // ── Bump per-watch last_email_sent_at on success ─────────────────────
-  if (result) {
+  // Only category watches carry this column; store picks don't track it.
+  if (result && watches.length > 0) {
     const nowIso = new Date().toISOString()
     await service
       .from('subscriber_watches')
@@ -142,7 +184,7 @@ export async function sendWatchlistEmailForSubscriber(
     sent: !!result,
     reason: result ? undefined : 'email_send_failed',
     was_empty_nudge: false,
-    watches_count: watches.length,
+    watches_count: watches.length + storePicks.length,
     total_deals: totalDeals,
     breakdown: watchSections.map((s) => ({ watch: s.label, deals: s.deals.length })),
   }
