@@ -10,19 +10,9 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
-      // Check if this user has completed onboarding
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user?.email) {
-        const { data: sub } = await supabase
-          .from('subscribers')
-          .select('onboarding_completed')
-          .eq('email', user.email)
-          .single()
-
-        if (sub && !sub.onboarding_completed) {
-          return NextResponse.redirect(`${origin}/welcome`)
-        }
-      }
+      // /preferences IS onboarding in the redesign (empty watchlist +
+      // category picker for new users). The old /welcome route was
+      // removed when the redesign replaced it — never redirect there.
       return NextResponse.redirect(`${origin}${next ?? '/preferences'}`)
     }
   }

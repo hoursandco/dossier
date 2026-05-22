@@ -32,19 +32,12 @@ export default function AuthCallbackPage() {
         return
       }
 
-      // Check onboarding status
-      const { data: sub } = await supabase
-        .from('subscribers')
-        .select('onboarding_completed')
-        .eq('email', data.user.email!)
-        .single()
-
-      if (sub && !sub.onboarding_completed) {
-        router.replace('/welcome')
-      } else {
-        const next = new URLSearchParams(window.location.search).get('next')
-        router.replace(next ?? '/preferences')
-      }
+      // Into the app. /preferences IS onboarding in the redesign — new
+      // users land on an empty watchlist + category picker, returning
+      // users see their picks. The old /welcome route was removed when
+      // the redesign replaced it, so never redirect there.
+      const next = new URLSearchParams(window.location.search).get('next')
+      router.replace(next ?? '/preferences')
     }
 
     handleCallback()
