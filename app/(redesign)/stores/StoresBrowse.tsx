@@ -700,7 +700,7 @@ function LimitModal({
           {allowed} picks max <span style={{ fontFamily: "'Alfa Slab One', serif", textShadow: '2px 2px 0 #d4322a, 4px 4px 0 #b3211a', padding: '0 .04em' }}>on free.</span>
         </h3>
         <p style={{ margin: '0 0 22px', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 16, lineHeight: 1.5 }}>
-          You have {current} picks. Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited picks and unlimited self-sends.
+          You have {current} picks. Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited category and store picks.
         </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <a

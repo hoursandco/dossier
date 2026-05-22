@@ -995,7 +995,7 @@ export default function PreviewSettings() {
                       lineHeight: 1.45,
                     }}
                   >
-                    Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited picks and unlimited self-sends.
+                    Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited category and store picks.
                   </p>
                 </div>
                 <a
@@ -1436,7 +1436,7 @@ function LimitReachedModal({
             color: '#181612',
           }}
         >
-          You have {current} picks across categories and stores. Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited picks and unlimited self-sends, or remove one to swap in a new pick.
+          You have {current} picks across categories and stores. Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited category and store picks, or remove one to swap in a new pick.
         </p>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
