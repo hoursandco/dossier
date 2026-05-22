@@ -44,10 +44,12 @@ const INGEST_CONCURRENCY = Math.max(
 // 5 minutes; a fresh inbox with weeks of accumulated subs can have hundreds of
 // promo emails in the 24-hour IMAP window. Capping per-run lets each invocation
 // finish reliably — the hourly cron clears the backlog in a handful of runs.
-// Tunable via INGEST_MAX_PER_RUN env var.
+// Tunable via INGEST_MAX_PER_RUN env var. 60 with concurrency 5 finishes
+// well under the 300s maxDuration; combined with newest-first ordering
+// it keeps up with steady-state inbox volume between hourly runs.
 const INGEST_MAX_PER_RUN = Math.max(
   1,
-  Number(process.env.INGEST_MAX_PER_RUN) || 30
+  Number(process.env.INGEST_MAX_PER_RUN) || 60
 )
 
 // Queue-based worker pool. Unlike batched Promise.all, a new task starts the
@@ -208,13 +210,19 @@ export async function GET(request: NextRequest) {
     // emails come from the same retailer.
     const retailerCategoriesCache = new Map<string, boolean>()
 
-    // Per-run cap: process oldest-UID-first so the cursor advances
-    // monotonically. Anything not processed this run picks up next hour at
-    // `UID > <max processed UID>`. Sorting by UID (not date) keeps the
-    // cursor semantically correct.
+    // Per-run cap: process NEWEST-UID-first.
+    //
+    // The mailbox accumulates faster than any single capped run can
+    // drain it. Oldest-first meant the cursor crawled through weeks-old
+    // expired promos while *today's* deals sat at the back of a
+    // 2000-deep queue — so the watchlist emails always showed stale or
+    // missing sales. Newest-first processes the freshest emails every
+    // run; the cursor then advances to the newest processed UID, which
+    // intentionally skips the older backlog. That's correct: those
+    // promos are long expired and worthless to ingest.
     const newEmails = emails
       .slice()
-      .sort((a, b) => a.uid - b.uid)
+      .sort((a, b) => b.uid - a.uid)
       .slice(0, INGEST_MAX_PER_RUN)
 
     const deferred = emails.length - newEmails.length
