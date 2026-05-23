@@ -12,7 +12,10 @@ import { overrideCategoriesForRetailer } from '@/lib/deals'
 function getClient() {
   return new OpenAI({
     apiKey: process.env.GEMINI_API_KEY || 'placeholder',
-    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    // NO trailing slash. The OpenAI SDK appends "/chat/completions" to
+    // baseURL — with a trailing slash the URL becomes "/openai//chat/..."
+    // (double slash) and Gemini's endpoint 404s on that.
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
   })
 }
 
@@ -115,7 +118,7 @@ async function callOpenAIWithRetry(
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await client.chat.completions.create({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
