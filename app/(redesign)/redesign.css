@@ -954,7 +954,12 @@
 .dl-shell .cat:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
 .dl-shell .cat-head {
   display: grid;
-  grid-template-columns: 28px 1fr auto auto;
+  /* minmax(0, 1fr) — NOT plain "1fr". Plain 1fr is minmax(auto, 1fr)
+     which lets a long title ("Shoes & Accessories") expand past 1fr
+     and shove the count + chevron columns off the right side of the
+     row. minmax(0, 1fr) caps the column at its share of the row so
+     the title wraps instead. */
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
   gap: 14px;
   align-items: center;
   padding: 16px 18px;
@@ -980,7 +985,12 @@
   font-size: 18px;
   letter-spacing: .04em;
   margin: 0;
-  line-height: 1;
+  line-height: 1.1;
+  /* Belt-and-suspenders with minmax(0, 1fr) above — make sure a long
+     single word ("Accessories", "Entertainment") will hyphenate or
+     break to a second line instead of overflowing. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .dl-shell .cat-count {
   font-family: "Stardos Stamp", sans-serif;
@@ -1186,7 +1196,7 @@
   /* Tighten cat-head on narrow screens — desktop's 18px side padding +
      14px grid gap eats half the row at phone widths, squeezing the
      category title to ~50px. */
-  .dl-shell .cat-head { padding: 14px 12px; gap: 10px; grid-template-columns: 22px 1fr auto auto; }
+  .dl-shell .cat-head { padding: 14px 12px; gap: 10px; grid-template-columns: 22px minmax(0, 1fr) auto auto; }
   .dl-shell .cat-head h4 { font-size: 16px; }
   .dl-shell .cat-body { padding: 4px 12px 14px; }
   .dl-shell .radio-grid { grid-template-columns: 1fr; }
