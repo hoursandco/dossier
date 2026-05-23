@@ -309,7 +309,15 @@ export function HomePicker() {
   return (
     <section className="form-section">
       <div className="form-wrap-narrow">
-        <div className="form-card flush">
+        {/* Drop `flush` so the form-card lifts INTO the dark hero above,
+            matching /preferences. We override the default -180px lift
+            with a clamped value so the counters that live at the bottom
+            of the hero don't get eaten by the form. Hero's padding-
+            bottom was bumped in redesign.css to leave clearance. */}
+        <div
+          className="form-card"
+          style={{ marginTop: 'clamp(-140px, -14vw, -80px)' }}
+        >
           {/* Corner tag sticker — peeks out the top-right of the card,
               same as /preferences. Visible to everyone (free signup is
               the whole point). */}
