@@ -778,6 +778,23 @@
   .dl-shell .hero-sub { font-size: 15px; }
   .dl-shell .counters-inner { flex-direction: column; align-items: center; margin-top: -60px; }
   .dl-shell .brand-sub { display: none; }
+  /* Footer wordmark — "DEAL DOSSIER" stays nowrap, so on phones the
+     existing clamp(36px, 11vw, 80px) min is still wider than the
+     viewport (12 chars × 0.6 × 36 + letter-spacing ≈ 280px + 44px
+     padding > 320px). Drop the min so it actually shrinks. */
+  .dl-shell .footer-wordmark { font-size: clamp(24px, 8vw, 60px); letter-spacing: .06em; text-indent: .06em; }
+  /* Yellow $1.99 sticker — the only hero sticker that survives the
+     ≤700px purge. Inline styles in page.tsx put it at top:30 left:22%
+     which lands directly under the centered "Tap to pull" yellow text
+     — yellow-on-yellow becomes invisible. Tuck it into the top-left
+     corner and shrink so the centered text reads cleanly. !important
+     because inline styles otherwise win. */
+  .dl-shell .sticker-bg .s.s-special {
+    top: -18px !important;
+    left: -12px !important;
+    transform: rotate(-8deg) scale(0.6) !important;
+    transform-origin: top left !important;
+  }
 }
 
 /* ---------- scroll reveal ---------- */

@@ -101,7 +101,11 @@ export default function Home() {
       <section className="hero">
         {/* Decorative price-tag stickers — kept slimmer than before. */}
         <div className="sticker-bg" aria-hidden="true">
-          <div className="s" style={{ top: 30, left: '22%', transform: 'rotate(4deg)' }}>
+          {/* s-special: classname is a target for the mobile media
+              query in redesign.css that re-positions this sticker off
+              the centered "Tap to pull" text. Yellow-on-yellow on
+              phones makes the text unreadable otherwise. */}
+          <div className="s s-special" style={{ top: 30, left: '22%', transform: 'rotate(4deg)' }}>
             <div className="sticker bg-yellow sh-pricegun" style={{ width: 120 }}>
               <div className="lbl">SPECIAL</div>
               <div className="big">$1<span className="currency">99</span></div>
