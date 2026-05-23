@@ -82,25 +82,20 @@ export default function Home() {
 
   return (
     <div ref={rootRef}>
-      {/* Admin-only thin top bar — non-admins see nothing here. */}
-      {isAdmin && (
-        <div
-          style={{
-            background: '#181612',
-            color: '#fff8e2',
-            padding: '8px 16px',
-            fontFamily: "'Stardos Stamp', monospace",
-            fontSize: 11,
-            letterSpacing: '.22em',
-            textTransform: 'uppercase',
-            textAlign: 'right',
-          }}
-        >
-          <a href="/admin" style={{ color: '#fff8e2', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
-            Admin →
-          </a>
-        </div>
-      )}
+      {/* Top bar — brand badge + tagline (always visible). Admin link
+          on the right only when /api/admin/check says the visitor is
+          the admin. No other nav links; the footer carries those. */}
+      <nav className="nav">
+        <a className="brand" href="/">
+          <span className="brand-badge">DEAL DOSSIER</span>
+          <span className="brand-sub">Today&rsquo;s sales, on demand.</span>
+        </a>
+        {isAdmin && (
+          <div className="nav-links">
+            <a href="/admin">Admin</a>
+          </div>
+        )}
+      </nav>
 
       {/* ============ HERO ============ */}
       <section className="hero">
