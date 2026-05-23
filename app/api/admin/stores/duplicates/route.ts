@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { normalizeRetailerWebsite } from '@/lib/domainNormalize'
+import { isAdminEmail } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -38,8 +39,7 @@ type StoreRow = {
 export async function GET() {
   const sb = await createClient()
   const { data: { user } } = await sb.auth.getUser()
-  const adminEmail = process.env.ADMIN_EMAIL
-  if (!adminEmail || !user || user.email !== adminEmail) {
+  if (!isAdminEmail(user?.email)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

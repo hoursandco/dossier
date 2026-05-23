@@ -10,14 +10,14 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isAdminEmail } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 
 async function requireAdmin(): Promise<{ ok: true } | { ok: false; res: NextResponse }> {
   const sb = await createClient()
   const { data: { user } } = await sb.auth.getUser()
-  const adminEmail = process.env.ADMIN_EMAIL
-  if (!adminEmail || !user || user.email !== adminEmail) {
+  if (!isAdminEmail(user?.email)) {
     return { ok: false, res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
   return { ok: true }

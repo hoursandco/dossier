@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getRetailerCategories, type CategoryRow } from '@/lib/openai'
+import { isAdminEmail } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -44,8 +45,7 @@ export async function POST(request: NextRequest) {
   // Admin gate
   const sb = await createClient()
   const { data: { user } } = await sb.auth.getUser()
-  const adminEmail = process.env.ADMIN_EMAIL
-  if (!adminEmail || !user || user.email !== adminEmail) {
+  if (!isAdminEmail(user?.email)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

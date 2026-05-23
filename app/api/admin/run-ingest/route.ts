@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isAdminEmail } from '@/lib/admin'
 
 export const maxDuration = 300
 
@@ -7,8 +8,7 @@ export async function POST(req: NextRequest) {
   // Admin only
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
-  const adminEmail = process.env.ADMIN_EMAIL
-  if (!user || !adminEmail || user.email !== adminEmail) {
+  if (!isAdminEmail(user?.email)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

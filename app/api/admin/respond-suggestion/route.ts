@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
+import { isAdminEmail } from '@/lib/admin'
 
 // Lazy init so Resend isn't instantiated at build time (no API key available)
 function getResend() { return new Resend(process.env.RESEND_API_KEY) }
@@ -52,8 +53,7 @@ export async function POST(req: NextRequest) {
   // Verify admin
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
-  const adminEmail = process.env.ADMIN_EMAIL
-  if (!user || !adminEmail || user.email !== adminEmail) {
+  if (!isAdminEmail(user?.email)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

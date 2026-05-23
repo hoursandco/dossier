@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { StoresAdmin } from '@/components/StoresAdmin'
+import { isAdminEmail } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,8 +11,7 @@ export const dynamic = 'force-dynamic'
 export default async function StoresAdminPage() {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
-  const adminEmail = process.env.ADMIN_EMAIL
-  if (!user || !adminEmail || user.email !== adminEmail) {
+  if (!isAdminEmail(user?.email)) {
     redirect('/')
   }
 

@@ -22,6 +22,11 @@ export function UpgradeFlow() {
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Promo code is optional. Hidden behind a "Have a promo code?"
+  // disclosure so the field doesn't compete with the main CTA for
+  // people who don't have one.
+  const [promoOpen, setPromoOpen] = useState(false)
+  const [promoCode, setPromoCode] = useState('')
 
   // Lazy-load Stripe.js only on the client; bail out cleanly if the key is missing.
   const stripePromise = useMemo<Promise<Stripe | null> | null>(() => {
@@ -58,7 +63,12 @@ export function UpgradeFlow() {
       const res = await fetch('/api/billing/create-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({
+          plan,
+          // Send only when present — undefined values are stripped by
+          // JSON.stringify, which keeps the Zod optional() happy.
+          ...(promoCode.trim() ? { promo_code: promoCode.trim() } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to start checkout')
@@ -145,6 +155,63 @@ export function UpgradeFlow() {
             </button>
           )
         })}
+      </div>
+
+      {/* Promo code — collapsed by default; the disclosure expands an
+          input that the server validates on submit. Bad codes return a
+          400 with a friendly message that flows into the `error` block
+          below. */}
+      <div style={{ marginBottom: 24 }}>
+        {!promoOpen ? (
+          <button
+            type="button"
+            onClick={() => setPromoOpen(true)}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              color: 'var(--ink-70)',
+              cursor: 'pointer',
+              fontSize: 13,
+              textDecoration: 'underline',
+              textDecorationStyle: 'dotted',
+              fontFamily: 'inherit',
+            }}
+          >
+            Have a promo code?
+          </button>
+        ) : (
+          <label style={{ display: 'block' }}>
+            <span
+              className="t-eyebrow"
+              style={{ display: 'block', marginBottom: 8 }}
+            >
+              Promo code
+            </span>
+            <input
+              type="text"
+              value={promoCode}
+              onChange={(e) => setPromoCode(e.target.value)}
+              placeholder="ENTERCODE"
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                border: '1.5px solid var(--ink-15)',
+                background: 'var(--paper)',
+                color: 'var(--ink)',
+                fontFamily: 'var(--font-mono, monospace)',
+                fontSize: 15,
+                letterSpacing: '.08em',
+                textTransform: 'uppercase',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </label>
+        )}
       </div>
 
       {error && (

@@ -11,6 +11,7 @@ import { AutoAddedStoresPanel } from '@/components/AutoAddedStoresPanel'
 import { DuplicateStoresPanel } from '@/components/DuplicateStoresPanel'
 import { StoresAdmin } from '@/components/StoresAdmin'
 import { AdminTabs } from '@/components/AdminTabs'
+import { isAdminEmail } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,8 +77,7 @@ export default async function AdminPage() {
     data: { user },
   } = await authClient.auth.getUser()
 
-  const adminEmail = process.env.ADMIN_EMAIL
-  if (!user || !adminEmail || user.email !== adminEmail) {
+  if (!isAdminEmail(user?.email)) {
     redirect('/')
   }
 

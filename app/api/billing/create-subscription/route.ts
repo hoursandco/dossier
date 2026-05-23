@@ -6,6 +6,11 @@ import { getStripe, priceIdForPlan } from '@/lib/stripe'
 
 const Body = z.object({
   plan: z.enum(['monthly', 'annual']),
+  // Optional promo code typed by the user during checkout. Validated
+  // against Stripe's promotionCodes API; invalid codes return 400 so
+  // the user sees the error before payment. Trimmed + upper-cased
+  // because Stripe codes are case-sensitive but humans aren't.
+  promo_code: z.string().trim().min(1).max(64).optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -47,6 +52,27 @@ export async function POST(request: NextRequest) {
 
     const stripe = getStripe()
 
+    // Validate promo code (if supplied). Look it up by the code string
+    // — Stripe.promotionCodes.list returns the matching active code or
+    // an empty array. We surface invalid/expired codes as a 400 BEFORE
+    // creating the subscription so the user can correct the typo.
+    let promotionCodeId: string | undefined
+    if (parsed.data.promo_code) {
+      const search = await stripe.promotionCodes.list({
+        code: parsed.data.promo_code,
+        active: true,
+        limit: 1,
+      })
+      const pc = search.data[0]
+      if (!pc) {
+        return NextResponse.json(
+          { error: 'Promo code not valid or expired.' },
+          { status: 400 }
+        )
+      }
+      promotionCodeId = pc.id
+    }
+
     // Get or create Stripe Customer.
     let customerId = subscriber.stripe_customer_id as string | null
     if (!customerId) {
@@ -71,7 +97,16 @@ export async function POST(request: NextRequest) {
         payment_method_types: ['card'],
       },
       expand: ['latest_invoice.confirmation_secret'],
-      metadata: { subscriber_id: subscriber.id },
+      metadata: {
+        subscriber_id: subscriber.id,
+        ...(parsed.data.promo_code ? { promo_code_typed: parsed.data.promo_code } : {}),
+      },
+      // Apply the validated promotion code (if any). Stripe will
+      // compute the discount automatically based on the coupon
+      // attached to this promotion code.
+      ...(promotionCodeId
+        ? { discounts: [{ promotion_code: promotionCodeId }] }
+        : {}),
     })
 
     const invoice = subscription.latest_invoice as Stripe.Invoice | null

@@ -261,6 +261,17 @@ export function HomePicker() {
     } catch { setError('Send failed.') } finally { setSendingDeals(false) }
   }
 
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch {
+      // best-effort: even if the network call fails, reloading drops
+      // the in-memory session state so the user sees a signed-out
+      // page next.
+    }
+    window.location.href = '/'
+  }
+
   const handleUnsubscribe = async () => {
     if (!confirm('Unsubscribe? You stop receiving deal emails but your account stays so you can resubscribe later.')) return
     try {
@@ -619,10 +630,18 @@ export function HomePicker() {
               <div className="danger">
                 <p>
                   <em>Need to step away?</em>{' '}
-                  <strong>Unsubscribe</strong> keeps your account but clears your watchlist — come back any time.{' '}
+                  <strong>Log out</strong> ends this session — sign back in any time via magic link.{' '}
+                  <strong>Unsubscribe</strong> keeps your account but clears your watchlist.{' '}
                   <strong>Delete</strong> wipes everything: watchlist, picks, send history, and your sign-in entirely.
                 </p>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-ghost-tag"
+                    onClick={handleLogout}
+                  >
+                    Log out
+                  </button>
                   <button
                     type="button"
                     className="btn-ghost-tag"

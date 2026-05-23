@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isAdminEmail } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,8 +14,7 @@ export async function GET() {
       data: { user },
     } = await supabase.auth.getUser()
 
-    const adminEmail = process.env.ADMIN_EMAIL
-    const isAdmin = !!(user && adminEmail && user.email === adminEmail)
+    const isAdmin = isAdminEmail(user?.email)
 
     return NextResponse.json({ isAdmin })
   } catch {
