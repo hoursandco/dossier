@@ -1,5 +1,5 @@
-import { addDays, startOfDay, getDay, format, parseISO, isAfter, isBefore } from 'date-fns'
-import type { Category, Deal, DealType } from '@/types'
+import { addDays, startOfDay, getDay, format, parseISO, isBefore } from 'date-fns'
+import type { Category, Deal } from '@/types'
 
 // Anchor week_of to the most recent past Thursday. Used by ingest (so all
 // deals scanned in a given Sun–Wed window share a week_of) and by the
@@ -20,7 +20,7 @@ function getValidWindowForWeek(weekOf: Date): { from: Date; through: Date } {
   }
 }
 
-function isDealValidForWeek(deal: Deal, weekOf: Date): boolean {
+export function isDealValidForWeek(deal: Deal, weekOf: Date): boolean {
   if (!deal.expiration_date) return true
 
   const window = getValidWindowForWeek(weekOf)
@@ -46,15 +46,6 @@ const DEAL_RANK_SCORE = (deal: Deal): number => {
   if (type === 'bogo-half') return 65
   if (type === 'free-shipping') return 40
   return 30
-}
-
-// Boost score based on store price tier — pricier stores rank higher
-// at the same discount level (a sale at Saks > a sale at Old Navy)
-const TIER_BOOST: Record<string, number> = {
-  '$':    0,
-  '$$':   3,
-  '$$$':  10,
-  '$$$$': 25,
 }
 
 // Build a dedup key for a deal.

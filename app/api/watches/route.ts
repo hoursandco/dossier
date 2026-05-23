@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
+export const dynamic = 'force-dynamic'
+
 async function loadSubscriberId(email: string): Promise<string | null> {
   const service = createServiceClient()
   const { data } = await service

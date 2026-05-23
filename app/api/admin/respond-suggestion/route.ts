@@ -3,6 +3,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import { isAdminEmail } from '@/lib/admin'
 
+export const dynamic = 'force-dynamic'
+
 // Lazy init so Resend isn't instantiated at build time (no API key available)
 function getResend() { return new Resend(process.env.RESEND_API_KEY) }
 

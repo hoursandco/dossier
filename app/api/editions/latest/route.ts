@@ -8,7 +8,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 // Once the homepage is fully on the new shape this route can be removed
 // in favor of /api/stats.
 
-export const revalidate = 600 // 10 minutes
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {

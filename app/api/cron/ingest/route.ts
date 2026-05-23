@@ -8,6 +8,8 @@ import { sendAdminAlert } from '@/lib/resend'
 import { format, subHours } from 'date-fns'
 import type { Category } from '@/types'
 
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 300 // 5 minute max
 
 // Extract display name from "Store Name <email@domain.com>" format

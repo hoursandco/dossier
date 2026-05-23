@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import { z } from 'zod'
-import type { Category, DealType } from '@/types'
+import type { Category } from '@/types'
 import { overrideCategoriesForRetailer } from '@/lib/deals'
 
 // LLM client. We use the OpenAI SDK against Gemini's OpenAI-compatible

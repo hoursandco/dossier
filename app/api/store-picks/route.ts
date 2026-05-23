@@ -12,6 +12,8 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isPaidSubscriber } from '@/lib/subscriberTier'
 import { countTotalPicks, FREE_PICK_LIMIT } from '@/lib/pickLimits'
 
+export const dynamic = 'force-dynamic'
+
 async function loadSubscriberId(email: string): Promise<string | null> {
   const service = createServiceClient()
   const { data } = await service

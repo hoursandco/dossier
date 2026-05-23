@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import { z } from 'zod'
 
+export const dynamic = 'force-dynamic'
+
 function getResend() { return new Resend(process.env.RESEND_API_KEY) }
 
 const Body = z.object({

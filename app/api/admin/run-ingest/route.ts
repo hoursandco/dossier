@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/admin'
 
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 300
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   // Admin only
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()

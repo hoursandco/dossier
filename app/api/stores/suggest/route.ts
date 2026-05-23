@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   // User-scoped client for the auth check
   const supabase = await createClient()

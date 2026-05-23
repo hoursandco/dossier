@@ -22,6 +22,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { sendAdminAlert } from '@/lib/resend'
 import { sendWatchlistEmailForSubscriber } from '@/lib/watchlistSend'
 
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 300
 
 const DEDUP_DAYS = 6

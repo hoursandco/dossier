@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getStripe, priceIdForPlan } from '@/lib/stripe'
 
+export const dynamic = 'force-dynamic'
+
 const Body = z.object({
   plan: z.enum(['monthly', 'annual']),
   // Optional promo code typed by the user during checkout. Validated

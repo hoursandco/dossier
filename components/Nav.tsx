@@ -4,18 +4,6 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-function DossierMark({ size = 22 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 22 22" fill="none" aria-hidden="true">
-      <rect x="1" y="1" width="20" height="20" stroke="currentColor" strokeWidth="1" />
-      <rect x="1" y="1" width="10" height="10" fill="currentColor" />
-      <rect x="11" y="11" width="10" height="10" fill="currentColor" />
-      <line x1="1" y1="11" x2="21" y2="11" stroke="currentColor" strokeWidth="0.5" opacity="0.4" />
-      <line x1="11" y1="1" x2="11" y2="21" stroke="currentColor" strokeWidth="0.5" opacity="0.4" />
-    </svg>
-  )
-}
-
 export function Nav() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)

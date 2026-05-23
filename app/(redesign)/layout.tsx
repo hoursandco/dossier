@@ -21,7 +21,6 @@ const SKIM_ID = process.env.NEXT_PUBLIC_SKIMLINKS_ID
 export default function RedesignLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link

@@ -55,8 +55,6 @@ interface DirectoryStore {
 
 type PickerTab = 'categories' | 'stores'
 
-const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
-const DISCOUNT_OPTIONS = [20, 30, 40, 50, 60] as const
 const FREE_PICK_LIMIT = 3
 
 interface AccountInfo {
@@ -171,7 +169,7 @@ export default function PreviewSettings() {
   // Toggle a category as a watch — POST to add, DELETE to remove.
   // On 403 over-limit, opens the upgrade modal instead of just showing
   // the error banner (which a user can miss if scrolled).
-  const toggleWatch = useCallback(async (slug: string, label: string) => {
+  const toggleWatch = useCallback(async (slug: string) => {
     const existing = watches.find((w) => w.category_slug === slug)
     setTogglingSlug(slug)
     setErrMsg(null)
@@ -714,7 +712,7 @@ export default function PreviewSettings() {
                                   disabled={isToggling}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    toggleWatch(c.slug, c.label)
+                                    toggleWatch(c.slug)
                                   }}
                                 >
                                   {c.label}

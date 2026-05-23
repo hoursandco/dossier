@@ -6,7 +6,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 // of activity straight from the source tables — no precomputed
 // editions row required.
 
-export const revalidate = 300 // 5 minute cache
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const supabase = createServiceClient()
