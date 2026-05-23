@@ -176,7 +176,7 @@ export default function Home() {
             zIndex: 2,
           }}
         >
-          <div style={{ width: 120, height: 120, position: 'relative', transform: 'rotate(-4deg)' }}>
+          <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(-4deg)' }}>
             <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
               <polygon points={STAR_POINTS} fill="#f4c623" stroke="#181612" strokeWidth="2" />
             </svg>
@@ -185,7 +185,7 @@ export default function Home() {
               <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', color: '#181612', marginTop: 4 }}>Brands<br />tracked</div>
             </div>
           </div>
-          <div style={{ width: 120, height: 120, position: 'relative', transform: 'rotate(3deg)' }}>
+          <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(3deg)' }}>
             <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
               <circle cx="100" cy="100" r="94" fill="#d4322a" stroke="#181612" strokeWidth="3" />
               <circle cx="100" cy="100" r="82" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
@@ -195,7 +195,7 @@ export default function Home() {
               <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Deals this<br />week</div>
             </div>
           </div>
-          <div style={{ width: 120, height: 120, position: 'relative', transform: 'rotate(-2deg)' }}>
+          <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(-2deg)' }}>
             <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
               <polygon points="14,0 186,0 200,14 200,186 186,200 14,200 0,186 0,14" fill="#4ea843" stroke="#181612" strokeWidth="3" />
               <polygon points="22,8 178,8 192,22 192,178 178,192 22,192 8,178 8,22" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
