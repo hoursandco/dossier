@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { HomePicker } from '@/components/HomePicker'
+import { DossierNav } from '@/components/DossierNav'
 
 // 14-point starburst shape reused across stickers and counters.
 const STAR_POINTS =
@@ -26,7 +27,6 @@ interface Stats {
 export default function Home() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [brandCount, setBrandCount] = useState<number | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -43,11 +43,8 @@ export default function Home() {
         setBrandCount(all.length)
       })
       .catch(() => {})
-    // Admin gate — top admin bar only renders for the admin user.
-    fetch('/api/admin/check')
-      .then((r) => r.json())
-      .then((d) => setIsAdmin(!!d.isAdmin))
-      .catch(() => {})
+    // DossierNav handles its own /api/admin/check and /api/account
+    // calls now, so the page-level fetch was removed.
   }, [])
 
   // Sticker pop animation for the hero's decorative stickers.
@@ -82,20 +79,11 @@ export default function Home() {
 
   return (
     <div ref={rootRef}>
-      {/* Top bar — brand badge + tagline (always visible). Admin link
-          on the right only when /api/admin/check says the visitor is
-          the admin. No other nav links; the footer carries those. */}
-      <nav className="nav">
-        <a className="brand" href="/">
-          <span className="brand-badge">DEAL DOSSIER</span>
-          <span className="brand-sub">Today&rsquo;s sales, on demand.</span>
-        </a>
-        {isAdmin && (
-          <div className="nav-links">
-            <a href="/admin">Admin</a>
-          </div>
-        )}
-      </nav>
+      {/* Shared top bar — brand badge + tagline, plus Admin (admin
+          only) and Sign In (signed-out only) buttons. Same component
+          used by every other page in the redesign so headers don't
+          drift apart. */}
+      <DossierNav />
 
       {/* ============ HERO ============ */}
       <section className="hero">

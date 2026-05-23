@@ -3,6 +3,8 @@
 // page-head + footer. Sections render as a numbered list with kicker +
 // heading + body — mirrors the editorial sectioning used elsewhere.
 
+import { DossierNav } from '@/components/DossierNav'
+
 export const metadata = {
   title: 'Privacy Policy — Deal Dossier',
 }
@@ -45,16 +47,7 @@ const SECTIONS: Array<{ title: string; body: string }> = [
 export default function PreviewPrivacy() {
   return (
     <>
-      <nav className="nav">
-        <a className="brand" href="/">
-          <span className="brand-badge">DEAL DOSSIER</span>
-          <span className="brand-sub">— the weekly brief</span>
-        </a>
-        <div className="nav-links">
-          <a href="/suggest">Suggest a Store</a>
-          <a href="/preferences">Settings</a>
-        </div>
-      </nav>
+      <DossierNav />
 
       <section className="page-head light">
         <div className="page-head-inner">
