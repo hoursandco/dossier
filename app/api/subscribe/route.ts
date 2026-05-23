@@ -6,10 +6,14 @@ const SubscribeSchema = z.object({
   email: z.string().email(),
   zip_code: z.string().optional(),
   // Optional list of category slugs to pre-populate the subscriber's
-  // watchlist with. Sent from the signup form when the user picks
-  // categories during "what are you shopping for?". Existing
-  // subscribers can resubmit with new picks; duplicates are ignored.
+  // watchlist with. Sent from the homepage picker when the user picks
+  // categories. Existing subscribers can resubmit; duplicates ignored.
   watches: z.array(z.string().min(1)).max(20).optional(),
+  // Optional list of store UUIDs — the homepage picker's brand picks.
+  // Seeded into subscriber_stores the same way watches seed
+  // subscriber_watches, so an anonymous picker submit creates the
+  // whole watchlist in one call.
+  store_ids: z.array(z.string().uuid()).max(50).optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -21,7 +25,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
     }
 
-    const { email, zip_code, watches } = parsed.data
+    const { email, zip_code, watches, store_ids } = parsed.data
     const supabase = createServiceClient()
 
     // Upsert subscriber
@@ -65,6 +69,31 @@ export async function POST(request: NextRequest) {
             onConflict: 'subscriber_id,category_slug,sub_type,gender,min_price_tier',
             ignoreDuplicates: true,
           })
+      }
+    }
+
+    // Seed store picks from the homepage picker. Validate against the
+    // stores table so an attacker can't inject arbitrary UUIDs, and
+    // skip 'declined' brands. Best-effort: if subscriber_stores doesn't
+    // exist yet (migration 028 not applied) the error is swallowed so
+    // signup still succeeds.
+    if (store_ids && store_ids.length > 0) {
+      const { data: validStores } = await supabase
+        .from('stores')
+        .select('id')
+        .in('id', store_ids)
+        .neq('status', 'declined')
+      const validStoreIds = new Set((validStores ?? []).map((s) => s.id))
+      const storeRows = store_ids
+        .filter((id) => validStoreIds.has(id))
+        .map((id) => ({ subscriber_id: subId, store_id: id }))
+      if (storeRows.length > 0) {
+        const { error: storeErr } = await supabase
+          .from('subscriber_stores')
+          .upsert(storeRows, { onConflict: 'subscriber_id,store_id', ignoreDuplicates: true })
+        if (storeErr) {
+          console.error('subscribe store-picks error:', JSON.stringify(storeErr))
+        }
       }
     }
 

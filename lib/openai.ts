@@ -3,8 +3,17 @@ import { z } from 'zod'
 import type { Category, DealType } from '@/types'
 import { overrideCategoriesForRetailer } from '@/lib/deals'
 
+// LLM client. We use the OpenAI SDK against Gemini's OpenAI-compatible
+// endpoint — Google publishes a drop-in API at this base URL that
+// accepts OpenAI-shaped chat.completions calls (including JSON mode).
+// Cheaper than OpenAI for our volume, generous free tier, and the
+// switch is just baseURL + model name — no adapter code.
+// Docs: https://ai.google.dev/gemini-api/docs/openai
 function getClient() {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'placeholder' })
+  return new OpenAI({
+    apiKey: process.env.GEMINI_API_KEY || 'placeholder',
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  })
 }
 
 const DealSchema = z.object({
@@ -106,7 +115,7 @@ async function callOpenAIWithRetry(
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gemini-2.0-flash',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
