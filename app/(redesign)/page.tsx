@@ -181,7 +181,16 @@ export default function Home() {
                 Tap to pull
               </span>
             </span>
-            <span className="row" style={{ whiteSpace: 'nowrap' }}>EVERY LIVE SALE.</span>
+            <span
+              className="row"
+              style={{
+                // nowrap + a tighter font clamp so 16 chars of headline
+                // never overflow. The base .hero-title clamp goes up to
+                // ~148px which blows past the viewport at 16ch nowrap.
+                whiteSpace: 'nowrap',
+                fontSize: 'clamp(22px, 7vw, 110px)',
+              }}
+            >EVERY LIVE SALE.</span>
           </h1>
           <p className="hero-eyebrow">— Today&rsquo;s sales, on demand. —</p>
         </div>
