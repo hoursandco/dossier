@@ -12,6 +12,7 @@ import { DuplicateStoresPanel } from '@/components/DuplicateStoresPanel'
 import { StoresAdmin } from '@/components/StoresAdmin'
 import { AdminTabs } from '@/components/AdminTabs'
 import { isAdminEmail } from '@/lib/admin'
+import { DossierNav } from '@/components/DossierNav'
 
 export const dynamic = 'force-dynamic'
 
@@ -510,17 +511,10 @@ export default async function AdminPage() {
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="admin-route">
-      <nav className="nav">
-        <a className="brand" href="/">
-          <span className="brand-badge">DEAL DOSSIER</span>
-          <span className="brand-sub">— the weekly brief</span>
-        </a>
-        <div className="nav-links">
-          <a href="/suggest">Suggest a Store</a>
-          <a href="/preferences">Settings</a>
-          <a href="/admin" className="active">Admin</a>
-        </div>
-      </nav>
+      {/* Shared nav. signedIn=true and isAdmin=true short-circuit the
+          DossierNav auto-fetch (we already know — this page is admin-
+          only via the middleware/isAdminEmail check above). */}
+      <DossierNav signedIn={true} isAdmin={true} />
 
       <section style={{ padding: 'clamp(48px, 6vw, 72px) 0 clamp(56px, 7vw, 80px)' }}>
         <div className="wrap">
@@ -600,7 +594,7 @@ export default async function AdminPage() {
           DEAL&nbsp;D<span className="o">O</span>SSIER
         </div>
         <div className="footer-meta">
-          <a href="/">Public Site</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a><br /><br />
+          <a href="/faq">FAQ</a> · <a href="/stores">All Brands</a> · <a href="/suggest">Suggest a Store</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
           An Hours &amp; Co. publication · © 2026
         </div>
       </footer>
