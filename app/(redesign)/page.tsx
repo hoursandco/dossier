@@ -158,16 +158,6 @@ export default function Home() {
               <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Deals this<br />week</div>
             </div>
           </div>
-          <div style={{ width: 120, height: 120, position: 'relative', transform: 'rotate(-2deg)' }}>
-            <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <polygon points="14,0 186,0 200,14 200,186 186,200 14,200 0,186 0,14" fill="#4ea843" stroke="#181612" strokeWidth="3" />
-              <polygon points="22,8 178,8 192,22 192,178 178,192 22,192 8,178 8,22" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
-            </svg>
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px', color: '#fff8e2' }}>
-              <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 26, lineHeight: 1 }}>0</div>
-              <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Daily blasts<br />ever</div>
-            </div>
-          </div>
         </div>
 
         <div className="hero-inner">
@@ -191,7 +181,7 @@ export default function Home() {
                 Tap to pull
               </span>
             </span>
-            <span className="row">EVERY LIVE SALE.</span>
+            <span className="row" style={{ whiteSpace: 'nowrap' }}>EVERY LIVE SALE.</span>
           </h1>
           <p className="hero-eyebrow">— Today&rsquo;s sales, on demand. —</p>
         </div>
