@@ -161,11 +161,9 @@ export async function PATCH(
 // by subscriber.id rather than the authed user — admin can nuke any
 // subscriber.
 //
-// NOTE: this does NOT cancel an active Stripe subscription. If the
-// subscriber has a live recurring sub, you'll keep getting paid for it
-// even after delete. Cancel via the Cancel action first if that
-// matters. (Could auto-cancel here, but that conflates two
-// destructive operations — keeping them separate is safer.)
+// Paid subscribers cannot be deleted here. Admins must cancel the
+// subscription and issue any refund first, then delete once billing is
+// no longer active.
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -182,18 +180,26 @@ export async function DELETE(
   const service = createServiceClient()
   const { data: subscriber } = await service
     .from('subscribers')
-    .select('id, email, stripe_subscription_id, subscription_status')
+    .select('id, email, tier, stripe_subscription_id, subscription_status')
     .eq('id', id)
     .single()
   if (!subscriber) {
     return NextResponse.json({ error: 'Subscriber not found' }, { status: 404 })
   }
 
-  // Soft warning in the response if they have an active sub — admin
-  // sees this and can choose to follow up with a Stripe cancel.
-  const hasActiveSub =
-    !!subscriber.stripe_subscription_id &&
+  const hasPaidBillingState =
+    subscriber.tier === 'paid' ||
     ['active', 'trialing', 'past_due'].includes(subscriber.subscription_status ?? '')
+
+  if (hasPaidBillingState) {
+    return NextResponse.json(
+      {
+        error:
+          'Paid subscribers cannot be deleted. Cancel the subscription and issue any refund first, then delete after billing is no longer active.',
+      },
+      { status: 409 }
+    )
+  }
 
   // Hard-delete subscriber row. FK cascades wipe per-user tables.
   const { error: delErr } = await service
@@ -228,8 +234,5 @@ export async function DELETE(
   return NextResponse.json({
     success: true,
     auth_deleted: authDeleted,
-    warning: hasActiveSub
-      ? 'Subscriber had an active Stripe subscription — Stripe will keep billing the customer record. Cancel the sub in Stripe Dashboard if needed.'
-      : null,
   })
 }

@@ -419,15 +419,20 @@ function SubscriberEditMenu({
       )
     }).catch(() => undefined)
 
+  const isPaidBillingState =
+    subscriber.tier === 'paid' ||
+    ['active', 'trialing', 'past_due'].includes(subscriber.subscription_status ?? '')
+
   const remove = () =>
     run(async () => {
+      if (isPaidBillingState) {
+        alert('Paid subscribers cannot be deleted here. Cancel the subscription and issue any refund first, then delete after billing is no longer active.')
+        throw new Error('cancelled')
+      }
       // Two-step confirm — typed match guards against finger-slip.
       if (
         !confirm(
           `DELETE ${subscriber.email}?\n\nThis wipes the subscriber row, all watches/send-log/preferences, AND the auth user. Irreversible.\n\n` +
-            (hasStripe
-              ? `⚠️  They have an active Stripe subscription — Stripe will keep billing the customer record until you cancel it manually in the Stripe dashboard.\n\n`
-              : ``) +
             `Click OK to confirm, then type the email on the next prompt.`
         )
       ) {
@@ -446,7 +451,6 @@ function SubscriberEditMenu({
         alert(d.error ?? 'Delete failed')
         return
       }
-      if (d.warning) alert(`Deleted, with warning:\n\n${d.warning}`)
     }).catch(() => undefined)
 
   const popover =
@@ -501,8 +505,8 @@ function SubscriberEditMenu({
             <div style={{ borderTop: '1px dashed var(--ink-25, #cbc4ad)', margin: '6px 0' }} />
             <MenuItem
               label="Delete subscriber"
-              hint="Irreversible — wipes account + auth user"
-              disabled={busy}
+              hint={isPaidBillingState ? 'Cancel/refund paid subscriber first' : 'Irreversible — wipes account + auth user'}
+              disabled={busy || isPaidBillingState}
               color="var(--red, #d4322a)"
               onClick={remove}
             />

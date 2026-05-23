@@ -1,33 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
+import { z } from 'zod'
 
 function getResend() { return new Resend(process.env.RESEND_API_KEY) }
 
-// Simple per-instance rate limit: 3 magic links per email per hour
-const attempts = new Map<string, number[]>()
-function isRateLimited(email: string): boolean {
-  const now = Date.now()
-  const window = 60 * 60 * 1000 // 1 hour
-  const limit = 3
-  const timestamps = (attempts.get(email) ?? []).filter(t => now - t < window)
-  if (timestamps.length >= limit) return true
-  attempts.set(email, [...timestamps, now])
-  return false
+const Body = z.object({
+  email: z.string().email(),
+  redirectTo: z.string().url().optional(),
+})
+
+const EMAIL_LIMIT_PER_HOUR = 5
+const IP_LIMIT_PER_HOUR = 10
+
+function requestIp(req: NextRequest): string | null {
+  const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  return forwarded || req.headers.get('x-real-ip') || null
+}
+
+function safeCallbackUrl(req: NextRequest, redirectTo: string | undefined): string {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin
+  const fallback = `${appUrl}/api/auth/callback`
+  if (!redirectTo) return fallback
+
+  try {
+    const target = new URL(redirectTo)
+    const allowedOrigins = new Set([req.nextUrl.origin, new URL(appUrl).origin])
+    const allowedPaths = new Set(['/auth/callback', '/api/auth/callback'])
+    if (!allowedOrigins.has(target.origin)) return fallback
+    if (!allowedPaths.has(target.pathname)) return fallback
+    return target.toString()
+  } catch {
+    return fallback
+  }
+}
+
+async function isRateLimited(
+  supabase: ReturnType<typeof createServiceClient>,
+  email: string,
+  ip: string | null
+): Promise<boolean> {
+  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+
+  const emailCount = supabase
+    .from('magic_link_throttle')
+    .select('id', { count: 'exact', head: true })
+    .eq('email', email)
+    .gte('sent_at', since)
+
+  const ipCount = ip
+    ? supabase
+        .from('magic_link_throttle')
+        .select('id', { count: 'exact', head: true })
+        .eq('ip', ip)
+        .gte('sent_at', since)
+    : Promise.resolve({ count: 0, error: null })
+
+  const [byEmail, byIp] = await Promise.all([emailCount, ipCount])
+
+  if (byEmail.error) {
+    console.warn('[magic-link] throttle email lookup failed:', JSON.stringify(byEmail.error))
+  }
+  if (byIp.error) {
+    console.warn('[magic-link] throttle ip lookup failed:', JSON.stringify(byIp.error))
+  }
+
+  return (byEmail.count ?? 0) >= EMAIL_LIMIT_PER_HOUR || (byIp.count ?? 0) >= IP_LIMIT_PER_HOUR
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, redirectTo } = await req.json()
-    if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+    const parsed = Body.safeParse(await req.json().catch(() => null))
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
+    }
 
-    if (isRateLimited(email)) {
+    const email = parsed.data.email.trim().toLowerCase()
+    const ip = requestIp(req)
+    const supabase = createServiceClient()
+
+    if (await isRateLimited(supabase, email, ip)) {
       return NextResponse.json({ error: 'Too many requests. Try again later.' }, { status: 429 })
     }
 
-    const supabase = createServiceClient()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dossier2-amber.vercel.app'
-    const callbackUrl = redirectTo || `${appUrl}/api/auth/callback`
+    const callbackUrl = safeCallbackUrl(req, parsed.data.redirectTo)
 
     // Use Supabase admin API to generate the magic link token
     // This creates the auth session token without sending any email
@@ -141,6 +197,17 @@ export async function POST(req: NextRequest) {
     if (emailError) {
       console.error('Resend send error:', emailError)
       return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })
+    }
+
+    await supabase.from('magic_link_throttle').delete().lt(
+      'sent_at',
+      new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    )
+    const { error: throttleErr } = await supabase
+      .from('magic_link_throttle')
+      .insert({ email, ip })
+    if (throttleErr) {
+      console.warn('[magic-link] throttle insert failed:', JSON.stringify(throttleErr))
     }
 
     return NextResponse.json({ success: true })
