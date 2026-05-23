@@ -398,18 +398,22 @@ export function HomePicker() {
                   onClick={() => setPickerTab(t.id)}
                   style={{
                     fontFamily: "'Stardos Stamp', monospace",
-                    fontSize: 13,
-                    letterSpacing: '.16em',
+                    fontSize: 'clamp(11px, 3vw, 13px)',
+                    letterSpacing: 'clamp(.08em, 1.2vw, .16em)',
                     textTransform: 'uppercase',
-                    padding: '14px 20px 12px',
+                    padding: '14px clamp(6px, 2.5vw, 20px) 12px',
                     minHeight: 44,
-                    flex: '1 1 auto',
+                    minWidth: 0,
+                    flex: '1 1 0',
                     background: isActive ? 'var(--ink)' : 'transparent',
                     color: isActive ? 'var(--bone, #fff5d4)' : 'var(--ink-55, #6b6353)',
                     border: '2px solid var(--ink)',
                     borderBottom: 'none',
                     cursor: 'pointer',
                     marginBottom: '-2px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
                 >
                   {t.label}
