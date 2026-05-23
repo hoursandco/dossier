@@ -2,25 +2,23 @@
 
 // HomePicker — the homepage's picker + actions surface.
 //
-// Two modes wired into one component:
+// UX mirrors /preferences pixel-for-pixel by reusing its CSS classes
+// (.cat-list / .cat / .cat-head / .swatch / .chip-group / .chip /
+//  .selected-summary / .danger / etc.) which are styled in
+// redesign.css. Same colored drawer headers, same chip style, same
+// danger-zone footer.
 //
-//   - Signed-out (cold visitor):
-//       anonymous picks held in client state → email field at the
-//       bottom → submit saves all picks + sends magic link in one
-//       call. Magic-link click on any device restores the picks
-//       (saved server-side at submit).
-//
-//   - Signed-in (returning subscriber):
-//       loads existing watches + store picks on mount and shows them
-//       pre-selected. Toggling a chip immediately calls the API
-//       (POST/DELETE) — no batch save. Bottom panel: "Send Deals Now"
-//       (calls /api/deals/refresh), plus the danger-zone Unsubscribe
-//       and Delete-account actions that previously lived at the
-//       bottom of /preferences.
+// Two modes:
+//   - Signed-OUT: anonymous picks held in state → email field at the
+//     bottom → submit creates subscriber + saves picks + magic link.
+//   - Signed-IN:  loads existing watches + store picks, toggles
+//     persist immediately, action panel is SEND ME DEALS NOW +
+//     upgrade box (free only) + Unsubscribe + Delete account.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { trackPixel } from '@/lib/pixel'
 import { trackEvent } from '@/lib/analytics'
+import { groupCategories } from '@/lib/categoryGroups'
 
 type Category = { slug: string; label: string; group_name?: string | null }
 type StoreLite = { id: string; name: string }
@@ -28,32 +26,23 @@ type PickerTab = 'categories' | 'stores'
 
 const FREE_PICK_LIMIT = 3
 
-const INK = '#181612'
-const INK_SOFT = '#4a443a'
-const PAPER = '#fff8e2'
-const CREAM = '#f1e6c8'
-const RED = '#d4322a'
-const RED_DEEP = '#8f1a14'
-const YELLOW = '#f4c623'
-
 function normName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 export function HomePicker() {
-  const [signedIn, setSignedIn] = useState<boolean | null>(null) // null = unknown / loading
+  const [signedIn, setSignedIn] = useState<boolean | null>(null)
   const [accountEmail, setAccountEmail] = useState<string | null>(null)
+  const [isPaid, setIsPaid] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
   const [stores, setStores] = useState<StoreLite[]>([])
   const [storesLoaded, setStoresLoaded] = useState(false)
-  const [tab, setTab] = useState<PickerTab>('categories')
+  const [pickerTab, setPickerTab] = useState<PickerTab>('categories')
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
 
-  // Picks — UI state shared between modes.
   const [pickedCats, setPickedCats] = useState<Set<string>>(new Set())
   const [pickedStores, setPickedStores] = useState<StoreLite[]>([])
 
-  // Signed-in-only: maps for resolving the row IDs needed by DELETE.
   const [watchIdBySlug, setWatchIdBySlug] = useState<Map<string, string>>(new Map())
   const [pickIdByStoreId, setPickIdByStoreId] = useState<Map<string, string>>(new Map())
 
@@ -65,7 +54,6 @@ export function HomePicker() {
   const [statusMsg, setStatusMsg] = useState('')
   const [error, setError] = useState('')
 
-  // Initial load: detect auth + pull data.
   useEffect(() => {
     fetch('/api/categories')
       .then((r) => (r.ok ? r.json() : { categories: [] }))
@@ -80,8 +68,6 @@ export function HomePicker() {
       })
       .catch(() => setStoresLoaded(true))
 
-    // Auth probe. /api/account returns 200 + email when signed in,
-    // 401 otherwise. We use that to fork between modes.
     fetch('/api/account')
       .then(async (r) => {
         if (!r.ok) {
@@ -92,25 +78,17 @@ export function HomePicker() {
         if (d?.email) {
           setSignedIn(true)
           setAccountEmail(d.email)
-          // Load existing watches + store picks in parallel.
+          setIsPaid(d.tier === 'paid')
           const [watchesRes, picksRes] = await Promise.all([
             fetch('/api/watches').then((r) => (r.ok ? r.json() : { watches: [] })).catch(() => ({ watches: [] })),
             fetch('/api/store-picks').then((r) => (r.ok ? r.json() : { store_picks: [] })).catch(() => ({ store_picks: [] })),
           ])
           const watches = (watchesRes.watches ?? []) as Array<{ id: string; category_slug: string }>
-          const picks = (picksRes.store_picks ?? []) as Array<{
-            id: string
-            store_id: string
-            store_name?: string
-          }>
-          const catSet = new Set(watches.map((w) => w.category_slug))
-          const wMap = new Map(watches.map((w) => [w.category_slug, w.id] as const))
-          setPickedCats(catSet)
-          setWatchIdBySlug(wMap)
-          const stArr: StoreLite[] = picks.map((p) => ({ id: p.store_id, name: p.store_name || '' }))
-          const pMap = new Map(picks.map((p) => [p.store_id, p.id] as const))
-          setPickedStores(stArr)
-          setPickIdByStoreId(pMap)
+          const picks = (picksRes.store_picks ?? []) as Array<{ id: string; store_id: string; store_name?: string }>
+          setPickedCats(new Set(watches.map((w) => w.category_slug)))
+          setWatchIdBySlug(new Map(watches.map((w) => [w.category_slug, w.id] as const)))
+          setPickedStores(picks.map((p) => ({ id: p.store_id, name: p.store_name || '' })))
+          setPickIdByStoreId(new Map(picks.map((p) => [p.store_id, p.id] as const)))
         } else {
           setSignedIn(false)
         }
@@ -118,21 +96,9 @@ export function HomePicker() {
       .catch(() => setSignedIn(false))
   }, [])
 
-  const grouped = useMemo(() => {
-    const g = new Map<string, Category[]>()
-    for (const c of categories) {
-      const key = c.group_name || 'More'
-      const arr = g.get(key) ?? []
-      arr.push(c)
-      g.set(key, arr)
-    }
-    return Array.from(g.entries())
-  }, [categories])
+  const grouped = useMemo(() => groupCategories(categories), [categories])
 
-  const pickedStoreIds = useMemo(
-    () => new Set(pickedStores.map((s) => s.id)),
-    [pickedStores]
-  )
+  const pickedStoreIds = useMemo(() => new Set(pickedStores.map((s) => s.id)), [pickedStores])
 
   const storeResults = useMemo(() => {
     const q = normName(storeQuery.trim())
@@ -142,50 +108,37 @@ export function HomePicker() {
       .slice(0, 8)
   }, [storeQuery, stores, pickedStoreIds])
 
-  const totalPicks = pickedCats.size + pickedStores.length
-  const overLimit = totalPicks > FREE_PICK_LIMIT
+  const watchCount = pickedCats.size
+  const storeCount = pickedStores.length
+  const totalPicks = watchCount + storeCount
+  const overLimit = totalPicks > FREE_PICK_LIMIT && !isPaid
 
   const toggleGroup = (name: string) => {
     setOpenGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
+      const n = new Set(prev)
+      if (n.has(name)) n.delete(name)
+      else n.add(name)
+      return n
     })
   }
 
-  // ── Toggle handlers — branch on signedIn ──────────────────────────
   const toggleCat = useCallback(
     async (slug: string) => {
       if (!signedIn) {
-        // Anonymous — just state.
         setPickedCats((prev) => {
-          const next = new Set(prev)
-          if (next.has(slug)) next.delete(slug)
-          else next.add(slug)
-          return next
+          const n = new Set(prev)
+          if (n.has(slug)) n.delete(slug)
+          else n.add(slug)
+          return n
         })
         return
       }
-      // Signed in — persist immediately. Optimistic UI; roll back on failure.
       if (pickedCats.has(slug)) {
         const watchId = watchIdBySlug.get(slug)
         if (!watchId) return
-        setPickedCats((prev) => {
-          const n = new Set(prev)
-          n.delete(slug)
-          return n
-        })
-        setWatchIdBySlug((prev) => {
-          const n = new Map(prev)
-          n.delete(slug)
-          return n
-        })
-        try {
-          await fetch(`/api/watches/${watchId}`, { method: 'DELETE' })
-        } catch {
-          // best-effort; user can retry
-        }
+        setPickedCats((prev) => { const n = new Set(prev); n.delete(slug); return n })
+        setWatchIdBySlug((prev) => { const n = new Map(prev); n.delete(slug); return n })
+        try { await fetch(`/api/watches/${watchId}`, { method: 'DELETE' }) } catch {}
       } else {
         setPickedCats((prev) => new Set(prev).add(slug))
         try {
@@ -197,23 +150,12 @@ export function HomePicker() {
           if (res.ok) {
             const d = await res.json()
             const newId = d.watch?.id ?? d.id
-            if (newId) {
-              setWatchIdBySlug((prev) => new Map(prev).set(slug, newId))
-            }
+            if (newId) setWatchIdBySlug((prev) => new Map(prev).set(slug, newId))
           } else {
-            // roll back on failure
-            setPickedCats((prev) => {
-              const n = new Set(prev)
-              n.delete(slug)
-              return n
-            })
+            setPickedCats((prev) => { const n = new Set(prev); n.delete(slug); return n })
           }
         } catch {
-          setPickedCats((prev) => {
-            const n = new Set(prev)
-            n.delete(slug)
-            return n
-          })
+          setPickedCats((prev) => { const n = new Set(prev); n.delete(slug); return n })
         }
       }
     },
@@ -222,13 +164,9 @@ export function HomePicker() {
 
   const addStore = useCallback(
     async (s: StoreLite) => {
-      if (!signedIn) {
-        setPickedStores((prev) => [...prev, s])
-        setStoreQuery('')
-        return
-      }
       setPickedStores((prev) => [...prev, s])
       setStoreQuery('')
+      if (!signedIn) return
       try {
         const res = await fetch('/api/store-picks', {
           method: 'POST',
@@ -238,9 +176,7 @@ export function HomePicker() {
         if (res.ok) {
           const d = await res.json()
           const pickId = d.store_pick?.id
-          if (pickId) {
-            setPickIdByStoreId((prev) => new Map(prev).set(s.id, pickId))
-          }
+          if (pickId) setPickIdByStoreId((prev) => new Map(prev).set(s.id, pickId))
         } else {
           setPickedStores((prev) => prev.filter((x) => x.id !== s.id))
         }
@@ -253,26 +189,15 @@ export function HomePicker() {
 
   const removeStore = useCallback(
     async (id: string) => {
-      if (!signedIn) {
-        setPickedStores((prev) => prev.filter((s) => s.id !== id))
-        return
-      }
       const pickId = pickIdByStoreId.get(id)
       setPickedStores((prev) => prev.filter((s) => s.id !== id))
-      setPickIdByStoreId((prev) => {
-        const n = new Map(prev)
-        n.delete(id)
-        return n
-      })
-      if (!pickId) return
-      try {
-        await fetch(`/api/store-picks/${pickId}`, { method: 'DELETE' })
-      } catch {}
+      setPickIdByStoreId((prev) => { const n = new Map(prev); n.delete(id); return n })
+      if (!signedIn || !pickId) return
+      try { await fetch(`/api/store-picks/${pickId}`, { method: 'DELETE' }) } catch {}
     },
     [signedIn, pickIdByStoreId]
   )
 
-  // ── Anonymous submit: subscribe + magic link ─────────────────────
   const handleAnonSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email || totalPicks === 0) return
@@ -297,23 +222,15 @@ export function HomePicker() {
       const mlRes = await fetch('/api/auth/magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          redirectTo: `${window.location.origin}/auth/callback`,
-        }),
+        body: JSON.stringify({ email, redirectTo: `${window.location.origin}/auth/callback` }),
       })
       if (mlRes.ok) {
         setSubmitted(true)
         trackPixel('Lead')
-        trackEvent('sign_up', {
-          method: 'magic_link',
-          location: 'homepage_picker',
-          category_picks: pickedCats.size,
-          store_picks: pickedStores.length,
-        })
+        trackEvent('sign_up', { method: 'magic_link', location: 'homepage_picker', category_picks: watchCount, store_picks: storeCount })
       } else {
         const d = await mlRes.json().catch(() => ({}))
-        setError(d.error || 'Could not send the sign-in link. Please try again.')
+        setError(d.error || 'Could not send the sign-in link.')
       }
     } catch {
       setError('Something went wrong. Please try again.')
@@ -322,382 +239,355 @@ export function HomePicker() {
     }
   }
 
-  // ── Signed-in actions ────────────────────────────────────────────
   const sendDealsNow = async () => {
-    if (totalPicks === 0) {
-      setError('Pick at least one above first.')
-      return
-    }
-    setSendingDeals(true)
-    setError('')
-    setStatusMsg('')
+    if (totalPicks === 0) { setError('Pick at least one above first.'); return }
+    setSendingDeals(true); setError(''); setStatusMsg('')
     try {
       const res = await fetch('/api/deals/refresh', { method: 'POST' })
       const d = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError(d.error || 'Send failed. Please try again.')
-        return
-      }
+      if (!res.ok) { setError(d.error || 'Send failed.'); return }
       const n = d.total_deals ?? d.deals ?? 0
-      setStatusMsg(
-        n > 0
-          ? `Sent — ${n} ${n === 1 ? 'deal' : 'deals'} on the way to your inbox.`
-          : `Nothing fresh right now. We'll keep watching and email when something lands.`
-      )
+      setStatusMsg(n > 0
+        ? `Sent — ${n} ${n === 1 ? 'deal' : 'deals'} on the way to your inbox.`
+        : `Nothing fresh right now. We'll keep watching and email when something lands.`)
       trackEvent('deals_pull', { deals_count: n })
-    } catch {
-      setError('Send failed. Please try again.')
-    } finally {
-      setSendingDeals(false)
-    }
+    } catch { setError('Send failed.') } finally { setSendingDeals(false) }
   }
 
   const handleUnsubscribe = async () => {
-    if (
-      !confirm(
-        'Unsubscribe? You will stop receiving deal emails but your account stays so you can resubscribe later.'
-      )
-    )
-      return
+    if (!confirm('Unsubscribe? You stop receiving deal emails but your account stays so you can resubscribe later.')) return
     try {
       const res = await fetch('/api/unsubscribe', { method: 'POST' })
-      if (res.ok) {
-        setStatusMsg('Unsubscribed. You can re-enable emails from settings any time.')
-      } else {
-        setError('Could not unsubscribe. Please try again.')
-      }
-    } catch {
-      setError('Could not unsubscribe. Please try again.')
-    }
+      if (res.ok) setStatusMsg('Unsubscribed. You can re-enable emails from settings any time.')
+      else setError('Could not unsubscribe.')
+    } catch { setError('Could not unsubscribe.') }
   }
 
   const handleDeleteAccount = async () => {
     if (!accountEmail) return
-    if (
-      !confirm(
-        `Delete your account and ALL your data?\n\nThis wipes your watchlist, store picks, send history, and your sign-in. Irreversible.\n\nClick OK to confirm, then type your email on the next prompt.`
-      )
-    )
-      return
+    if (!confirm('Delete your account and ALL your data?\n\nThis wipes your watchlist, store picks, send history, and your sign-in. Irreversible.\n\nClick OK to confirm, then type your email on the next prompt.')) return
     const typed = prompt(`Type "${accountEmail}" to confirm:`)
-    if (typed !== accountEmail) {
-      alert('Email did not match. Delete cancelled.')
-      return
-    }
+    if (typed !== accountEmail) { alert('Email did not match. Delete cancelled.'); return }
     try {
       const res = await fetch('/api/account/delete', { method: 'DELETE' })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        setError(d.error || 'Delete failed.')
-        return
-      }
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error || 'Delete failed.'); return }
       window.location.href = '/'
-    } catch {
-      setError('Delete failed.')
-    }
+    } catch { setError('Delete failed.') }
   }
 
-  // ── Anonymous "check inbox" success state ────────────────────────
   if (submitted) {
     return (
-      <section style={{ background: PAPER, border: `3px solid ${INK}`, maxWidth: 640, margin: '40px auto', padding: '48px 36px', textAlign: 'center' }}>
-        <p style={{ margin: '0 0 14px', fontFamily: "'Stardos Stamp',monospace", fontSize: 12, letterSpacing: '.3em', textTransform: 'uppercase', color: RED_DEEP }}>
-          — Check Inbox —
-        </p>
-        <h2 style={{ margin: '0 0 16px', fontFamily: "'Alfa Slab One',serif", fontWeight: 400, fontSize: 'clamp(28px,4vw,40px)', lineHeight: 1.05, color: INK }}>
-          Your magic link is{' '}
-          <em style={{ fontFamily: "'Alfa Slab One',serif", fontStyle: 'normal', textShadow: `2px 2px 0 ${RED}, 4px 4px 0 ${RED_DEEP}`, padding: '0 .04em' }}>
-            on its way.
-          </em>
-        </h2>
-        <p style={{ margin: '0 0 18px', fontFamily: "'IM Fell English',serif", fontStyle: 'italic', fontSize: 18, lineHeight: 1.5, color: INK_SOFT }}>
-          We sent a sign-in link to <strong style={{ fontFamily: "'Special Elite',monospace", fontStyle: 'normal' }}>{email}</strong>. Click it to finish — your {totalPicks} {totalPicks === 1 ? 'pick' : 'picks'} {totalPicks === 1 ? 'is' : 'are'} already saved.
-        </p>
-        <p style={{ margin: 0, fontFamily: "'Special Elite',monospace", fontSize: 13, color: INK_SOFT }}>
-          The link expires in 24 hours · No password, ever
-        </p>
+      <section className="form-section">
+        <div className="form-wrap-narrow">
+          <div className="form-card flush" style={{ textAlign: 'center' }}>
+            <p className="form-step">— Check Inbox —</p>
+            <h2 className="form-h">
+              Your magic link is{' '}
+              <em style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal', color: 'var(--ink)', textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)', padding: '0 .04em' }}>
+                on its way.
+              </em>
+            </h2>
+            <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 18, lineHeight: 1.5, color: 'var(--ink-soft)' }}>
+              We sent a sign-in link to <strong style={{ fontFamily: "'Special Elite', monospace", fontStyle: 'normal' }}>{email}</strong>. Click it to finish — your {totalPicks} {totalPicks === 1 ? 'pick' : 'picks'} {totalPicks === 1 ? 'is' : 'are'} already saved.
+            </p>
+            <p style={{ marginTop: 14, fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)' }}>
+              The link expires in 24 hours · No password, ever
+            </p>
+          </div>
+        </div>
       </section>
     )
   }
 
-  // ── Tab buttons (shared) ─────────────────────────────────────────
-  const tabBtn = (id: PickerTab, label: string, count: number) => {
-    const active = tab === id
-    return (
-      <button
-        type="button"
-        onClick={() => setTab(id)}
-        style={{
-          flex: 1,
-          padding: '14px 18px 12px',
-          fontFamily: "'Alfa Slab One',serif",
-          fontSize: 16,
-          letterSpacing: '.04em',
-          background: active ? RED : PAPER,
-          color: active ? PAPER : INK,
-          border: `2px solid ${INK}`,
-          cursor: 'pointer',
-          boxShadow: active ? `2px 2px 0 ${INK}` : 'none',
-        }}
-      >
-        {label}
-        {count > 0 && (
-          <span
-            style={{
-              marginLeft: 8,
-              fontFamily: "'Stardos Stamp',monospace",
-              fontSize: 11,
-              letterSpacing: '.12em',
-              padding: '2px 7px',
-              background: active ? PAPER : RED,
-              color: active ? INK : PAPER,
-              border: `1.5px solid ${INK}`,
-            }}
-          >
-            {count}
-          </span>
-        )}
-      </button>
-    )
-  }
-
   return (
-    <section style={{ background: CREAM, padding: 'clamp(28px,4vw,56px) clamp(16px,3vw,32px)', borderTop: `3px solid ${INK}` }}>
-      <div style={{ maxWidth: 760, margin: '0 auto' }}>
-        <p style={{ margin: '0 0 8px', fontFamily: "'Stardos Stamp',monospace", fontSize: 12, letterSpacing: '.3em', textTransform: 'uppercase', color: RED_DEEP, textAlign: 'center' }}>
-          {signedIn ? '— Your Watchlist —' : '— Choose Your Picks —'}
-        </p>
-        <p style={{ margin: '0 auto 24px', fontFamily: "'IM Fell English',serif", fontStyle: 'italic', fontSize: 'clamp(17px,2vw,20px)', lineHeight: 1.45, color: INK, textAlign: 'center', maxWidth: 580 }}>
-          {signedIn
-            ? <>Welcome back{accountEmail ? <>, <strong style={{ fontFamily: "'Special Elite',monospace", fontStyle: 'normal' }}>{accountEmail}</strong></> : ''}. Toggle picks below — changes save instantly.</>
-            : <>Tell us what you shop for — by category, by brand, or both. Drop your email and we&rsquo;ll send the live sales.</>
-          }
-        </p>
+    <section className="form-section">
+      <div className="form-wrap-narrow">
+        <div className="form-card flush">
+          {/* Header — matches /preferences */}
+          <p className="form-step">— Your Watchlist —</p>
+          <h2 className="form-h">
+            {totalPicks === 0
+              ? <>Pick what you&rsquo;re <em style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal', color: 'var(--ink)', textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)', padding: '0 .04em' }}>shopping for.</em></>
+              : <>What we&rsquo;re hunting for, on your behalf.</>}
+          </h2>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 10 }}>
-          {tabBtn('categories', 'Categories', pickedCats.size)}
-          {tabBtn('stores', 'Stores', pickedStores.length)}
-        </div>
+          {totalPicks === 0 ? (
+            <div style={{ marginBottom: 16, padding: '18px 22px', background: '#fff8e2', border: '2px dashed var(--ink)', fontFamily: "'IM Fell English', serif", fontSize: 17, lineHeight: 1.5, color: 'var(--ink)' }}>
+              Welcome in. Pick categories (broad — e.g. <em>Skincare</em>) or specific brands (narrow — e.g. <em>J.Crew</em>) — any mix. We&rsquo;ll email when real deals land. <em style={{ fontStyle: 'italic', color: 'var(--red-deep)' }}>Pick three to start — free.</em>
+            </div>
+          ) : (
+            <p className="selected-summary">
+              <b>{totalPicks}</b>
+              {isPaid
+                ? `active ${totalPicks === 1 ? 'pick' : 'picks'} · unlimited on Personal Shopper`
+                : `of ${FREE_PICK_LIMIT} picks · ${watchCount} ${watchCount === 1 ? 'category' : 'categories'} + ${storeCount} ${storeCount === 1 ? 'store' : 'stores'}`}
+            </p>
+          )}
 
-        {/* Categories tab */}
-        {tab === 'categories' && (
-          <div style={{ background: PAPER, border: `2px solid ${INK}`, borderTop: 'none', padding: 'clamp(14px,2vw,20px)' }}>
-            {grouped.length === 0 && (
-              <p style={{ textAlign: 'center', color: INK_SOFT, fontFamily: "'Special Elite',monospace", margin: 0, padding: '20px 0' }}>
-                Loading categories…
-              </p>
-            )}
-            {grouped.map(([groupName, cats]) => {
-              const isOpen = openGroups.has(groupName)
-              const pickedInGroup = cats.filter((c) => pickedCats.has(c.slug)).length
+          {overLimit && (
+            <div style={{ marginBottom: 16, padding: '14px 18px', background: '#fde0de', border: '2px solid var(--red-deep)', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--red-deep)' }}>
+              <strong>Sends paused.</strong> You have {totalPicks} picks but free tier allows {FREE_PICK_LIMIT}. Remove {totalPicks - FREE_PICK_LIMIT} below, or <a href="/pricing" style={{ color: 'var(--red-deep)', textDecoration: 'underline' }}>upgrade for unlimited</a>.
+            </div>
+          )}
+
+          {/* Tabs */}
+          <div role="tablist" style={{ display: 'flex', gap: 2, borderBottom: '2px solid var(--ink)', marginBottom: 16 }}>
+            {([
+              { id: 'categories' as PickerTab, label: `Categories${watchCount > 0 ? ` (${watchCount})` : ''}` },
+              { id: 'stores' as PickerTab, label: `Stores${storeCount > 0 ? ` (${storeCount})` : ''}` },
+            ]).map((t) => {
+              const isActive = pickerTab === t.id
               return (
-                <div key={groupName} style={{ borderBottom: `1.5px dashed ${INK}55`, paddingBottom: 6, marginBottom: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(groupName)}
-                    style={{ width: '100%', textAlign: 'left', padding: '10px 4px', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: "'Alfa Slab One',serif", fontSize: 16, letterSpacing: '.04em', color: INK }}
-                  >
-                    <span>
-                      {groupName}
-                      {pickedInGroup > 0 && (
-                        <span style={{ marginLeft: 10, fontFamily: "'Stardos Stamp',monospace", fontSize: 11, letterSpacing: '.14em', color: RED_DEEP }}>
-                          {pickedInGroup} PICKED
-                        </span>
-                      )}
-                    </span>
-                    <span style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 18, color: INK_SOFT }}>
-                      {isOpen ? '▾' : '▸'}
-                    </span>
-                  </button>
-                  {isOpen && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '4px 4px 12px' }}>
-                      {cats.map((c) => {
-                        const on = pickedCats.has(c.slug)
-                        return (
-                          <button
-                            key={c.slug}
-                            type="button"
-                            onClick={() => toggleCat(c.slug)}
-                            style={{ fontFamily: "'Alfa Slab One',serif", fontWeight: 400, fontSize: 13, letterSpacing: '.04em', padding: '7px 12px 6px', border: `2px solid ${INK}`, background: on ? RED : CREAM, color: on ? PAPER : INK, cursor: 'pointer', boxShadow: on ? `2px 2px 0 ${INK}` : 'none' }}
-                          >
-                            {c.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setPickerTab(t.id)}
+                  style={{
+                    fontFamily: "'Stardos Stamp', monospace",
+                    fontSize: 13,
+                    letterSpacing: '.16em',
+                    textTransform: 'uppercase',
+                    padding: '14px 20px 12px',
+                    minHeight: 44,
+                    flex: '1 1 auto',
+                    background: isActive ? 'var(--ink)' : 'transparent',
+                    color: isActive ? 'var(--bone, #fff5d4)' : 'var(--ink-55, #6b6353)',
+                    border: '2px solid var(--ink)',
+                    borderBottom: 'none',
+                    cursor: 'pointer',
+                    marginBottom: '-2px',
+                  }}
+                >
+                  {t.label}
+                </button>
               )
             })}
           </div>
-        )}
 
-        {/* Stores tab */}
-        {tab === 'stores' && (
-          <div style={{ background: PAPER, border: `2px solid ${INK}`, borderTop: 'none', padding: 'clamp(14px,2vw,20px)' }}>
-            <div style={{ position: 'relative' }}>
-              <input
-                type="text"
-                value={storeQuery}
-                onChange={(e) => setStoreQuery(e.target.value)}
-                placeholder={storesLoaded ? 'Search 1,700+ brands…' : 'Loading brands…'}
-                disabled={!storesLoaded}
-                style={{ width: '100%', padding: '12px 14px', fontFamily: "'Special Elite',monospace", fontSize: 16, background: CREAM, border: `2px solid ${INK}`, color: INK, outline: 'none', boxSizing: 'border-box' }}
-              />
-              {storeResults.length > 0 && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: CREAM, border: `2px solid ${INK}`, borderTop: 'none', zIndex: 5, maxHeight: 280, overflowY: 'auto' }}>
-                  {storeResults.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => addStore(s)}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', fontFamily: "'Special Elite',monospace", fontSize: 15, background: 'transparent', border: 'none', borderBottom: `1px solid ${INK}33`, color: INK, cursor: 'pointer' }}
-                    >
-                      + {s.name}
-                    </button>
-                  ))}
+          {/* Categories tab — uses /preferences .cat-list styling */}
+          {pickerTab === 'categories' && (
+            <div className="dl-field">
+              <div className="cat-list">
+                {grouped.length === 0 && (
+                  <p style={{ textAlign: 'center', color: 'var(--ink-soft)', fontFamily: "'Special Elite', monospace", margin: 0, padding: '20px 0' }}>
+                    Loading categories…
+                  </p>
+                )}
+                {grouped.map((group) => {
+                  const total = group.items.length
+                  const onCount = group.items.filter((c) => pickedCats.has(c.slug)).length
+                  const isOpen = openGroups.has(group.name)
+                  return (
+                    <div key={group.name} className={`cat ${isOpen ? 'open' : ''}`}>
+                      <div className="cat-head" onClick={() => toggleGroup(group.name)}>
+                        <span className="swatch" />
+                        <h4>{group.name}</h4>
+                        <span className={`cat-count ${onCount > 0 ? 'has' : ''}`}>
+                          {onCount > 0 ? `${onCount} / ${total}` : `${total} types`}
+                        </span>
+                        <span className="cat-chevron">+</span>
+                      </div>
+                      <div className="cat-body">
+                        <div className="chip-group">
+                          {group.items.map((c) => {
+                            const on = pickedCats.has(c.slug)
+                            return (
+                              <button
+                                key={c.slug}
+                                type="button"
+                                className={`chip ${on ? 'on' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleCat(c.slug)
+                                }}
+                              >
+                                {c.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Stores tab */}
+          {pickerTab === 'stores' && (
+            <div className="dl-field">
+              {pickedStores.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div className="t-meta" style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-55)', marginBottom: 8 }}>
+                    Watching {storeCount} {storeCount === 1 ? 'store' : 'stores'}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {pickedStores.map((p) => (
+                      <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, paddingLeft: 12, border: '1.5px solid var(--ink)', background: 'var(--ink)', color: 'var(--paper, #f6ecd2)', fontFamily: 'var(--font-mono, monospace)', fontSize: 13, minHeight: 36 }}>
+                        {p.name}
+                        <button
+                          type="button"
+                          onClick={() => removeStore(p.id)}
+                          aria-label={`Remove ${p.name}`}
+                          style={{ minWidth: 36, minHeight: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: 'var(--paper, #f6ecd2)', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 0 }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
-            </div>
-            {pickedStores.length === 0 && (
-              <p style={{ margin: '16px 0 0', fontFamily: "'IM Fell English',serif", fontStyle: 'italic', fontSize: 15, color: INK_SOFT, textAlign: 'center' }}>
-                Type a brand name. Add any you actually shop.
-              </p>
-            )}
-            {pickedStores.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
-                {pickedStores.map((s) => (
-                  <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: "'Alfa Slab One',serif", fontSize: 13, letterSpacing: '.04em', padding: '8px 8px 7px 14px', background: RED, color: PAPER, border: `2px solid ${INK}`, boxShadow: `2px 2px 0 ${INK}` }}>
-                    {s.name}
-                    <button
-                      type="button"
-                      onClick={() => removeStore(s.id)}
-                      aria-label={`Remove ${s.name}`}
-                      style={{ background: 'transparent', border: 'none', color: PAPER, fontFamily: "'Alfa Slab One',serif", fontSize: 16, lineHeight: 1, cursor: 'pointer', padding: '0 4px' }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="search"
+                  value={storeQuery}
+                  onChange={(e) => setStoreQuery(e.target.value)}
+                  placeholder={storesLoaded ? 'Search 1,700+ brands — try \'J.Crew\', \'Nordstrom\', \'REI\'…' : 'Loading brands…'}
+                  disabled={!storesLoaded}
+                  style={{ width: '100%', padding: '12px 14px', fontFamily: "'Special Elite', monospace", fontSize: 16, background: '#fff8e2', border: '2px solid var(--ink)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+                />
+                {storeResults.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff8e2', border: '2px solid var(--ink)', borderTop: 'none', zIndex: 5, maxHeight: 280, overflowY: 'auto' }}>
+                    {storeResults.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => addStore(s)}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', fontFamily: "'Special Elite', monospace", fontSize: 15, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(24,22,18,0.2)', color: 'var(--ink)', cursor: 'pointer' }}
+                      >
+                        + {s.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+              {pickedStores.length === 0 && storesLoaded && (
+                <p style={{ margin: '16px 0 0', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-soft)', textAlign: 'center' }}>
+                  Type a brand name. Add any you actually shop.
+                </p>
+              )}
+            </div>
+          )}
 
-        {/* In-form links */}
-        <p style={{ margin: '16px 0 0', fontFamily: "'Special Elite',monospace", fontSize: 13, color: INK_SOFT, textAlign: 'center' }}>
-          <a href="/stores" style={{ color: INK_SOFT, textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
-            See all 1,700+ brands →
-          </a>
-          {'  ·  '}
-          <a href="/suggest" style={{ color: INK_SOFT, textDecoration: 'underline', textDecorationStyle: 'dotted' }}>
-            Suggest a store →
-          </a>
-        </p>
-
-        {/* Over-limit nudge — only meaningful on a fresh signup */}
-        {overLimit && !signedIn && (
-          <div style={{ marginTop: 22, padding: '14px 18px', background: YELLOW, border: `2px solid ${INK}`, fontFamily: "'Special Elite',monospace", fontSize: 15, color: INK, textAlign: 'center' }}>
-            Free tier covers {FREE_PICK_LIMIT} picks — you&rsquo;ve chosen {totalPicks}.{' '}
-            <a href="/pricing" style={{ color: RED_DEEP, fontWeight: 'bold' }}>Upgrade for unlimited →</a>
-          </div>
-        )}
-
-        {/* ── Action panel ───────────────────────────────────────── */}
-        {signedIn === null && (
-          <p style={{ marginTop: 28, textAlign: 'center', color: INK_SOFT, fontFamily: "'Special Elite',monospace" }}>
-            Loading…
+          {/* In-form links */}
+          <p style={{ margin: '16px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', textAlign: 'center' }}>
+            <a href="/stores" style={{ color: 'var(--ink-soft)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>See all 1,700+ brands →</a>
+            {'  ·  '}
+            <a href="/suggest" style={{ color: 'var(--ink-soft)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>Suggest a store →</a>
           </p>
-        )}
 
-        {/* Signed-out: email + submit */}
-        {signedIn === false && (
-          <form
-            onSubmit={handleAnonSubmit}
-            style={{ marginTop: 28, background: PAPER, border: `3px solid ${INK}`, padding: 'clamp(20px,3vw,28px)', boxShadow: `6px 6px 0 ${INK}` }}
-          >
-            <p style={{ margin: '0 0 14px', fontFamily: "'Stardos Stamp',monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: RED_DEEP, textAlign: 'center' }}>
-              {totalPicks === 0
-                ? '— Pick at least one above —'
-                : `— ${totalPicks} ${totalPicks === 1 ? 'pick' : 'picks'} · drop your email —`}
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@inbox.com"
-                required
-                disabled={submitting || totalPicks === 0}
-                style={{ flex: '1 1 220px', padding: '14px 16px', fontFamily: "'Special Elite',monospace", fontSize: 16, background: CREAM, border: `2px solid ${INK}`, color: INK, outline: 'none', boxSizing: 'border-box' }}
-              />
-              <button
-                type="submit"
-                disabled={submitting || !email || totalPicks === 0}
-                style={{ flex: '0 0 auto', padding: '14px 24px', fontFamily: "'Alfa Slab One',serif", fontSize: 15, letterSpacing: '.06em', background: submitting || !email || totalPicks === 0 ? '#999' : RED, color: PAPER, border: `2px solid ${INK}`, boxShadow: `4px 4px 0 ${INK}`, cursor: submitting || !email || totalPicks === 0 ? 'not-allowed' : 'pointer' }}
-              >
-                {submitting ? 'SENDING…' : 'SEND ME DEALS →'}
-              </button>
-            </div>
-            {error && (
-              <p style={{ margin: '12px 0 0', fontFamily: "'Special Elite',monospace", fontSize: 14, color: RED_DEEP, textAlign: 'center' }}>{error}</p>
-            )}
-            <p style={{ margin: '14px 0 0', fontFamily: "'Stardos Stamp',monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: INK_SOFT, textAlign: 'center' }}>
-              No card · No password · Unsubscribe anytime
-            </p>
-          </form>
-        )}
+          {/* Action panel */}
+          {signedIn === null && (
+            <p style={{ marginTop: 28, textAlign: 'center', color: 'var(--ink-soft)', fontFamily: "'Special Elite', monospace" }}>Loading…</p>
+          )}
 
-        {/* Signed-in: send-deals + danger zone */}
-        {signedIn === true && (
-          <>
-            <div style={{ marginTop: 28, background: PAPER, border: `3px solid ${INK}`, padding: 'clamp(20px,3vw,28px)', boxShadow: `6px 6px 0 ${INK}`, textAlign: 'center' }}>
-              <p style={{ margin: '0 0 14px', fontFamily: "'Stardos Stamp',monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: RED_DEEP }}>
-                {totalPicks === 0
-                  ? '— Pick at least one above —'
-                  : `— ${totalPicks} active ${totalPicks === 1 ? 'pick' : 'picks'} —`}
+          {/* Signed-out: email + submit */}
+          {signedIn === false && (
+            <form onSubmit={handleAnonSubmit} style={{ marginTop: 28 }}>
+              <p style={{ margin: '0 0 14px', fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--red-deep)', textAlign: 'center' }}>
+                {totalPicks === 0 ? '— Pick at least one above —' : `— ${totalPicks} ${totalPicks === 1 ? 'pick' : 'picks'} · drop your email —`}
               </p>
-              <button
-                type="button"
-                onClick={sendDealsNow}
-                disabled={sendingDeals || totalPicks === 0}
-                style={{ padding: '16px 28px', fontFamily: "'Alfa Slab One',serif", fontSize: 16, letterSpacing: '.06em', background: sendingDeals || totalPicks === 0 ? '#999' : RED, color: PAPER, border: `2px solid ${INK}`, boxShadow: `4px 4px 0 ${INK}`, cursor: sendingDeals || totalPicks === 0 ? 'not-allowed' : 'pointer' }}
-              >
-                {sendingDeals ? 'SENDING…' : 'SEND ME DEALS NOW →'}
-              </button>
-              {statusMsg && (
-                <p style={{ margin: '14px 0 0', fontFamily: "'IM Fell English',serif", fontStyle: 'italic', fontSize: 15, color: INK_SOFT }}>{statusMsg}</p>
-              )}
-              {error && (
-                <p style={{ margin: '12px 0 0', fontFamily: "'Special Elite',monospace", fontSize: 14, color: RED_DEEP }}>{error}</p>
-              )}
-            </div>
-
-            {/* Danger zone */}
-            <div style={{ marginTop: 36, padding: '20px 18px', border: `2px dashed ${INK}55`, background: 'transparent', textAlign: 'center' }}>
-              <p style={{ margin: '0 0 12px', fontFamily: "'Stardos Stamp',monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: INK_SOFT }}>
-                — Account —
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@inbox.com"
+                  required
+                  disabled={submitting || totalPicks === 0}
+                  style={{ flex: '1 1 220px', padding: '14px 16px', fontFamily: "'Special Elite', monospace", fontSize: 16, background: '#fff8e2', border: '2px solid var(--ink)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+                />
                 <button
-                  type="button"
-                  onClick={handleUnsubscribe}
-                  style={{ padding: '10px 18px', fontFamily: "'Special Elite',monospace", fontSize: 14, background: 'transparent', color: INK_SOFT, border: `1.5px solid ${INK_SOFT}`, cursor: 'pointer' }}
+                  type="submit"
+                  disabled={submitting || !email || totalPicks === 0}
+                  className="submit-btn"
+                  style={{ flex: '0 0 auto' }}
                 >
-                  Unsubscribe
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteAccount}
-                  style={{ padding: '10px 18px', fontFamily: "'Special Elite',monospace", fontSize: 14, background: 'transparent', color: RED_DEEP, border: `1.5px solid ${RED_DEEP}`, cursor: 'pointer' }}
-                >
-                  Delete account
+                  {submitting ? 'SENDING…' : 'SEND ME DEALS →'}
                 </button>
               </div>
-            </div>
-          </>
-        )}
+              {error && (<p style={{ margin: '12px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--red-deep)', textAlign: 'center' }}>{error}</p>)}
+              <p style={{ margin: '14px 0 0', fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--ink-soft)', textAlign: 'center' }}>
+                No card · No password · Unsubscribe anytime
+              </p>
+            </form>
+          )}
+
+          {/* Signed-in: send + upgrade + danger zone */}
+          {signedIn === true && (
+            <>
+              <div style={{ marginTop: 28 }}>
+                <button
+                  type="button"
+                  onClick={sendDealsNow}
+                  disabled={sendingDeals || totalPicks === 0 || overLimit}
+                  className="submit-btn"
+                  style={{ width: '100%' }}
+                >
+                  {sendingDeals ? 'SENDING…' : 'SEND ME DEALS NOW →'}
+                </button>
+                <p style={{ margin: '10px 0 0', fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--ink-soft)', textAlign: 'center' }}>
+                  {totalPicks === 0
+                    ? 'Pick at least one above first'
+                    : `Pulls fresh deals matching your ${totalPicks} active ${totalPicks === 1 ? 'pick' : 'picks'}`}
+                </p>
+                {statusMsg && (<p style={{ margin: '14px 0 0', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink-soft)', textAlign: 'center' }}>{statusMsg}</p>)}
+                {error && (<p style={{ margin: '12px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--red-deep)', textAlign: 'center' }}>{error}</p>)}
+              </div>
+
+              {/* Upgrade nudge — free users only */}
+              {!isPaid && (
+                <div style={{ marginTop: 28, padding: '20px 22px', background: '#fff8e2', border: '2.5px solid var(--ink)', boxShadow: '4px 4px 0 var(--ink)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, justifyContent: 'space-between' }}>
+                  <div style={{ flex: '1 1 220px' }}>
+                    <div style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.3em', textTransform: 'uppercase', color: 'var(--red-deep)', marginBottom: 6 }}>
+                      — Want more? —
+                    </div>
+                    <p style={{ margin: 0, fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 16, color: 'var(--ink)', lineHeight: 1.45 }}>
+                      Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited category and store picks.
+                    </p>
+                  </div>
+                  <a
+                    href="/pricing"
+                    style={{ fontFamily: "'Alfa Slab One', serif", fontSize: 14, letterSpacing: '.08em', textTransform: 'uppercase', background: 'var(--red)', color: 'var(--paper, #f6ecd2)', padding: '14px 24px 12px', border: '2px solid var(--ink)', boxShadow: '4px 4px 0 var(--ink)', textDecoration: 'none', flexShrink: 0, minHeight: 48, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    Upgrade →
+                  </a>
+                </div>
+              )}
+
+              {/* Danger zone */}
+              <div className="danger">
+                <p>
+                  <em>Need to step away?</em>{' '}
+                  <strong>Unsubscribe</strong> keeps your account but clears your watchlist — come back any time.{' '}
+                  <strong>Delete</strong> wipes everything: watchlist, picks, send history, and your sign-in entirely.
+                </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn-ghost-tag"
+                    style={{ background: '#fde0de', color: 'var(--red-deep)' }}
+                    onClick={handleUnsubscribe}
+                  >
+                    Unsubscribe
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost-tag"
+                    style={{ background: 'var(--red-deep)', color: '#fff8e2', border: '2px solid var(--red-deep)' }}
+                    onClick={handleDeleteAccount}
+                  >
+                    Delete my account
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </section>
   )
