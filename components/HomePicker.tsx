@@ -353,7 +353,7 @@ export function HomePicker() {
           <h2 className="form-h">
             {totalPicks === 0
               ? <>Pick what you&rsquo;re <em style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal', color: 'var(--ink)', textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)', padding: '0 .04em' }}>shopping for.</em></>
-              : <>What we&rsquo;re hunting for, on your behalf.</>}
+              : <>What are you <em style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal', color: 'var(--ink)', textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)', padding: '0 .04em' }}>shopping for?</em></>}
           </h2>
 
           {totalPicks === 0 ? (

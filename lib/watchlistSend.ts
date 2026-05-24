@@ -186,7 +186,7 @@ export async function sendWatchlistEmailForSubscriber(
     (dealRows ?? []).filter((d): d is Deal => !isJunkDeal(d as Deal))
   )
 
-  const { storeTiers } = await fetchStoreData(appUrl)
+  const { storeTiers, storeUrls } = await fetchStoreData(appUrl)
 
   // ── Category sections: deals whose categories include the watch slug ──
   const categorySections: WatchSection[] = watches.map((w) => {
@@ -214,7 +214,7 @@ export async function sendWatchlistEmailForSubscriber(
   const watchSections: WatchSection[] = [...categorySections, ...storeSections]
 
   const totalDeals = watchSections.reduce((sum, s) => sum + s.deals.length, 0)
-  const html = generateWatchlistEmail({ appUrl, watchSections })
+  const html = generateWatchlistEmail({ appUrl, watchSections, storeUrls })
 
   const result = await sendEmail({
     to: subscriber.email,

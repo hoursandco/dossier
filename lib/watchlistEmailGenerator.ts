@@ -42,6 +42,11 @@ export interface WatchSection {
 export interface WatchlistEmailInput {
   appUrl: string
   watchSections: WatchSection[]
+  // Map of retailer name (lowercase + normalized) → store website URL,
+  // sourced from /api/stores. Used by bestDealLink() below to override
+  // the "https://google.com/search?q=..." fallback the ingest pipeline
+  // writes when the LLM didn't extract a deal link from the email.
+  storeUrls?: Record<string, string>
 }
 
 function escape(s: string): string {
@@ -50,6 +55,35 @@ function escape(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+// Strip the same characters fetchStoreData() strips when it builds
+// storeUrls keys — must match or lookups will miss. Keeps "J.Crew",
+// "J. Crew", and "JCrew" pointing at the same entry.
+function normRetailerForLookup(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+// Pick the best URL we can render for a brand/deal link:
+//   1. The deal's affiliate_link (revenue path) if present
+//   2. The deal's original_link, unless it's the google-search fallback
+//      the ingest writes when the LLM didn't extract a link
+//   3. The store's website from the directory (looked up by retailer)
+//   4. As a last resort, the google-search fallback (so the link still
+//      lands somewhere useful instead of "#")
+function bestDealLink(
+  deal: Deal,
+  storeUrls: Record<string, string> = {},
+): string {
+  if (deal.affiliate_link) return deal.affiliate_link
+  const orig = deal.original_link || ''
+  const isGoogleFallback = orig.startsWith('https://google.com/search?q=')
+  if (orig && !isGoogleFallback) return orig
+  const r = deal.retailer || ''
+  const fromStore =
+    storeUrls[r.toLowerCase()] || storeUrls[normRetailerForLookup(r)]
+  if (fromStore) return fromStore
+  return orig || '#'
 }
 
 // Wrap the last word of a heading in the signature red drop-shadow.
@@ -100,8 +134,8 @@ function savingsBadge(deal: Deal): string {
 
 // ── One deal: description + optional code chip / expiry on the left,
 //    savings badge on the right ──────────────────────────────────────────
-function dealRow(deal: Deal): string {
-  const link = escape(deal.affiliate_link || deal.original_link || '#')
+function dealRow(deal: Deal, storeUrls: Record<string, string>): string {
+  const link = escape(bestDealLink(deal, storeUrls))
   const description = escape(deal.description)
   const codeChip = deal.promo_code
     ? `<span style="display:inline-block;background:${YELLOW};border:1.5px solid ${INK};padding:4px 9px 3px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:${INK};">CODE&nbsp;·&nbsp;${escape(deal.promo_code)}</span>`
@@ -109,7 +143,15 @@ function dealRow(deal: Deal): string {
   const expiry = deal.expiration_date
     ? `<span style="display:inline-block;font-family:${FONT_BODY};font-style:italic;font-size:13px;color:${INK_SOFT};${deal.promo_code ? 'margin-left:8px;' : ''}">Ends ${escape(deal.expiration_date)}</span>`
     : ''
-  const meta = codeChip || expiry ? `<div style="margin-top:8px;">${codeChip}${expiry}</div>` : ''
+  // "Original email →" link — only rendered when the source email had a
+  // "view in browser" URL we could extract. Helps the user verify the
+  // promo on the retailer's marketing page if anything looks off.
+  const sourceEmailLink = deal.source_email_link
+    ? `<a href="${escape(deal.source_email_link)}" style="display:inline-block;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:${INK_SOFT};text-decoration:underline;text-decoration-style:dotted;${codeChip || expiry ? 'margin-left:8px;' : ''}">Original email →</a>`
+    : ''
+  const meta = codeChip || expiry || sourceEmailLink
+    ? `<div style="margin-top:8px;">${codeChip}${expiry}${sourceEmailLink}</div>`
+    : ''
 
   return `
             <table class="deal-row" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -126,12 +168,18 @@ function dealRow(deal: Deal): string {
 }
 
 // ── One retailer within a section: name + its deals (dashed dividers) ────
-function retailerBlock(retailer: string, deals: Deal[]): string {
+function retailerBlock(
+  retailer: string,
+  deals: Deal[],
+  storeUrls: Record<string, string>,
+): string {
   const name = escape(retailer)
-  const firstLink = escape(deals[0]?.affiliate_link || deals[0]?.original_link || '#')
+  const firstLink = deals[0]
+    ? escape(bestDealLink(deals[0], storeUrls))
+    : '#'
   const count = deals.length
   const rows = deals
-    .map((d, i) => dealRow(d) + (i < deals.length - 1 ? `\n            <hr style="border:0;border-top:1.5px dashed ${INK};margin:14px 0;">` : ''))
+    .map((d, i) => dealRow(d, storeUrls) + (i < deals.length - 1 ? `\n            <hr style="border:0;border-top:1.5px dashed ${INK};margin:14px 0;">` : ''))
     .join('')
   return `
             <p style="margin:0 0 14px;">
@@ -141,7 +189,11 @@ function retailerBlock(retailer: string, deals: Deal[]): string {
 }
 
 // ── One watch section: eyebrow + heading + retailer blocks (or empty) ────
-function sectionBlock(s: WatchSection, index: number): string {
+function sectionBlock(
+  s: WatchSection,
+  index: number,
+  storeUrls: Record<string, string>,
+): string {
   const num = String(index + 1).padStart(2, '0')
   const eyebrow = `<p style="margin:0 0 12px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.4em;text-transform:uppercase;color:${RED_DEEP};">— Section ${num} —</p>`
   const h2 = `<h2 style="margin:0 0 24px;font-family:${FONT_DISPLAY};font-weight:400;font-size:38px;line-height:1;letter-spacing:.04em;color:${INK};text-indent:.04em;">${shadowLastWord(s.label)}</h2>`
@@ -177,7 +229,7 @@ function sectionBlock(s: WatchSection, index: number): string {
       const bottom = i === retailers.length - 1 ? '28px' : '20px'
       const block = `
         <tr>
-          <td class="px" style="padding:${top} 40px ${bottom};background:${PANEL};">${retailerBlock(retailer, deals)}
+          <td class="px" style="padding:${top} 40px ${bottom};background:${PANEL};">${retailerBlock(retailer, deals, storeUrls)}
           </td>
         </tr>`
       const divider = i < retailers.length - 1
@@ -345,6 +397,7 @@ ${step('03', GREEN, CREAM_TEXT, 'WE EMAIL', 'Matches arrive in a single dossier 
 export function generateWatchlistEmail({
   appUrl,
   watchSections,
+  storeUrls = {},
 }: WatchlistEmailInput): string {
   const totalDeals = watchSections.reduce((sum, s) => sum + s.deals.length, 0)
   const matched = watchSections.filter((s) => s.deals.length > 0).length
@@ -371,7 +424,7 @@ export function generateWatchlistEmail({
                 </td>`
 
   const sectionsHtml = watchSections
-    .map((s, i) => sectionBlock(s, i))
+    .map((s, i) => sectionBlock(s, i, storeUrls))
     .join(`
         <tr><td class="px" style="padding:0 40px;background:${PANEL};"><hr style="border:0;border-top:3px solid ${INK};margin:0;"></td></tr>`)
 
