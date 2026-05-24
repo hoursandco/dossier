@@ -596,7 +596,7 @@ export function HomePicker() {
                       — Want more? —
                     </div>
                     <p style={{ margin: 0, fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 16, color: 'var(--ink)', lineHeight: 1.45 }}>
-                      Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited category and store picks.
+                      Upgrade for unlimited category and store picks.
                     </p>
                   </div>
                   <a

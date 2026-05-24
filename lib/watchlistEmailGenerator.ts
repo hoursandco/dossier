@@ -255,7 +255,9 @@ function sectionBlock(
 export function generateEmptyWatchlistNudgeEmail({
   appUrl,
 }: { appUrl: string }): string {
-  const preferencesUrl = `${appUrl}/preferences`
+  // Settings live on the homepage now (the picker IS the homepage),
+  // so this points there instead of /preferences.
+  const preferencesUrl = `${appUrl}/`
   const suggestUrl = `${appUrl}/suggest`
   const unsubscribeUrl = `${appUrl}/unsubscribe`
 
@@ -405,14 +407,18 @@ export function generateWatchlistEmail({
   const topMarkdown = watchSections
     .flatMap((s) => s.deals)
     .reduce((max, d) => Math.max(max, d.percent_off ?? 0), 0)
-  const preferencesUrl = `${appUrl}/preferences`
+  // Settings + watchlist live on the homepage now (the picker IS the
+  // homepage), so both links route there. Kept the variable names
+  // unchanged so the rest of the template doesn't need a renaming
+  // sweep.
+  const preferencesUrl = `${appUrl}/`
   const suggestUrl = `${appUrl}/suggest`
   const unsubscribeUrl = `${appUrl}/unsubscribe`
   const todayLong = format(new Date(), 'MMMM d, yyyy')
 
   const headline = totalDeals === 0
     ? `Still ${shadowLastWord('watching.', CREAM_TEXT)}`
-    : `${totalDeals} ${shadowLastWord(`fresh ${totalDeals === 1 ? 'deal' : 'deals'}`, CREAM_TEXT)}<br>this morning.`
+    : `${totalDeals} ${shadowLastWord(`${totalDeals === 1 ? 'deal is' : 'deals are'} available`, CREAM_TEXT)}<br>right now.`
   const subline = totalDeals === 0
     ? `Nothing matched your ${total === 1 ? 'watch' : 'watches'} today — but we&rsquo;re still on it. We&rsquo;ll email the moment something lands.`
     : `${matched} of your ${total} ${total === 1 ? 'watch' : 'watches'} matched. We skipped the noise — these are worth a look.`
@@ -509,7 +515,7 @@ ${sectionsHtml}
       <tr>
         <td class="px" style="padding:36px 40px;background:${PAPER};border-top:3px solid ${INK};border-bottom:3px solid ${INK};">
           <p style="margin:0 0 14px;font-family:${FONT_BODY};font-style:italic;font-size:18px;line-height:1.5;color:${INK};">That&rsquo;s it for now. If a deal you wanted didn&rsquo;t make the cut, it&rsquo;s because we ranked it below the noise — not because we missed it.</p>
-          <p style="margin:0;font-family:${FONT_TYPE};font-size:14px;line-height:1.5;color:${INK_SOFT};">Want to add a category, narrow one, or pause for a bit? &nbsp;<a href="${preferencesUrl}" style="color:${RED};text-decoration:none;">Open your watchlist →</a></p>
+          <p style="margin:0;font-family:${FONT_TYPE};font-size:14px;line-height:1.5;color:${INK_SOFT};">Want to add or remove a category or store? &nbsp;<a href="${preferencesUrl}" style="color:${RED};text-decoration:none;">Open your watchlist →</a></p>
         </td>
       </tr>
 

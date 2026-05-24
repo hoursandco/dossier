@@ -9,43 +9,21 @@
 // The HomePicker IS the page below the hero: anonymous picker for
 // new visitors, pre-loaded watchlist + action buttons for signed-in.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { format } from 'date-fns'
 import { HomePicker } from '@/components/HomePicker'
 import { DossierNav } from '@/components/DossierNav'
 
-// 14-point starburst shape reused across stickers and counters.
+// 14-point starburst shape — still used by the $100 SPECIAL hero
+// sticker. The three counters that also used it were retired.
 const STAR_POINTS =
   '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
 
-interface Stats {
-  deals_found: number
-  retailers_count: number
-  emails_scanned: number
-}
-
 export default function Home() {
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [brandCount, setBrandCount] = useState<number | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    fetch('/api/editions/latest')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.edition) setStats(d.edition)
-      })
-      .catch(() => {})
-    fetch('/api/stores')
-      .then((r) => (r.ok ? r.json() : { stores: [] }))
-      .then((d) => {
-        const all = (d.stores ?? []) as Array<{ name: string }>
-        setBrandCount(all.length)
-      })
-      .catch(() => {})
-    // DossierNav handles its own /api/admin/check and /api/account
-    // calls now, so the page-level fetch was removed.
-  }, [])
+  // (Stats / brand-count state + fetches removed when the three hero
+  // counters were retired. DossierNav handles its own /api/admin/check
+  // and /api/account calls.)
 
   // Sticker pop animation for the hero's decorative stickers.
   useEffect(() => {
@@ -74,8 +52,6 @@ export default function Home() {
   }, [])
 
   const today = format(new Date(), 'EEEE · MMMM d · yyyy').toUpperCase()
-  const dealsN = stats?.deals_found ?? 0
-  const fmt = (n: number) => n.toLocaleString('en-US')
 
   return (
     <div ref={rootRef}>
@@ -154,43 +130,8 @@ export default function Home() {
 
       </section>
 
-      {/* ============ COUNTERS BAND ============
-          Sits between the dark hero and the form-card so the counters
-          straddle the boundary — half on the black header, half on top
-          of the picker card. Matches the legacy site's layout.
-          z-index above .form-card so they paint in front of the lifted
-          picker's scalloped top edge. */}
-      <div className="hero-counters-band">
-        <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(-4deg)' }}>
-          <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-            <polygon points={STAR_POINTS} fill="#f4c623" stroke="#181612" strokeWidth="2" />
-          </svg>
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px' }}>
-            <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 22, lineHeight: 1, color: '#181612' }}>{brandCount != null ? fmt(brandCount) : '—'}</div>
-            <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', color: '#181612', marginTop: 4 }}>Brands<br />tracked</div>
-          </div>
-        </div>
-        <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(3deg)' }}>
-          <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-            <circle cx="100" cy="100" r="94" fill="#d4322a" stroke="#181612" strokeWidth="3" />
-            <circle cx="100" cy="100" r="82" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
-          </svg>
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px', color: '#fff8e2' }}>
-            <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 22, lineHeight: 1 }}>{fmt(dealsN)}</div>
-            <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Deals this<br />week</div>
-          </div>
-        </div>
-        <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(-2deg)' }}>
-          <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-            <polygon points="14,0 186,0 200,14 200,186 186,200 14,200 0,186 0,14" fill="#4ea843" stroke="#181612" strokeWidth="3" />
-            <polygon points="22,8 178,8 192,22 192,178 178,192 22,192 8,178 8,22" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
-          </svg>
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px', color: '#fff8e2' }}>
-            <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 26, lineHeight: 1 }}>0</div>
-            <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Daily blasts<br />ever</div>
-          </div>
-        </div>
-      </div>
+      {/* (Hero counters retired. The .hero-counters-band CSS rule
+          remains in redesign.css in case we bring them back.) */}
 
       {/* ============ PICKER ============ */}
       <HomePicker />
