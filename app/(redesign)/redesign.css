@@ -723,7 +723,10 @@
   font-size: 11px;
   letter-spacing: .35em;
   text-transform: uppercase;
-  z-index: 4;
+  /* Above .form-card (z:4), .form-tag (z:5), and .hero-counters-band
+     (z:6) — the lifted picker card was painting over the bottom edge
+     of this date stamp at desktop widths. */
+  z-index: 7;
   background: rgba(13,12,10,.7);
 }
 .dl-shell .date-stamp::before {
