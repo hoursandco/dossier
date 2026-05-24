@@ -185,14 +185,36 @@
   background: #0d0c0a;
   color: var(--cream);
   margin-top: 8px;
-  /* Bottom padding leaves room for the HomePicker form-card, which
-     lifts UP into this dark hero (margin-top: clamp(-140px, -14vw,
-     -80px) in HomePicker.tsx). Without the bump, the form would eat
-     the counters that live at the bottom of the hero. */
-  padding: 96px 28px clamp(160px, 18vw, 220px);
+  /* Bottom padding sized to give the HomePicker form-card room to lift
+     up (margin-top: clamp(-140px, -14vw, -80px)) without crashing into
+     the headline. Counters used to live inside the hero too — they're
+     now in .hero-counters-band below and straddle the boundary. */
+  padding: 96px 28px clamp(80px, 10vw, 130px);
   overflow: hidden;
   border-top: 4px solid var(--ink);
   border-bottom: 4px solid var(--ink);
+}
+
+/* Counters trio that sits ON the boundary between the dark hero and
+   the cream form-section. Half hangs in the hero (dark behind), half
+   hangs over the lifted form-card top edge (cream behind). z-index
+   above .form-card so it paints in front of the scalloped top. */
+.dl-shell .hero-counters-band {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: clamp(12px, 2.5vw, 28px);
+  max-width: 760px;
+  padding: 0 16px;
+  margin: 0 auto;
+  /* Pull up so the counter midline lands ~at the hero/form-section
+     boundary. Negative margin-bottom collapses the gap below so the
+     form-section doesn't get pushed down by the counters' height. */
+  margin-top: clamp(-80px, -9vw, -60px);
+  margin-bottom: clamp(-90px, -10vw, -64px);
 }
 .dl-shell .hero-inner {
   max-width: 1180px; margin: 0 auto;
@@ -713,7 +735,7 @@
 
 /* ---------- responsive ---------- */
 @media (max-width: 980px) {
-  .dl-shell .hero { padding: 72px 22px 150px; }
+  .dl-shell .hero { padding: 72px 22px 100px; }
   .dl-shell .hero-title { font-size: clamp(46px, 11vw, 96px) !important; }
   .dl-shell .sticker-bg .s { transform-origin: center; }
   .dl-shell .sticker-bg .s:nth-child(2),
@@ -773,7 +795,7 @@
   .dl-shell .faq-item .ans { font-size: 16px; }
 }
 @media (max-width: 560px) {
-  .dl-shell .hero { padding: 60px 18px 130px; }
+  .dl-shell .hero { padding: 60px 18px 90px; }
   .dl-shell .hero-title { font-size: clamp(38px, 12vw, 64px) !important; letter-spacing: .08em; text-indent: .08em; }
   .dl-shell .hero-sub { font-size: 15px; }
   .dl-shell .counters-inner { flex-direction: column; align-items: center; margin-top: -60px; }

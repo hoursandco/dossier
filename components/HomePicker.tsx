@@ -26,12 +26,6 @@ type PickerTab = 'categories' | 'stores'
 
 const FREE_PICK_LIMIT = 3
 
-// 14-point starburst — same shape used in the hero stickers. Used here
-// for the "NO PASSWORD EVER" tag that peeks out the top-right corner
-// of the form-card, mirroring the /preferences page.
-const STAR_POINTS =
-  '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
-
 function normName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
@@ -329,21 +323,9 @@ export function HomePicker() {
           className="form-card"
           style={{ marginTop: 'clamp(-140px, -14vw, -80px)' }}
         >
-          {/* Corner tag sticker — peeks out the top-right of the card,
-              same as /preferences. Visible to everyone (free signup is
-              the whole point). */}
-          <div className="form-tag">
-            <div className="sticker sh-starburst" style={{ width: 160, height: 160 }}>
-              <div className="star">
-                <svg viewBox="0 0 200 200"><polygon points={STAR_POINTS} fill="#d4322a" stroke="#181612" strokeWidth="2" /></svg>
-              </div>
-              <div className="content">
-                <div style={{ fontFamily: "'Stardos Stamp',sans-serif", color: '#fff8e2', fontSize: 10, letterSpacing: '.2em' }}>NO</div>
-                <div style={{ fontFamily: "'Alfa Slab One',serif", color: '#fff8e2', fontSize: 18, lineHeight: 1, letterSpacing: '.01em' }}>PASSWORD</div>
-                <div style={{ fontFamily: "'Stardos Stamp',sans-serif", color: '#fff8e2', fontSize: 10, letterSpacing: '.2em' }}>EVER</div>
-              </div>
-            </div>
-          </div>
+          {/* (Form-tag "NO PASSWORD EVER" corner sticker removed — the
+              counters now straddle the form-card's top edge and the
+              sticker was crowding them.) */}
 
           {/* Signed-in banner — green bar with account summary. Mirrors
               the /preferences page's .sub-banner. Anonymous visitors

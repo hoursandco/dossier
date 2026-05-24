@@ -152,53 +152,45 @@ export default function Home() {
           <p className="hero-eyebrow">— Today&rsquo;s sales, on demand. —</p>
         </div>
 
-        {/* Counters — bottom of the hero ("black header"), under the
-            eyebrow. Sticker-shaped trio, visible on every screen
-            (outside .sticker-bg so the mobile fade doesn't touch them). */}
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'center',
-            gap: 'clamp(12px, 2.5vw, 28px)',
-            margin: '32px auto 0',
-            maxWidth: 760,
-            padding: '0 16px',
-            position: 'relative',
-            zIndex: 2,
-          }}
-        >
-          <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(-4deg)' }}>
-            <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <polygon points={STAR_POINTS} fill="#f4c623" stroke="#181612" strokeWidth="2" />
-            </svg>
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px' }}>
-              <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 22, lineHeight: 1, color: '#181612' }}>{brandCount != null ? fmt(brandCount) : '—'}</div>
-              <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', color: '#181612', marginTop: 4 }}>Brands<br />tracked</div>
-            </div>
-          </div>
-          <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(3deg)' }}>
-            <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <circle cx="100" cy="100" r="94" fill="#d4322a" stroke="#181612" strokeWidth="3" />
-              <circle cx="100" cy="100" r="82" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
-            </svg>
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px', color: '#fff8e2' }}>
-              <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 22, lineHeight: 1 }}>{fmt(dealsN)}</div>
-              <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Deals this<br />week</div>
-            </div>
-          </div>
-          <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(-2deg)' }}>
-            <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <polygon points="14,0 186,0 200,14 200,186 186,200 14,200 0,186 0,14" fill="#4ea843" stroke="#181612" strokeWidth="3" />
-              <polygon points="22,8 178,8 192,22 192,178 178,192 22,192 8,178 8,22" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
-            </svg>
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px', color: '#fff8e2' }}>
-              <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 26, lineHeight: 1 }}>0</div>
-              <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Daily blasts<br />ever</div>
-            </div>
+      </section>
+
+      {/* ============ COUNTERS BAND ============
+          Sits between the dark hero and the form-card so the counters
+          straddle the boundary — half on the black header, half on top
+          of the picker card. Matches the legacy site's layout.
+          z-index above .form-card so they paint in front of the lifted
+          picker's scalloped top edge. */}
+      <div className="hero-counters-band">
+        <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(-4deg)' }}>
+          <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+            <polygon points={STAR_POINTS} fill="#f4c623" stroke="#181612" strokeWidth="2" />
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px' }}>
+            <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 22, lineHeight: 1, color: '#181612' }}>{brandCount != null ? fmt(brandCount) : '—'}</div>
+            <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', color: '#181612', marginTop: 4 }}>Brands<br />tracked</div>
           </div>
         </div>
-      </section>
+        <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(3deg)' }}>
+          <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+            <circle cx="100" cy="100" r="94" fill="#d4322a" stroke="#181612" strokeWidth="3" />
+            <circle cx="100" cy="100" r="82" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px', color: '#fff8e2' }}>
+            <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 22, lineHeight: 1 }}>{fmt(dealsN)}</div>
+            <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Deals this<br />week</div>
+          </div>
+        </div>
+        <div style={{ width: 'clamp(86px, 24vw, 120px)', height: 'clamp(86px, 24vw, 120px)', position: 'relative', transform: 'rotate(-2deg)' }}>
+          <svg viewBox="0 0 200 200" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+            <polygon points="14,0 186,0 200,14 200,186 186,200 14,200 0,186 0,14" fill="#4ea843" stroke="#181612" strokeWidth="3" />
+            <polygon points="22,8 178,8 192,22 192,178 178,192 22,192 8,178 8,22" fill="none" stroke="#fff8e2" strokeWidth="2" strokeDasharray="5 4" />
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 12px', color: '#fff8e2' }}>
+            <div style={{ fontFamily: "'Alfa Slab One',serif", fontSize: 26, lineHeight: 1 }}>0</div>
+            <div style={{ fontFamily: "'Stardos Stamp',monospace", fontSize: 8, letterSpacing: '.16em', textTransform: 'uppercase', marginTop: 4 }}>Daily blasts<br />ever</div>
+          </div>
+        </div>
+      </div>
 
       {/* ============ PICKER ============ */}
       <HomePicker />
