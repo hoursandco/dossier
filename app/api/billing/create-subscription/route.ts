@@ -7,7 +7,10 @@ import { getStripe, priceIdForPlan } from '@/lib/stripe'
 export const dynamic = 'force-dynamic'
 
 const Body = z.object({
-  plan: z.enum(['monthly', 'annual']),
+  // Only one plan exists ($4.99/mo). Kept in the schema as an enum
+  // (rather than a literal default) so that adding a future plan
+  // doesn't require a client API contract change.
+  plan: z.enum(['monthly']),
   // Optional promo code typed by the user during checkout. Validated
   // against Stripe's promotionCodes API; invalid codes return 400 so
   // the user sees the error before payment. Trimmed + upper-cased

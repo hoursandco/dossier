@@ -50,18 +50,10 @@ export default async function PreviewPricing() {
       <section className="page-head light">
         <div className="head-stickers" aria-hidden="true">
 
-          <div className="s" style={{ top: 50, left: '6%', transform: 'rotate(-9deg)' }}>
-            <div className="sticker sh-starburst" style={{ width: 160, height: 160 }}>
-              <div className="star">
-                <svg viewBox="0 0 200 200"><polygon points={STAR_POINTS} fill="#d4322a" stroke="#181612" strokeWidth="2" /></svg>
-              </div>
-              <div className="content">
-                <div style={{ fontFamily: "'Stardos Stamp',sans-serif", color: '#fff8e2', fontSize: 10, letterSpacing: '.18em' }}>SAVE</div>
-                <div style={{ fontFamily: "'Alfa Slab One',serif", color: '#fff8e2', fontSize: 38, lineHeight: 1, marginTop: 2 }}>25%</div>
-                <div style={{ fontFamily: "'Stardos Stamp',sans-serif", color: '#fff8e2', fontSize: 9, letterSpacing: '.18em', marginTop: 2 }}>ANNUAL</div>
-              </div>
-            </div>
-          </div>
+          {/* (The "SAVE 25% ANNUAL" starburst was removed when the
+              annual plan was retired — there's only one plan now. The
+              FROM $4.99 PER MO sticker below carries the headline
+              pricing on its own.) */}
 
           <div className="s" style={{ top: 40, left: '24%', transform: 'rotate(5deg)' }}>
             <div className="sticker bg-yellow sh-pricegun" style={{ width: 130, padding: '14px 12px' }}>

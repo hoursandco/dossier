@@ -81,7 +81,7 @@ export default function FaqPage() {
             <span className="faq-tag">Q · 05</span>
             <summary>How does paid billing work?</summary>
             <div className="ans">
-              <p>Personal Shopper is $4.99/month or $45/year. Billing handled by Stripe — your card details never touch our servers. Cancel any time from settings; you keep access through the end of the period you&rsquo;ve paid for.</p>
+              <p>Personal Shopper is $4.99/month. Billing handled by Stripe — your card details never touch our servers. Cancel any time from settings; you keep access through the end of the period you&rsquo;ve paid for.</p>
               <p style={{ marginTop: 14, fontStyle: 'italic' }}>
                 <a href="/" style={{ color: 'var(--red-deep)', borderBottom: '1.5px solid var(--red-deep)' }}>
                   Lock in your three brands. We&rsquo;ll handle the rest. →

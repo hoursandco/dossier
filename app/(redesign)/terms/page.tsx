@@ -29,7 +29,7 @@ const SECTIONS: Array<{ title: string; body: string }> = [
   },
   {
     title: 'Subscriptions, Billing & Cancellation',
-    body: 'Deal Dossier offers a free tier ("Inbox Cleaner") and a paid tier ("Personal Shopper") priced at $4.99/month or $45/year. Paid subscriptions auto-renew at the end of each billing period unless you cancel before renewal. You can cancel at any time from your account settings; you will keep paid access through the end of the billing period you have already paid for. We do not offer pro-rated refunds for partial periods. All payments are processed by Stripe; we never see or store your full payment card details. If a payment fails, we may downgrade your account to the free tier until the issue is resolved.',
+    body: 'Deal Dossier offers a free tier ("Inbox Cleaner") and a paid tier ("Personal Shopper") priced at $4.99/month. Paid subscriptions auto-renew at the end of each billing period unless you cancel before renewal. You can cancel at any time from your account settings; you will keep paid access through the end of the billing period you have already paid for. We do not offer pro-rated refunds for partial periods. All payments are processed by Stripe; we never see or store your full payment card details. If a payment fails, we may downgrade your account to the free tier until the issue is resolved.',
   },
   {
     title: 'Affiliate Relationships',

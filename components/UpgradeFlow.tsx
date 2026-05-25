@@ -10,15 +10,20 @@ import {
 } from '@stripe/react-stripe-js'
 import { trackEvent } from '@/lib/analytics'
 
-type Plan = 'monthly' | 'annual'
+// Only one plan now — $4.99/mo Personal Shopper. (The $45/year
+// annual plan was retired.) Kept as a Plan union of one literal so
+// adding a future plan is a one-line change here + in lib/stripe.ts.
+type Plan = 'monthly'
 
 const PLAN_LABEL: Record<Plan, { price: string; period: string; note: string }> = {
   monthly: { price: '$4.99', period: '/month', note: 'Cancel anytime.' },
-  annual: { price: '$45', period: '/year', note: 'Save 25% — billed annually.' },
 }
 
 export function UpgradeFlow() {
-  const [plan, setPlan] = useState<Plan>('annual')
+  // Single plan — no picker needed. `plan` is hard-pinned to 'monthly'
+  // and sent to the server unchanged.
+  const plan: Plan = 'monthly'
+  const planInfo = PLAN_LABEL[plan]
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -110,51 +115,38 @@ export function UpgradeFlow() {
   return (
     <div>
       <div className="t-eyebrow" style={{ marginBottom: 12 }}>
-        Choose your plan
+        Your plan
       </div>
-      <div role="radiogroup" style={{ display: 'grid', gap: 12, marginBottom: 32 }}>
-        {(['annual', 'monthly'] as Plan[]).map((p) => {
-          const info = PLAN_LABEL[p]
-          const active = plan === p
-          return (
-            <button
-              key={p}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => setPlan(p)}
-              style={{
-                textAlign: 'left',
-                padding: '20px 24px',
-                border: `1.5px solid ${active ? 'var(--ink)' : 'var(--ink-15)'}`,
-                background: active ? 'var(--paper)' : 'transparent',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                color: 'var(--ink)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'baseline',
-                gap: 16,
-                transition: 'border-color .15s, background .15s',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14, textTransform: 'capitalize' }}>
-                  {p}
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--ink-70)', marginTop: 4 }}>
-                  {info.note}
-                </div>
-              </div>
-              <div style={{ fontFamily: 'var(--font-serif)', fontSize: 28, lineHeight: 1, fontWeight: 300 }}>
-                {info.price}
-                <span style={{ fontSize: 14, color: 'var(--ink-55)', fontStyle: 'italic', marginLeft: 4 }}>
-                  {info.period}
-                </span>
-              </div>
-            </button>
-          )
-        })}
+      {/* Single-plan price summary — no picker since there's only one
+          option. Styled to match the look-and-feel of the old radio
+          card so the page rhythm stays the same. */}
+      <div
+        style={{
+          padding: '20px 24px',
+          border: '1.5px solid var(--ink)',
+          background: 'var(--paper)',
+          color: 'var(--ink)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          gap: 16,
+          marginBottom: 32,
+        }}
+      >
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>
+            Personal Shopper
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--ink-70)', marginTop: 4 }}>
+            {planInfo.note}
+          </div>
+        </div>
+        <div style={{ fontFamily: 'var(--font-serif)', fontSize: 28, lineHeight: 1, fontWeight: 300 }}>
+          {planInfo.price}
+          <span style={{ fontSize: 14, color: 'var(--ink-55)', fontStyle: 'italic', marginLeft: 4 }}>
+            {planInfo.period}
+          </span>
+        </div>
       </div>
 
       {/* Promo code — collapsed by default; the disclosure expands an
