@@ -19,6 +19,27 @@ function parseSenderName(from: string): string {
   return from.split('@')[0].trim()
 }
 
+// Extract the apex domain from a sender ("From: Best Buy
+// <hello@emails.bestbuy.com>" → "bestbuy.com"). Used as the website
+// when auto-creating an unknown store row — stores.website is NOT
+// NULL and has a case-insensitive unique index, so we need a stable
+// per-brand key. Strips common marketing-email subdomain prefixes
+// (mail., emails., news., m., etc.) so different ESP-routing
+// subdomains for the same brand collapse to one apex.
+function parseSenderDomain(from: string): string | null {
+  const m = from.match(/@([a-zA-Z0-9.-]+)/)
+  if (!m) return null
+  let domain = m[1].toLowerCase().replace(/[>\s]+$/, '')
+  domain = domain.replace(
+    /^(mail|emails?|e|news|m|t|info|hello|noreply|no-reply|do-not-reply|donotreply|update|updates|sale|sales|promo|promos|promotion|promotions|marketing|hi|inbox|shop|store|account|alerts?|offers?|reply|membership|service|order|orders|support|deals|news)\./,
+    '',
+  )
+  // Bail on anything that doesn't look like a real domain (no dot,
+  // single-label, etc.) — better to skip auto-add than seed garbage.
+  if (!domain.includes('.') || domain.length < 4) return null
+  return domain
+}
+
 // Normalize a retailer name for fuzzy matching against stores.name.
 // Lowercases and strips everything that isn't a letter or digit, so
 // "J.Crew", "J. Crew", and "jcrew" all collapse to "jcrew".
@@ -290,11 +311,57 @@ export async function GET(request: NextRequest) {
         }
         seenDealKeys.add(dealKey)
 
-        // Look up the brand in the stores table. Used for two things:
-        //   1. Category routing — union store.categories into deal.categories
-        //   2. Auto-activation — flip pending stores to active when their
-        //      first deal arrives (with promo email = the validation signal)
-        const storeMatch = storesByName.get(normalizeRetailer(retailer))
+        // Look up the brand in the stores table. Three paths:
+        //   1. Match exists → use its categories for routing
+        //   2. Match exists + status='pending' → auto-activate (admin
+        //      had pre-seeded the row; first email confirms the brand
+        //      sends promos)
+        //   3. No match → auto-create with status='auto_added' so it
+        //      surfaces in the admin review panel. Inserted with
+        //      is_active=false so it doesn't appear in the public
+        //      directory until an admin approves it. Until then, deals
+        //      still flow into the deals table — only category-routing
+        //      and the public stores page wait on approval.
+        let storeMatch = storesByName.get(normalizeRetailer(retailer))
+
+        if (!storeMatch) {
+          const domain = parseSenderDomain(email.from)
+          if (domain) {
+            // upsert on website (case-insensitive unique index in
+            // migration 016) — race-safe when two concurrent workers
+            // both see the same unknown retailer at once. The losing
+            // worker gets the same row back via .select().
+            const { data: inserted, error: insertErr } = await supabase
+              .from('stores')
+              .upsert(
+                {
+                  name: retailer,
+                  website: domain,
+                  status: 'auto_added',
+                  is_active: false,
+                  categories: deal.categories ?? [],
+                },
+                { onConflict: 'website', ignoreDuplicates: false },
+              )
+              .select('id, name, categories, is_active, status')
+              .single()
+            if (insertErr) {
+              console.error(`[ingest] auto-add error for ${retailer} (${domain}):`, JSON.stringify(insertErr))
+            } else if (inserted) {
+              console.log(`[ingest] auto-added store for review: ${retailer} (${domain})`)
+              storeMatch = {
+                id: inserted.id,
+                categories: Array.isArray(inserted.categories) ? inserted.categories : [],
+                is_active: inserted.is_active,
+                status: inserted.status ?? 'auto_added',
+              }
+              storesByName.set(normalizeRetailer(retailer), storeMatch)
+            }
+          } else {
+            console.log(`[ingest] auto-add skipped (no parseable domain): ${retailer} from=${email.from}`)
+          }
+        }
+
         const storeCats = storeMatch?.categories ?? []
         const mergedCategories = Array.from(
           new Set([...(deal.categories ?? []), ...storeCats])
@@ -306,10 +373,11 @@ export async function GET(request: NextRequest) {
         }
 
         // Auto-activate pending stores. Only flip 'pending' — never
-        // touch 'no_email' or 'declined', those are deliberate negative
-        // signals. Mutate the in-memory record first so subsequent deals
-        // from the same brand this run don't re-fire the UPDATE; the DB
-        // write is fire-and-forget since it's idempotent.
+        // touch 'no_email', 'declined', or 'auto_added' (the new
+        // auto_added rows wait for admin review). Mutate the in-memory
+        // record first so subsequent deals from the same brand this
+        // run don't re-fire the UPDATE; the DB write is fire-and-forget
+        // since it's idempotent.
         if (storeMatch && !storeMatch.is_active && storeMatch.status === 'pending') {
           storeMatch.is_active = true
           storeMatch.status = 'active'

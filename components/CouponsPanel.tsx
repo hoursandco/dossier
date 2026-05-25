@@ -137,7 +137,15 @@ export function CouponsPanel() {
         setErr(d.error ?? 'Failed to load')
         return
       }
-      setRows((d.coupons ?? []) as CouponRow[])
+      // Sort: Active (live) coupons first, then Inactive. Within each
+      // group keep the server's original ordering (typically newest
+      // first via the /api/admin/coupons handler).
+      const fetched = (d.coupons ?? []) as CouponRow[]
+      const sorted = [...fetched].sort((a, b) => {
+        if (a.active === b.active) return 0
+        return a.active ? -1 : 1
+      })
+      setRows(sorted)
     } catch {
       setErr('Network error')
     }
