@@ -11,43 +11,54 @@ import {
 import { trackEvent } from '@/lib/analytics'
 
 // Only one plan now — $4.99/mo Personal Shopper. (The $45/year
-// annual plan was retired.) Kept as a Plan union of one literal so
-// adding a future plan is a one-line change here + in lib/stripe.ts.
+// annual plan was retired.)
 type Plan = 'monthly'
 
 const PLAN_LABEL: Record<Plan, { price: string; period: string; note: string }> = {
   monthly: { price: '$4.99', period: '/month', note: 'Cancel anytime.' },
 }
 
-// Shape returned by the create-subscription/apply-promo flows so
-// PaymentForm can surface granular errors without re-deriving them.
-export type ApplyResult = { ok: true } | { ok: false; error: string }
+// Shape returned by /api/checkout/validate-code on success. We only
+// pick the fields the UI actually needs to render.
+type ValidatedPromo = {
+  code: string
+  percent_off: number
+  requires_credit_card: boolean
+  duration_months: number
+  list_price_cents: number
+  discounted_amount_cents: number
+  message: string
+}
+
+function fmtCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
 
 export function UpgradeFlow() {
-  // Single plan — no picker needed. `plan` is hard-pinned to 'monthly'
-  // and sent to the server unchanged.
   const plan: Plan = 'monthly'
   const planInfo = PLAN_LABEL[plan]
+
+  // Promo state — kept at the root level. Validated against the
+  // public /api/checkout/validate-code endpoint BEFORE any Stripe
+  // interaction, so the user sees the discount preview (or error)
+  // up front and only goes to Stripe Elements if a card is required.
+  const [promoCode, setPromoCode] = useState('')
+  const [applying, setApplying] = useState(false)
+  const [applied, setApplied] = useState<ValidatedPromo | null>(null)
+  const [promoMsg, setPromoMsg] = useState<string | null>(null)
+
+  // Subscription-creation state
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Promo code now lives on the PaymentForm (after "You'll be charged
-  // …"), but the applied state is hoisted here because applying a
-  // code means re-creating the subscription — which means a new
-  // clientSecret, which means the PaymentForm remounts and would
-  // otherwise lose track of what's applied.
-  const [appliedCode, setAppliedCode] = useState<string | null>(null)
   // Comped success state — set when a 100%-off code with
-  // requires_credit_card=false is applied. Bypasses Stripe entirely
-  // and we render an activation confirmation instead of the
-  // PaymentForm.
+  // requires_credit_card=false is redeemed. Stripe is never called.
   const [comped, setComped] = useState<{
     code: string
     duration_months: number
     comp_expires_at: string
   } | null>(null)
 
-  // Lazy-load Stripe.js only on the client; bail out cleanly if the key is missing.
   const stripePromise = useMemo<Promise<Stripe | null> | null>(() => {
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
     if (!key) return null
@@ -75,18 +86,53 @@ export function UpgradeFlow() {
     )
   }
 
-  // Shared subscription-creation call. Used for both:
-  //   - Initial "Continue to payment" click (no promo code)
-  //   - "Apply" on the promo input inside the PaymentForm (with code)
-  // For the promo path: creating a new subscription with the discount
-  // attached gives us a fresh PaymentIntent at the discounted amount.
-  // The previous incomplete subscription (if any) is left in Stripe;
-  // it auto-expires after 23h with no payment. New clientSecret causes
-  // the <Elements key={clientSecret}> below to remount, which gives
-  // us a fresh PaymentElement reflecting the new price.
-  const callCreateSubscription = async (
-    promoCode?: string,
-  ): Promise<ApplyResult> => {
+  // Validate the typed code against /api/checkout/validate-code. No
+  // Stripe interaction — the user sees the verdict instantly. If
+  // valid, we lock the input + change the CTA label based on whether
+  // a card is required.
+  const handleApplyPromo = async () => {
+    const trimmed = promoCode.trim()
+    if (!trimmed) return
+    setApplying(true)
+    setPromoMsg(null)
+    setError(null)
+    try {
+      const res = await fetch(
+        `/api/checkout/validate-code?code=${encodeURIComponent(trimmed)}&plan_type=${plan}`,
+      )
+      const data = await res.json()
+      if (!data.valid) {
+        setPromoMsg(data.message || 'That code isn’t valid.')
+        return
+      }
+      setApplied({
+        code: data.code,
+        percent_off: data.percent_off,
+        requires_credit_card: data.requires_credit_card,
+        duration_months: data.duration_months,
+        list_price_cents: data.list_price_cents,
+        discounted_amount_cents: data.discounted_amount_cents,
+        message: data.message,
+      })
+      setPromoMsg(null)
+    } catch {
+      setPromoMsg('Network error — try again.')
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  const handleRemovePromo = () => {
+    setApplied(null)
+    setPromoMsg(null)
+    setPromoCode('')
+  }
+
+  // Start the actual subscription. For comp codes this returns
+  // { comped: true } and never creates a Stripe sub. For everything
+  // else it creates a Stripe subscription at the discounted amount
+  // and returns a clientSecret.
+  const handleContinue = async () => {
     setStarting(true)
     setError(null)
     try {
@@ -95,54 +141,34 @@ export function UpgradeFlow() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           plan,
-          ...(promoCode?.trim() ? { promo_code: promoCode.trim() } : {}),
+          ...(applied?.code ? { promo_code: applied.code } : {}),
         }),
       })
       const data = await res.json()
       if (!res.ok) {
-        const msg = data.error || 'Failed to start checkout'
-        setError(msg)
-        return { ok: false, error: msg }
+        setError(data.error || 'Failed to start checkout')
+        return
       }
-      // Server signals which branch was taken. The COMPED branch never
-      // returns a clientSecret because there's no Stripe charge — we
-      // flip to the success state directly.
+      trackEvent('begin_checkout', { plan, currency: 'USD' })
       if (data.comped) {
         setComped({
           code: data.promo_code,
           duration_months: data.duration_months,
           comp_expires_at: data.comp_expires_at,
         })
-        setAppliedCode(data.promo_code)
-        // Fire begin_checkout/funnel events even on the free path so
-        // it shows up in analytics — same event-funnel shape, just
-        // value=0.
-        trackEvent('begin_checkout', { plan, currency: 'USD' })
-        return { ok: true }
+        return
       }
       setClientSecret(data.clientSecret)
-      setAppliedCode(promoCode?.trim() || null)
-      return { ok: true }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Something went wrong'
-      setError(msg)
-      return { ok: false, error: msg }
+      setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       setStarting(false)
     }
   }
 
-  const startCheckout = async () => {
-    const result = await callCreateSubscription()
-    if (result.ok) {
-      trackEvent('begin_checkout', { plan, currency: 'USD' })
-    }
-  }
+  // ── Success states (rendered before the form) ─────────────────────
 
   if (comped) {
-    // 100%-off code applied with requires_credit_card=false. We
-    // bypassed Stripe entirely — show a clean activation success
-    // state with the expiry date so the user knows what they got.
     const expires = new Date(comped.comp_expires_at).toLocaleDateString(
       undefined,
       { month: 'long', day: 'numeric', year: 'numeric' },
@@ -200,9 +226,6 @@ export function UpgradeFlow() {
   if (clientSecret) {
     return (
       <Elements
-        // key forces a clean remount of Elements (and PaymentElement
-        // inside it) whenever we swap clientSecret — required when
-        // applying a promo code mid-flow.
         key={clientSecret}
         stripe={stripePromise}
         options={{
@@ -221,23 +244,30 @@ export function UpgradeFlow() {
           },
         }}
       >
-        <PaymentForm
-          plan={plan}
-          appliedCode={appliedCode}
-          onApplyPromo={callCreateSubscription}
-        />
+        <PaymentForm plan={plan} appliedCode={applied?.code ?? null} />
       </Elements>
     )
   }
+
+  // ── Plan step (default view) ─────────────────────────────────────
+
+  // CTA label reflects the validated code:
+  //   - no code  → "Continue to payment"
+  //   - paid discount applied → "Continue to payment (NEW PRICE/month)"
+  //   - comp code applied → "Activate free access"
+  const continueLabel = applied
+    ? applied.requires_credit_card
+      ? `Continue to payment (${fmtCents(applied.discounted_amount_cents)}/mo)`
+      : 'Activate free access'
+    : 'Continue to payment'
 
   return (
     <div>
       <div className="t-eyebrow" style={{ marginBottom: 12 }}>
         Your plan
       </div>
-      {/* Single-plan price summary — no picker since there's only one
-          option. Styled to match the look-and-feel of the old radio
-          card so the page rhythm stays the same. */}
+
+      {/* Plan price summary */}
       <div
         style={{
           padding: '20px 24px',
@@ -248,13 +278,11 @@ export function UpgradeFlow() {
           justifyContent: 'space-between',
           alignItems: 'baseline',
           gap: 16,
-          marginBottom: 32,
+          marginBottom: 24,
         }}
       >
         <div>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>
-            Personal Shopper
-          </div>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>Personal Shopper</div>
           <div style={{ fontSize: 13, color: 'var(--ink-70)', marginTop: 4 }}>
             {planInfo.note}
           </div>
@@ -267,9 +295,116 @@ export function UpgradeFlow() {
         </div>
       </div>
 
-      {/* (Promo code field moved to the PaymentForm — it's right after
-          the "Payment details / You'll be charged $X" copy on the next
-          step so customers actually see it.) */}
+      {/* Promo code — always-visible textbox + Apply. Validated via
+          /api/checkout/validate-code so the user sees the discount
+          (or error) BEFORE they go anywhere near payment. */}
+      <div style={{ marginBottom: 24 }}>
+        <label
+          className="t-eyebrow"
+          style={{ display: 'block', marginBottom: 8 }}
+        >
+          Promo code (optional)
+        </label>
+        {applied ? (
+          // Confirmation chip. Replaces the input once a code is
+          // successfully applied.
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '12px 14px',
+              border: '1.5px solid var(--ink)',
+              background: '#e8f1d2',
+              fontFamily: 'var(--font-mono, monospace)',
+              fontSize: 14,
+              color: 'var(--ink)',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span aria-hidden="true">✓</span>
+            <span>
+              <strong>{applied.code}</strong> — {applied.message}
+            </span>
+            <button
+              type="button"
+              onClick={handleRemovePromo}
+              style={{
+                marginLeft: 'auto',
+                background: 'none',
+                border: 'none',
+                color: 'var(--ink-70)',
+                fontSize: 12,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textDecorationStyle: 'dotted',
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              value={promoCode}
+              onChange={(e) => {
+                setPromoCode(e.target.value)
+                if (promoMsg) setPromoMsg(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void handleApplyPromo()
+                }
+              }}
+              placeholder="ENTERCODE"
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={applying}
+              style={{
+                flex: '1 1 200px',
+                padding: '12px 14px',
+                border: '1.5px solid var(--ink)',
+                background: 'var(--paper)',
+                color: 'var(--ink)',
+                fontFamily: 'var(--font-mono, monospace)',
+                fontSize: 15,
+                letterSpacing: '.08em',
+                textTransform: 'uppercase',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleApplyPromo}
+              disabled={applying || !promoCode.trim()}
+              style={{
+                padding: '12px 22px',
+                background: 'var(--ink)',
+                color: '#fff8e2',
+                border: '1.5px solid var(--ink)',
+                fontFamily: "'Stardos Stamp', monospace",
+                fontSize: 12,
+                letterSpacing: '.18em',
+                textTransform: 'uppercase',
+                cursor: applying || !promoCode.trim() ? 'not-allowed' : 'pointer',
+                opacity: applying || !promoCode.trim() ? 0.6 : 1,
+              }}
+            >
+              {applying ? 'Checking…' : 'Apply'}
+            </button>
+          </div>
+        )}
+        {promoMsg && (
+          <p style={{ margin: '8px 0 0', fontSize: 13, color: 'oklch(50% 0.2 20)' }}>
+            {promoMsg}
+          </p>
+        )}
+      </div>
 
       {error && (
         <p className="t-meta" style={{ marginBottom: 16, color: 'oklch(50% 0.2 20)' }}>
@@ -279,13 +414,13 @@ export function UpgradeFlow() {
 
       <button
         type="button"
-        onClick={startCheckout}
+        onClick={handleContinue}
         disabled={starting}
         className="btn-primary"
       >
         {starting ? 'Loading…' : (
           <>
-            Continue to payment <span className="arr">→</span>
+            {continueLabel} <span className="arr">→</span>
           </>
         )}
       </button>
@@ -293,26 +428,27 @@ export function UpgradeFlow() {
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// PaymentForm — Stripe Elements step.
+//
+// The promo code field used to live here too. Now validation happens
+// upstream on the plan step (so users with 100%-off comp codes never
+// reach this component at all), and we only render the card form.
+// `appliedCode` is passed in purely so the "you'll be charged" copy
+// can mention the discount.
+// ─────────────────────────────────────────────────────────────────────
+
 function PaymentForm({
   plan,
   appliedCode,
-  onApplyPromo,
 }: {
   plan: Plan
   appliedCode: string | null
-  onApplyPromo: (code: string) => Promise<ApplyResult>
 }) {
   const stripe = useStripe()
   const elements = useElements()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Local promo state. Note: this component remounts whenever the
-  // parent swaps clientSecret (after Apply), so this state is fresh
-  // on each mount — no need to manually clear after success.
-  const [promoOpen, setPromoOpen] = useState(false)
-  const [promoCode, setPromoCode] = useState('')
-  const [applying, setApplying] = useState(false)
-  const [promoError, setPromoError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -328,25 +464,10 @@ function PaymentForm({
       },
     })
 
-    // confirmPayment redirects on success. If we get here, something went wrong.
     if (submitError) {
       setError(submitError.message ?? 'Payment failed')
     }
     setSubmitting(false)
-  }
-
-  const handleApply = async () => {
-    const code = promoCode.trim()
-    if (!code) return
-    setApplying(true)
-    setPromoError(null)
-    const result = await onApplyPromo(code)
-    // We don't toggle `applying` off on success because the parent is
-    // already swapping clientSecret, which is about to unmount us.
-    if (!result.ok) {
-      setApplying(false)
-      setPromoError(result.error || 'Code not accepted')
-    }
   }
 
   const info = PLAN_LABEL[plan]
@@ -363,116 +484,13 @@ function PaymentForm({
           {info.period}
         </strong>
         . {info.note}
-      </div>
-
-      {/* Promo code — inline disclosure right under the "You'll be
-          charged" line, where customers are most likely to look for
-          it. Applying re-creates the subscription with the discount
-          attached; the Elements above remounts and the PaymentElement
-          shows the new total. The user does have to re-enter their
-          card afterwards (PaymentElement resets on remount). */}
-      <div style={{ marginBottom: 24 }}>
-        {appliedCode ? (
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '8px 14px',
-              border: '1.5px solid var(--ink)',
-              background: '#f4ede0',
-              fontFamily: 'var(--font-mono, monospace)',
-              fontSize: 13,
-              letterSpacing: '.08em',
-              textTransform: 'uppercase',
-              color: 'var(--ink)',
-            }}
-          >
-            <span aria-hidden="true">✓</span>
-            <span>Code applied: <strong>{appliedCode}</strong></span>
-          </div>
-        ) : !promoOpen ? (
-          <button
-            type="button"
-            onClick={() => setPromoOpen(true)}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              color: 'var(--ink-70)',
-              cursor: 'pointer',
-              fontSize: 13,
-              textDecoration: 'underline',
-              textDecorationStyle: 'dotted',
-              fontFamily: 'inherit',
-            }}
-          >
-            Have a promo code?
-          </button>
-        ) : (
-          <div>
-            <label style={{ display: 'block', marginBottom: 6 }}>
-              <span
-                className="t-eyebrow"
-                style={{ display: 'block', marginBottom: 8 }}
-              >
-                Promo code
-              </span>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <input
-                  type="text"
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value)}
-                  placeholder="ENTERCODE"
-                  autoCapitalize="characters"
-                  autoComplete="off"
-                  spellCheck={false}
-                  disabled={applying}
-                  style={{
-                    flex: '1 1 180px',
-                    padding: '10px 14px',
-                    border: '1.5px solid var(--ink-15)',
-                    background: 'var(--paper)',
-                    color: 'var(--ink)',
-                    fontFamily: 'var(--font-mono, monospace)',
-                    fontSize: 15,
-                    letterSpacing: '.08em',
-                    textTransform: 'uppercase',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={handleApply}
-                  disabled={applying || !promoCode.trim()}
-                  style={{
-                    padding: '10px 18px',
-                    background: 'var(--ink)',
-                    color: '#fff8e2',
-                    border: '1.5px solid var(--ink)',
-                    fontFamily: "'Stardos Stamp', monospace",
-                    fontSize: 12,
-                    letterSpacing: '.18em',
-                    textTransform: 'uppercase',
-                    cursor: applying || !promoCode.trim() ? 'not-allowed' : 'pointer',
-                    opacity: applying || !promoCode.trim() ? 0.6 : 1,
-                  }}
-                >
-                  {applying ? 'Applying…' : 'Apply'}
-                </button>
-              </div>
-            </label>
-            {promoError ? (
-              <p style={{ margin: '8px 0 0', fontSize: 13, color: 'oklch(50% 0.2 20)' }}>
-                {promoError}
-              </p>
-            ) : (
-              <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--ink-55)', fontStyle: 'italic' }}>
-                Applying will refresh the card form below.
-              </p>
-            )}
-          </div>
+        {appliedCode && (
+          <>
+            {' '}
+            <span style={{ color: 'var(--olive-deep)', fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>
+              · Code {appliedCode} applied.
+            </span>
+          </>
         )}
       </div>
 
