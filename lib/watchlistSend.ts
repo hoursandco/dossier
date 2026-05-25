@@ -104,11 +104,44 @@ function dedupeDeals(deals: Deal[]): Deal[] {
   return out
 }
 
+// Deal types that survive the min_discount_pct filter regardless of
+// their stated percent_off. Non-percent deals (free shipping, BOGO,
+// flash sale, free item) are still real deals — the user just hasn't
+// said "I only want N% off" about *them*. Filtering them out would
+// surprise the user.
+const NON_PERCENT_DEAL_TYPES = new Set<string>([
+  'free-shipping', 'free-item', 'flash-sale', 'bogo-free', 'bogo-half',
+  'loyalty', 'stackable',
+])
+
 export async function sendWatchlistEmailForSubscriber(
   service: SupabaseClient,
   appUrl: string,
   subscriber: { id: string; email: string },
 ): Promise<WatchlistSendResult> {
+  // ── Load subscriber-level filters (paid feature) ─────────────────────
+  // min_discount_pct + allowed_price_tiers were added in migration 029.
+  // Falling back to null/empty if the columns aren't there yet — keeps
+  // the send path compatible with pre-migration deployments.
+  const { data: subRow } = await service
+    .from('subscribers')
+    .select('tier, subscription_status, min_discount_pct, allowed_price_tiers')
+    .eq('id', subscriber.id)
+    .single()
+
+  // Only honour the filters when the subscriber is actively paid.
+  // Defense in depth — the UI gates writes, but if a free user ever
+  // had filters set (e.g. they were paid, set filters, downgraded) we
+  // ignore them rather than silently apply.
+  const isPaid =
+    subRow?.tier === 'paid' &&
+    ['active', 'trialing'].includes(subRow.subscription_status ?? '')
+  const minDiscount = isPaid ? (subRow?.min_discount_pct ?? null) : null
+  const allowedTiers = isPaid
+    ? new Set<string>((subRow?.allowed_price_tiers ?? []) as string[])
+    : new Set<string>()
+  const tierFilterActive = allowedTiers.size > 0 && allowedTiers.size < 4
+
   // ── Load category watches ────────────────────────────────────────────
   const { data: watchRows } = await service
     .from('subscriber_watches')
@@ -182,11 +215,36 @@ export async function sendWatchlistEmailForSubscriber(
     .gte('created_at', sinceIso)
     .or(`expiration_date.is.null,expiration_date.gte.${today}`)
 
-  const allDeals = dedupeDeals(
+  const dedupedDeals = dedupeDeals(
     (dealRows ?? []).filter((d): d is Deal => !isJunkDeal(d as Deal))
   )
 
-  const { storeTiers, storeUrls } = await fetchStoreData(appUrl)
+  const { storeTiers, storeUrls, storeSpendTiers } = await fetchStoreData(appUrl)
+
+  // Apply subscriber-level filters (min discount + price tier). Both
+  // filters are no-ops for free users (set to null/empty above).
+  const allDeals = dedupedDeals.filter((d) => {
+    // Min discount: percent-off and up-to deals must clear the
+    // threshold. Everything else (free-shipping, BOGO, flash-sale,
+    // etc.) passes through — see NON_PERCENT_DEAL_TYPES above.
+    if (minDiscount != null) {
+      const isNonPercent = NON_PERCENT_DEAL_TYPES.has(d.deal_type ?? '')
+      if (!isNonPercent) {
+        const pct = d.percent_off ?? 0
+        if (pct < minDiscount) return false
+      }
+    }
+    // Price tier: drop deals whose retailer's spendTier isn't in the
+    // allow-list. Unknown retailers (no tier set) pass through — we
+    // don't want to block deals from new stores that just haven't
+    // been tagged yet.
+    if (tierFilterActive) {
+      const retailerKey = (d.retailer ?? '').toLowerCase()
+      const tier = storeSpendTiers[retailerKey] || storeSpendTiers[normName(d.retailer ?? '')]
+      if (tier && !allowedTiers.has(tier)) return false
+    }
+    return true
+  })
 
   // ── Category sections: deals whose categories include the watch slug ──
   const categorySections: WatchSection[] = watches.map((w) => {

@@ -21,7 +21,7 @@ export async function GET() {
   const service = createServiceClient()
   const { data: subscriber } = await service
     .from('subscribers')
-    .select('tier, subscription_status, stripe_customer_id, weekly_email_enabled')
+    .select('tier, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers')
     .eq('email', user.email)
     .single()
 
@@ -31,11 +31,22 @@ export async function GET() {
     subscription_status: subscriber?.subscription_status ?? null,
     has_billing_account: !!subscriber?.stripe_customer_id,
     weekly_email_enabled: subscriber?.weekly_email_enabled ?? true,
+    // Paid-tier global filters (added in migration 029). Both null/
+    // empty by default = no filtering applied at send time.
+    min_discount_pct: subscriber?.min_discount_pct ?? null,
+    allowed_price_tiers: subscriber?.allowed_price_tiers ?? [],
   })
 }
 
+// PATCH body — every field is optional so the same endpoint can
+// service the watchlist toggle, the price-tier filter, and the
+// min-discount filter without separate routes. Each PATCH only
+// updates the fields that are present.
+const TIER_VALUES = ['$', '$$', '$$$', '$$$$'] as const
 const PatchSchema = z.object({
-  weekly_email_enabled: z.boolean(),
+  weekly_email_enabled: z.boolean().optional(),
+  min_discount_pct: z.number().int().min(1).max(99).nullable().optional(),
+  allowed_price_tiers: z.array(z.enum(TIER_VALUES)).optional(),
 })
 
 export async function PATCH(request: NextRequest) {
@@ -51,12 +62,50 @@ export async function PATCH(request: NextRequest) {
   }
 
   const service = createServiceClient()
+
+  // Paid-tier guard: free users can't write to the filter fields.
+  // The UI gates them behind a lock, but defense-in-depth — a hand-
+  // crafted PATCH from a free account would otherwise silently set
+  // the filters and they'd apply on send.
+  const wantsFilterChange =
+    parsed.data.min_discount_pct !== undefined ||
+    parsed.data.allowed_price_tiers !== undefined
+  if (wantsFilterChange) {
+    const { data: sub } = await service
+      .from('subscribers')
+      .select('tier, subscription_status')
+      .eq('email', user.email)
+      .single()
+    const isPaid =
+      sub?.tier === 'paid' &&
+      ['active', 'trialing'].includes(sub.subscription_status ?? '')
+    if (!isPaid) {
+      return NextResponse.json(
+        { error: 'Personal Shopper required for filters.' },
+        { status: 403 }
+      )
+    }
+  }
+
+  // Build the update payload only from the keys that were sent. Avoids
+  // overwriting unrelated fields with `undefined` (Postgres treats
+  // undefined as a real value and would null out the existing row).
+  const update: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  }
+  if (parsed.data.weekly_email_enabled !== undefined) {
+    update.weekly_email_enabled = parsed.data.weekly_email_enabled
+  }
+  if (parsed.data.min_discount_pct !== undefined) {
+    update.min_discount_pct = parsed.data.min_discount_pct
+  }
+  if (parsed.data.allowed_price_tiers !== undefined) {
+    update.allowed_price_tiers = parsed.data.allowed_price_tiers
+  }
+
   const { error } = await service
     .from('subscribers')
-    .update({
-      weekly_email_enabled: parsed.data.weekly_email_enabled,
-      updated_at: new Date().toISOString(),
-    })
+    .update(update)
     .eq('email', user.email)
 
   if (error) {

@@ -39,13 +39,19 @@ export function fixRetailerCase(name: string): string {
 export async function fetchStoreData(appUrl: string): Promise<{
   storeUrls: Record<string, string>
   storeTiers: Record<string, number>
+  // Raw spendTier string ('$' | '$$' | '$$$' | '$$$$') keyed the same
+  // two ways as storeTiers/storeUrls. Needed for the paid-tier price-
+  // tier filter, which operates on the literal tier rather than the
+  // numeric ranking boost.
+  storeSpendTiers: Record<string, string>
 }> {
   try {
     const res = await fetch(`${appUrl}/api/stores`, { next: { revalidate: 3600 } })
-    if (!res.ok) return { storeUrls: {}, storeTiers: {} }
+    if (!res.ok) return { storeUrls: {}, storeTiers: {}, storeSpendTiers: {} }
     const { stores } = await res.json()
     const storeUrls: Record<string, string> = {}
     const storeTiers: Record<string, number> = {}
+    const storeSpendTiers: Record<string, string> = {}
     for (const store of stores ?? []) {
       if (!store.name) continue
       const normKey = normalizeStoreName(store.name)
@@ -55,12 +61,17 @@ export async function fetchStoreData(appUrl: string): Promise<{
         storeUrls[lcKey] = url
         storeUrls[normKey] = url
       }
-      const boost = TIER_BOOST[store.spendTier?.trim()] ?? 0
+      const tierStr = (store.spendTier ?? '').trim()
+      const boost = TIER_BOOST[tierStr] ?? 0
       storeTiers[normKey] = boost
       storeTiers[lcKey] = boost
+      if (tierStr) {
+        storeSpendTiers[normKey] = tierStr
+        storeSpendTiers[lcKey] = tierStr
+      }
     }
-    return { storeUrls, storeTiers }
+    return { storeUrls, storeTiers, storeSpendTiers }
   } catch {
-    return { storeUrls: {}, storeTiers: {} }
+    return { storeUrls: {}, storeTiers: {}, storeSpendTiers: {} }
   }
 }

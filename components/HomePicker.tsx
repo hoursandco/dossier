@@ -46,6 +46,12 @@ export function HomePicker() {
   const [watchIdBySlug, setWatchIdBySlug] = useState<Map<string, string>>(new Map())
   const [pickIdByStoreId, setPickIdByStoreId] = useState<Map<string, string>>(new Map())
 
+  // Paid-tier filters (migration 029). null/empty = no filter.
+  // Free users see the controls but can't change them — the lock
+  // badge above the section links to /pricing.
+  const [minDiscountPct, setMinDiscountPct] = useState<number | null>(null)
+  const [allowedTiers, setAllowedTiers] = useState<Set<string>>(new Set())
+
   const [storeQuery, setStoreQuery] = useState('')
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -79,6 +85,15 @@ export function HomePicker() {
           setSignedIn(true)
           setAccountEmail(d.email)
           setIsPaid(d.tier === 'paid')
+          // Hydrate the paid-tier filter state from the API. For free
+          // users these will be null/empty and the UI stays in
+          // "locked, defaults" state.
+          if (typeof d.min_discount_pct === 'number') {
+            setMinDiscountPct(d.min_discount_pct)
+          }
+          if (Array.isArray(d.allowed_price_tiers) && d.allowed_price_tiers.length > 0) {
+            setAllowedTiers(new Set(d.allowed_price_tiers))
+          }
           const [watchesRes, picksRes] = await Promise.all([
             fetch('/api/watches').then((r) => (r.ok ? r.json() : { watches: [] })).catch(() => ({ watches: [] })),
             fetch('/api/store-picks').then((r) => (r.ok ? r.json() : { store_picks: [] })).catch(() => ({ store_picks: [] })),
@@ -239,6 +254,34 @@ export function HomePicker() {
       setSubmitting(false)
     }
   }
+
+  // Persist filter changes immediately (same pattern as the watchlist
+  // toggles further up the file). Only fires for paid users; free
+  // users never hit these handlers — the lock badge intercepts clicks.
+  const saveMinDiscount = useCallback(async (next: number | null) => {
+    setMinDiscountPct(next)
+    try {
+      await fetch('/api/account', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ min_discount_pct: next }),
+      })
+    } catch {}
+  }, [])
+
+  const toggleTier = useCallback(async (tier: string) => {
+    const next = new Set(allowedTiers)
+    if (next.has(tier)) next.delete(tier)
+    else next.add(tier)
+    setAllowedTiers(next)
+    try {
+      await fetch('/api/account', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allowed_price_tiers: Array.from(next) }),
+      })
+    } catch {}
+  }, [allowedTiers])
 
   const sendDealsNow = async () => {
     if (totalPicks === 0) { setError('Pick at least one above first.'); return }
@@ -569,7 +612,20 @@ export function HomePicker() {
           {/* Signed-in: send + upgrade + danger zone */}
           {signedIn === true && (
             <>
-              <div style={{ marginTop: 28 }}>
+              {/* ── Paid filters (price tier + min discount) ───────────
+                  Side-by-side on desktop, stacks on phones via flex-
+                  wrap. Free users see the same UI but inputs are
+                  disabled and the lock badge links to /pricing —
+                  visible upsell without a CTA button. */}
+              <FilterPanel
+                isPaid={isPaid}
+                minDiscountPct={minDiscountPct}
+                onChangeMinDiscount={saveMinDiscount}
+                allowedTiers={allowedTiers}
+                onToggleTier={toggleTier}
+              />
+
+              <div style={{ marginTop: 20 }}>
                 <button
                   type="button"
                   onClick={sendDealsNow}
@@ -682,5 +738,225 @@ export function HomePicker() {
         </div>
       </div>
     </section>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// FilterPanel — paid-only price-tier + min-discount controls.
+//
+// Lives above the SEND ME DEALS NOW button. Free users see the
+// inputs (greyed out, non-interactive) plus a lock badge in the
+// header that links to /pricing. The visible-but-disabled pattern is
+// a stronger upsell than an "Upgrade for filters" CTA — users see
+// exactly what they're getting.
+// ─────────────────────────────────────────────────────────────────────
+
+const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
+const DISCOUNT_STEPS: Array<{ label: string; value: number | null }> = [
+  { label: 'Any', value: null },
+  { label: '10%', value: 10 },
+  { label: '20%', value: 20 },
+  { label: '30%', value: 30 },
+  { label: '40%', value: 40 },
+  { label: '50%+', value: 50 },
+]
+
+function FilterPanel({
+  isPaid,
+  minDiscountPct,
+  onChangeMinDiscount,
+  allowedTiers,
+  onToggleTier,
+}: {
+  isPaid: boolean
+  minDiscountPct: number | null
+  onChangeMinDiscount: (next: number | null) => void
+  allowedTiers: Set<string>
+  onToggleTier: (tier: string) => void
+}) {
+  const disabled = !isPaid
+
+  // Visual styling for an individual chip button. Tier chips use the
+  // same style with a tweak for the dollar-sign font scaling.
+  const chipStyle = (active: boolean): React.CSSProperties => ({
+    fontFamily: "'Stardos Stamp', monospace",
+    fontSize: 12,
+    letterSpacing: '.14em',
+    textTransform: 'uppercase',
+    padding: '8px 14px',
+    minHeight: 36,
+    background: active ? 'var(--ink)' : '#fffbe6',
+    color: active ? 'var(--paper, #f6ecd2)' : 'var(--ink)',
+    border: '2px solid var(--ink)',
+    boxShadow: active ? '2px 2px 0 var(--ink)' : '2px 2px 0 var(--ink)',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.55 : 1,
+    transition: 'transform .12s',
+  })
+
+  return (
+    <div
+      style={{
+        marginTop: 28,
+        padding: '18px 20px',
+        background: '#fff8e2',
+        border: '2px solid var(--ink)',
+        boxShadow: '3px 3px 0 var(--ink)',
+        position: 'relative',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 14,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: "'Stardos Stamp', monospace",
+            fontSize: 11,
+            letterSpacing: '.3em',
+            textTransform: 'uppercase',
+            color: 'var(--red-deep)',
+          }}
+        >
+          — Personal Shopper Filters —
+        </div>
+        {disabled && (
+          // Lock badge — anchor, not button, so right-click "Open in
+          // new tab" works for users who want to keep the picker in
+          // place while they check pricing.
+          <a
+            href="/pricing"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              background: 'var(--ink)',
+              color: 'var(--yellow)',
+              fontFamily: "'Stardos Stamp', monospace",
+              fontSize: 10,
+              letterSpacing: '.18em',
+              textTransform: 'uppercase',
+              textDecoration: 'none',
+              border: '1.5px solid var(--ink)',
+            }}
+            title="Upgrade to use these filters"
+            aria-label="Upgrade to Personal Shopper"
+          >
+            <span aria-hidden="true">🔒</span>
+            Locked
+          </a>
+        )}
+      </div>
+
+      {/* Side-by-side layout. Flex with min-width:0 columns so labels
+          can wrap on narrow screens, and gap:24 between groups. Stacks
+          via flex-wrap when the container can't fit both at min width. */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 24,
+          flexWrap: 'wrap',
+        }}
+      >
+        {/* Price tier */}
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: "'Stardos Stamp', monospace",
+              fontSize: 10,
+              letterSpacing: '.22em',
+              textTransform: 'uppercase',
+              color: 'var(--ink-soft)',
+              marginBottom: 8,
+            }}
+          >
+            Price tier
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {PRICE_TIERS.map((tier) => {
+              const active = allowedTiers.has(tier)
+              return (
+                <button
+                  key={tier}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onToggleTier(tier)}
+                  style={chipStyle(active)}
+                  aria-pressed={active}
+                >
+                  {tier}
+                </button>
+              )
+            })}
+          </div>
+          <p
+            style={{
+              margin: '8px 0 0',
+              fontFamily: "'IM Fell English', serif",
+              fontStyle: 'italic',
+              fontSize: 12,
+              color: 'var(--ink-soft)',
+            }}
+          >
+            {allowedTiers.size === 0 || allowedTiers.size === 4
+              ? 'All tiers'
+              : `Only ${Array.from(allowedTiers).join(' / ')} stores`}
+          </p>
+        </div>
+
+        {/* Min discount */}
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: "'Stardos Stamp', monospace",
+              fontSize: 10,
+              letterSpacing: '.22em',
+              textTransform: 'uppercase',
+              color: 'var(--ink-soft)',
+              marginBottom: 8,
+            }}
+          >
+            Min discount
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {DISCOUNT_STEPS.map((step) => {
+              const active = (minDiscountPct ?? null) === step.value
+              return (
+                <button
+                  key={step.label}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onChangeMinDiscount(step.value)}
+                  style={chipStyle(active)}
+                  aria-pressed={active}
+                >
+                  {step.label}
+                </button>
+              )
+            })}
+          </div>
+          <p
+            style={{
+              margin: '8px 0 0',
+              fontFamily: "'IM Fell English', serif",
+              fontStyle: 'italic',
+              fontSize: 12,
+              color: 'var(--ink-soft)',
+            }}
+          >
+            {minDiscountPct == null
+              ? 'No minimum'
+              : `${minDiscountPct}%+ off · BOGO/free-shipping pass through`}
+          </p>
+        </div>
+      </div>
+    </div>
   )
 }
