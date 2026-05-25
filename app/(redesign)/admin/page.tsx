@@ -6,7 +6,7 @@ import { FlapNumber } from '@/components/FlapNumber'
 import { SuggestionActions } from '@/components/SuggestionActions'
 import { RunIngestButton } from '@/components/RunIngestButton'
 import { SubscriptionsPanel } from '@/components/SubscriptionsPanel'
-import { CouponsPanel } from '@/components/CouponsPanel'
+import { DiscountCodesPanel } from '@/components/DiscountCodesPanel'
 import { AutoAddedStoresPanel } from '@/components/AutoAddedStoresPanel'
 import { DuplicateStoresPanel } from '@/components/DuplicateStoresPanel'
 import { StoresAdmin } from '@/components/StoresAdmin'
@@ -327,9 +327,9 @@ export default async function AdminPage() {
   const couponsTab = (
     <div className="admin-card">
       <p className="t-meta" style={{ color: 'var(--ink-40)', marginBottom: 20 }}>
-        Create Stripe promotion codes customers enter at /pricing. Deactivate = stops working immediately, history preserved.
+        In-app discount codes — validated and applied server-side without a Stripe round-trip. Uncheck <em>Require credit card</em> for 100%-off comp codes that skip Stripe entirely (no card collected, no $0 invoices in your Stripe dashboard).
       </p>
-      <CouponsPanel />
+      <DiscountCodesPanel />
     </div>
   )
 

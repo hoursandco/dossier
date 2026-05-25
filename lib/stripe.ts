@@ -21,6 +21,19 @@ export function getStripe(): Stripe {
 // later without re-threading function signatures.
 export type BillingPlan = 'monthly'
 
+// Source-of-truth list price (in cents) for plans, used by the
+// in-app promo code system to compute discounted totals without a
+// Stripe round-trip. Keep this in sync with the price ID in Stripe.
+// If we ever change the price, update BOTH this constant AND the
+// Stripe price.
+const PLAN_LIST_PRICE_CENTS: Record<BillingPlan, number> = {
+  monthly: 499,
+}
+
+export function listPriceCentsForPlan(plan: BillingPlan): number {
+  return PLAN_LIST_PRICE_CENTS[plan]
+}
+
 export function priceIdForPlan(plan: BillingPlan): string {
   if (plan === 'monthly') {
     const id = process.env.STRIPE_PRICE_MONTHLY
