@@ -52,20 +52,29 @@ export async function GET() {
     effectiveCompExpiresAt = null
   }
 
-  return NextResponse.json({
-    email: user.email,
-    tier: effectiveTier,
-    subscription_status: effectiveStatus,
-    has_billing_account: !!subscriber?.stripe_customer_id,
-    weekly_email_enabled: subscriber?.weekly_email_enabled ?? true,
-    // Paid-tier global filters (added in migration 029). Both null/
-    // empty by default = no filtering applied at send time.
-    min_discount_pct: subscriber?.min_discount_pct ?? null,
-    allowed_price_tiers: subscriber?.allowed_price_tiers ?? [],
-    // Comp expiry surfaced so the UI can show "Free access until …"
-    // for comped users. Null for everyone else (paying, free, etc.).
-    comp_expires_at: effectiveCompExpiresAt,
-  })
+  return NextResponse.json(
+    {
+      email: user.email,
+      tier: effectiveTier,
+      subscription_status: effectiveStatus,
+      has_billing_account: !!subscriber?.stripe_customer_id,
+      weekly_email_enabled: subscriber?.weekly_email_enabled ?? true,
+      // Paid-tier global filters (added in migration 029). Both null/
+      // empty by default = no filtering applied at send time.
+      min_discount_pct: subscriber?.min_discount_pct ?? null,
+      allowed_price_tiers: subscriber?.allowed_price_tiers ?? [],
+      // Comp expiry surfaced so the UI can show "Free access until …"
+      // for comped users. Null for everyone else (paying, free, etc.).
+      comp_expires_at: effectiveCompExpiresAt,
+    },
+    {
+      // Hard no-cache so browsers always refetch after a billing
+      // change (comp activation, paid checkout, subscription cancel).
+      // Without this, the HomePicker banner could stay on "Inbox
+      // Cleaner" after a user upgrades.
+      headers: { 'Cache-Control': 'no-store, max-age=0' },
+    },
+  )
 }
 
 // PATCH body — every field is optional so the same endpoint can

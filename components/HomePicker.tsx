@@ -74,7 +74,12 @@ export function HomePicker() {
       })
       .catch(() => setStoresLoaded(true))
 
-    fetch('/api/account')
+    // cache: 'no-store' so the browser refetches on every mount. Without
+    // it, a returning user (e.g. just activated a comp code on /pricing
+    // and clicked back to the watchlist) would see a stale tier from
+    // a previous page load — banner stuck on "Inbox Cleaner" even
+    // though they're now "Personal Shopper" in the DB.
+    fetch('/api/account', { cache: 'no-store' })
       .then(async (r) => {
         if (!r.ok) {
           setSignedIn(false)

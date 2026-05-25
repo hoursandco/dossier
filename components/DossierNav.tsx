@@ -38,12 +38,12 @@ export function DossierNav({
     let cancelled = false
     Promise.all([
       signedInProp === undefined
-        ? fetch('/api/account')
+        ? fetch('/api/account', { cache: 'no-store' })
             .then((r) => (r.ok ? r.json().then(() => true) : false))
             .catch(() => false)
         : Promise.resolve(signedInProp),
       isAdminProp === undefined
-        ? fetch('/api/admin/check')
+        ? fetch('/api/admin/check', { cache: 'no-store' })
             .then((r) => (r.ok ? r.json().then((d) => !!d.isAdmin) : false))
             .catch(() => false)
         : Promise.resolve(isAdminProp),
