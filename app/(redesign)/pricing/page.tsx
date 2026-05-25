@@ -110,10 +110,30 @@ export default async function PreviewPricing() {
         <div className="form-wrap-narrow">
           {!user ? (
             <SignInPrompt />
-          ) : alreadyPaid ? (
-            <AlreadySubscribed />
           ) : (
+            // TEMPORARY: rendering the UpgradeFlow for ALL signed-in
+            // users (including already-paid) so the admin can verify
+            // the promo-code field is wired up. Re-enable the
+            // AlreadySubscribed branch by restoring the
+            // `alreadyPaid ? <AlreadySubscribed /> : ...` ternary
+            // around this block.
             <div className="form-card flush">
+              {alreadyPaid && (
+                <div style={{
+                  background: '#fff5d4',
+                  border: '2px solid var(--ink)',
+                  boxShadow: '3px 3px 0 var(--ink)',
+                  padding: '14px 18px',
+                  marginBottom: 24,
+                  fontFamily: "'Special Elite', monospace",
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                  color: 'var(--ink)',
+                }}>
+                  <strong style={{ fontFamily: "'Stardos Stamp', monospace", letterSpacing: '.22em', textTransform: 'uppercase', fontSize: 12 }}>Preview mode</strong><br />
+                  You&rsquo;re already on Personal Shopper — this form is shown for testing the promo-code flow. Clicking <em>Continue to payment</em> while still subscribed will return a 409 (&ldquo;Already subscribed&rdquo;); no new charge will occur.
+                </div>
+              )}
               <p className="form-step">— Upgrade —</p>
               <h2 className="form-h">Switch on <em style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal', color: 'var(--ink)', textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)', padding: '0 .04em' }}>Personal Shopper.</em></h2>
 
