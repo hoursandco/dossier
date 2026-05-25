@@ -98,7 +98,6 @@ export default async function AdminPage() {
     { count: activeSubscribers },
     { data: tierData },
     { count: newThisWeek },
-    { data: recentSubscribers },
     { count: totalEmailsSent },
     { count: sentThisWeek },
     { data: topRetailers },
@@ -111,7 +110,6 @@ export default async function AdminPage() {
     db.from('subscribers').select('*', { count: 'exact', head: true }).eq('is_active', true),
     db.from('subscribers').select('tier').eq('is_active', true),
     db.from('subscribers').select('*', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
-    db.from('subscribers').select('email, tier, created_at').order('created_at', { ascending: false }).limit(3),
     db.from('sent_emails').select('*', { count: 'exact', head: true }),
     db.from('sent_emails').select('*', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
     db.from('deals').select('retailer').gte('created_at', thirtyDaysAgo),
@@ -311,55 +309,9 @@ export default async function AdminPage() {
         </Reveal>
       </div>
 
-      {/* 06 — Recent Signups */}
-      <div style={{ marginTop: 32 }}>
-        <Reveal>
-          <div className="admin-card">
-            <SectionLabel n="06">Recent Signups</SectionLabel>
-            <div className="admin-table" style={{ marginTop: 20 }}>
-              <div
-                className="admin-table-head"
-                style={{ gridTemplateColumns: '2fr 0.7fr 0.8fr' }}
-              >
-                <div>Email</div>
-                <div>Tier</div>
-                <div>Joined</div>
-              </div>
-              {!recentSubscribers || recentSubscribers.length === 0 ? (
-                <p style={{ marginTop: 20, fontSize: 13, color: 'var(--ink-55)' }}>
-                  No subscribers yet.
-                </p>
-              ) : (
-                recentSubscribers.map((sub, i) => (
-                  <div
-                    key={i}
-                    className="admin-table-row"
-                    style={{ gridTemplateColumns: '2fr 0.7fr 0.8fr' }}
-                  >
-                    <div
-                      className="t-mono"
-                      style={{
-                        fontSize: 12,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {sub.email}
-                    </div>
-                    <div>
-                      <span className={`tier-badge ${sub.tier}`}>{sub.tier}</span>
-                    </div>
-                    <div className="t-meta" style={{ color: 'var(--ink-40)' }}>
-                      {format(new Date(sub.created_at), 'MMM d')}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </Reveal>
-      </div>
+      {/* (06 — Recent Signups card removed. Subscribers tab in the
+          AdminTabs row carries the full subscribers table — duplicate
+          here was redundant.) */}
     </>
   )
 

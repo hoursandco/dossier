@@ -608,40 +608,75 @@ export function HomePicker() {
                 </div>
               )}
 
-              {/* Danger zone */}
-              <div className="danger">
-                <p>
-                  <em>Need to step away?</em>{' '}
-                  <strong>Log out</strong> ends this session — sign back in any time via magic link.{' '}
-                  <strong>Unsubscribe</strong> keeps your account but clears your watchlist.{' '}
-                  <strong>Delete</strong> wipes everything: watchlist, picks, send history, and your sign-in entirely.
-                </p>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className="btn-ghost-tag"
-                    onClick={handleLogout}
+              {/* Danger zone — collapsed by default so the destructive
+                  buttons aren't accidental-clickable. <details> is a
+                  native HTML disclosure — no JS, no library, and the
+                  chevron flips automatically via CSS [open] selector. */}
+              <details className="danger-zone-collapsible" style={{ marginTop: 36 }}>
+                <summary
+                  style={{
+                    listStyle: 'none',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontFamily: "'Stardos Stamp', monospace",
+                    fontSize: 12,
+                    letterSpacing: '.22em',
+                    textTransform: 'uppercase',
+                    color: 'var(--ink-soft)',
+                    padding: '8px 0',
+                    userSelect: 'none',
+                  }}
+                >
+                  Danger Zone
+                  <span
+                    aria-hidden="true"
+                    className="danger-zone-chevron"
+                    style={{
+                      display: 'inline-block',
+                      transition: 'transform .15s ease',
+                      fontSize: 14,
+                      lineHeight: 1,
+                    }}
                   >
-                    Log out
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost-tag"
-                    style={{ background: '#fde0de', color: 'var(--red-deep)' }}
-                    onClick={handleUnsubscribe}
-                  >
-                    Unsubscribe
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost-tag"
-                    style={{ background: 'var(--red-deep)', color: '#fff8e2', border: '2px solid var(--red-deep)' }}
-                    onClick={handleDeleteAccount}
-                  >
-                    Delete my account
-                  </button>
+                    ▾
+                  </span>
+                </summary>
+                <div className="danger" style={{ marginTop: 12 }}>
+                  <p>
+                    <em>Need to step away?</em>{' '}
+                    <strong>Log out</strong> ends this session — sign back in any time via magic link.{' '}
+                    <strong>Unsubscribe</strong> keeps your account but clears your watchlist.{' '}
+                    <strong>Delete</strong> wipes everything: watchlist, picks, send history, and your sign-in entirely.
+                  </p>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn-ghost-tag"
+                      onClick={handleLogout}
+                    >
+                      Log out
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost-tag"
+                      style={{ background: '#fde0de', color: 'var(--red-deep)' }}
+                      onClick={handleUnsubscribe}
+                    >
+                      Unsubscribe
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost-tag"
+                      style={{ background: 'var(--red-deep)', color: '#fff8e2', border: '2px solid var(--red-deep)' }}
+                      onClick={handleDeleteAccount}
+                    >
+                      Delete my account
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </details>
             </>
           )}
         </div>

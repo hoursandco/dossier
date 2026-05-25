@@ -1179,6 +1179,28 @@
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px; flex-wrap: wrap;
 }
+
+/* Danger-zone <details> wrapper: hide the default disclosure marker
+   and rotate the in-content chevron when [open]. Safari ignores
+   list-style:none on <summary> unless you also disable the
+   ::-webkit-details-marker pseudo. */
+.dl-shell .danger-zone-collapsible > summary { list-style: none; }
+.dl-shell .danger-zone-collapsible > summary::-webkit-details-marker { display: none; }
+.dl-shell .danger-zone-collapsible[open] > summary .danger-zone-chevron {
+  transform: rotate(180deg);
+}
+.dl-shell .danger-zone-collapsible[open] > summary {
+  color: var(--ink) !important;
+}
+/* Closed-state danger zone no longer needs its dashed top border —
+   the <summary> chevron already separates it from the upgrade nudge
+   above. Reset the .danger margin/border that only made sense when
+   it was the whole footer of the form-card. */
+.dl-shell .danger-zone-collapsible .danger {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
 .dl-shell .danger p {
   margin: 0;
   font-family: "IM Fell English", serif;
