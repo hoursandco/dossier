@@ -1,9 +1,9 @@
 'use client'
 
 // Tab strip for /admin. Each tab's content is mounted only when active,
-// so panels with their own fetches (SubscriptionsPanel, CouponsPanel,
-// etc.) don't all fire on initial page load — only when the user
-// actually visits that tab.
+// so panels with their own fetches (SubscriptionsPanel, DiscountCodes-
+// Panel, etc.) don't all fire on initial page load — only when the
+// user actually visits that tab.
 //
 // Persists the active tab in the URL hash (e.g. `/admin#coupons`) so
 // reloads + shared links land on the same tab the admin was using.
