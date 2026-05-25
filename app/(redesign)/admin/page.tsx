@@ -108,7 +108,7 @@ export default async function AdminPage() {
   ] = await Promise.all([
     db.from('subscribers').select('*', { count: 'exact', head: true }),
     db.from('subscribers').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    db.from('subscribers').select('tier').eq('is_active', true),
+    db.from('subscribers').select('tier, subscription_status').eq('is_active', true),
     db.from('subscribers').select('*', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
     db.from('sent_emails').select('*', { count: 'exact', head: true }),
     db.from('sent_emails').select('*', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
@@ -120,8 +120,17 @@ export default async function AdminPage() {
   ])
 
   // ── Derived stats ─────────────────────────────────────────────────────
+  // Three buckets for accurate revenue accounting:
+  //   - Comped    → subscription_status='comped' (100%-off promo, no
+  //                 money moves through Stripe). Counted separately
+  //                 from Paid so the Paid number reflects real revenue.
+  //   - Paid      → tier='paid' AND NOT comped (i.e. an actual Stripe
+  //                 subscription is live, paying full or discounted).
+  //   - Free      → everyone else (tier='free' OR the lapsed paid /
+  //                 lapsed comped row before the next self-heal write).
+  const compedCount = (tierData || []).filter((r) => r.subscription_status === 'comped').length
+  const paidCount = (tierData || []).filter((r) => r.tier === 'paid' && r.subscription_status !== 'comped').length
   const freeCount = (tierData || []).filter((r) => r.tier === 'free').length
-  const paidCount = (tierData || []).filter((r) => r.tier === 'paid').length
 
   // Top retailers (last 30 days)
   const retailerCounts: Record<string, number> = {}
@@ -195,6 +204,7 @@ export default async function AdminPage() {
             },
             { n: freeCount, l: 'Free Tier', sub: null, accent: false },
             { n: paidCount, l: 'Paid Tier', sub: null, accent: false },
+            { n: compedCount, l: 'Comped', sub: '100%-off codes', accent: false },
             {
               n: newThisWeek ?? 0,
               l: 'New This Week',
