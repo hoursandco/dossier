@@ -99,6 +99,22 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // 100%-off codes don't go through Stripe — they create a comped
+  // subscription with no card collected. The combination "100% off
+  // AND require credit card" would mean "free trial that converts
+  // to paid", which we don't support yet (would need stripe
+  // trial_period_days instead of an amount-off coupon). Reject the
+  // ambiguous combination at the admin layer.
+  if (parsed.data.percent_off >= 100 && parsed.data.requires_credit_card) {
+    return NextResponse.json(
+      {
+        error:
+          '100%-off codes can’t require a credit card. Uncheck "Require credit card" — the user activates free access without entering a card.',
+      },
+      { status: 400 },
+    )
+  }
+
   const service = createServiceClient()
   const code = parsed.data.code.toUpperCase()
 

@@ -99,21 +99,29 @@ export async function validateDiscountCode(
     listPriceCents * (1 - row.percent_off / 100),
   )
 
-  // Human-readable summary the client can drop straight into the UI
-  // without re-deriving the math. Tone matches the rest of the site.
+  // 100%-off codes MUST take the comp branch (no Stripe call).
+  // Stripe refuses to create a $0 PaymentIntent — there's nothing to
+  // confirm, so no clientSecret comes back and the redemption fails.
+  // The admin form prevents creating "100% off + require card" rows
+  // going forward, but we also override here so any legacy rows with
+  // that configuration redeem correctly. A true "free trial that
+  // converts to paid" flow would need stripe trial_period_days, not
+  // a 100% coupon — out of scope for the current promo system.
   const isFree = row.percent_off >= 100
+  const effectiveRequiresCard = isFree ? false : row.requires_credit_card
+
   const monthsLabel = row.duration_months === 1
     ? '1 month'
     : `${row.duration_months} months`
   const message = isFree
-    ? `${monthsLabel} free${row.requires_credit_card ? '' : ' — no credit card required'}`
+    ? `${monthsLabel} free — no credit card required`
     : `${row.percent_off}% off for ${monthsLabel}`
 
   return {
     valid: true,
     row,
     percent_off: row.percent_off,
-    requires_credit_card: row.requires_credit_card,
+    requires_credit_card: effectiveRequiresCard,
     duration_months: row.duration_months,
     list_price_cents: listPriceCents,
     discounted_amount_cents: discountedAmountCents,

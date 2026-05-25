@@ -66,7 +66,10 @@ export function DiscountCodesPanel() {
   const today = new Date().toISOString().slice(0, 10)
   const oneYear = new Date(Date.now() + 365 * 86400_000).toISOString().slice(0, 10)
   const [expiresAt, setExpiresAt] = useState(oneYear)
-  const [requiresCard, setRequiresCard] = useState(true)
+  const [requiresCard, setRequiresCardRaw] = useState(true)
+  // Wrap the setter so callers can't get the box back into an
+  // inconsistent state with percent_off=100.
+  const setRequiresCard = setRequiresCardRaw
   const [maxRedemptions, setMaxRedemptions] = useState('')
   const [formMsg, setFormMsg] = useState<string | null>(null)
 
@@ -206,7 +209,15 @@ export function DiscountCodesPanel() {
               <input
                 type="number"
                 value={percentOff}
-                onChange={(e) => setPercentOff(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setPercentOff(next)
+                  // 100%-off codes can't go through Stripe (see the
+                  // validator's comment). Force the "no card" branch
+                  // whenever the admin lands on 100% so the form can't
+                  // submit a state the server will reject.
+                  if (Number(next) >= 100) setRequiresCard(false)
+                }}
                 min={0}
                 max={100}
                 step="any"
@@ -250,16 +261,27 @@ export function DiscountCodesPanel() {
             </label>
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={requiresCard}
-              onChange={(e) => setRequiresCard(e.target.checked)}
-            />
-            <span>
-              <strong>Require credit card</strong> — uncheck for free / 100%-off comp codes (no Stripe round-trip)
-            </span>
-          </label>
+          {(() => {
+            const isFullOff = Number(percentOff) >= 100
+            return (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, opacity: isFullOff ? 0.55 : 1 }}>
+                <input
+                  type="checkbox"
+                  checked={isFullOff ? false : requiresCard}
+                  onChange={(e) => setRequiresCard(e.target.checked)}
+                  disabled={isFullOff}
+                />
+                <span>
+                  <strong>Require credit card</strong> — uncheck for free / 100%-off comp codes (no Stripe round-trip).
+                  {isFullOff && (
+                    <em style={{ display: 'block', marginTop: 2, fontSize: 12, color: 'var(--ink-soft)', fontStyle: 'italic' }}>
+                      Locked off — 100%-off codes always skip card collection (Stripe can&rsquo;t process $0 charges).
+                    </em>
+                  )}
+                </span>
+              </label>
+            )
+          })()}
 
           <button
             type="submit"
@@ -335,7 +357,13 @@ function CodeList({
         <div style={{ textAlign: 'right' }}>Actions</div>
       </div>
       {rows.map((c) => {
-        const cardLabel = c.requires_credit_card ? 'Yes' : 'No (comp)'
+        // 100%-off codes always behave as comps at redemption time
+        // (server-side override in lib/discountCodes.ts), regardless
+        // of what the DB row says. Mirror that in the displayed Card?
+        // column so the admin sees the actual behavior, not stale DB
+        // state from before the override.
+        const effectivelyComp = !c.requires_credit_card || c.percent_off >= 100
+        const cardLabel = effectivelyComp ? 'No (comp)' : 'Yes'
         const usedLabel = c.max_redemptions != null
           ? `${c.times_used} / ${c.max_redemptions}`
           : String(c.times_used)
@@ -357,7 +385,7 @@ function CodeList({
             <div className="t-meta" style={{ fontSize: 12 }}>
               {formatDate(c.expires_at)}
             </div>
-            <div className="t-meta" style={{ fontSize: 12, color: c.requires_credit_card ? 'var(--ink-55)' : 'var(--olive-deep)' }}>
+            <div className="t-meta" style={{ fontSize: 12, color: effectivelyComp ? 'var(--olive-deep)' : 'var(--ink-55)' }}>
               {cardLabel}
             </div>
             <div className="t-meta" style={{ fontSize: 12 }}>
