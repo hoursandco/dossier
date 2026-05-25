@@ -21,20 +21,50 @@ export async function GET() {
   const service = createServiceClient()
   const { data: subscriber } = await service
     .from('subscribers')
-    .select('tier, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers')
+    .select('id, tier, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at')
     .eq('email', user.email)
     .single()
 
+  // Self-heal expired comps. A comped subscriber whose
+  // comp_expires_at has passed gets quietly flipped back to free here
+  // so we don't need a cron. Cheap: single read on every /api/account
+  // hit; the index on comp_expires_at makes the in-line UPDATE a
+  // single-row primary-key write.
+  let effectiveTier = subscriber?.tier ?? 'free'
+  let effectiveStatus = subscriber?.subscription_status ?? null
+  let effectiveCompExpiresAt = subscriber?.comp_expires_at ?? null
+  if (
+    subscriber?.subscription_status === 'comped' &&
+    subscriber.comp_expires_at &&
+    new Date(subscriber.comp_expires_at) < new Date()
+  ) {
+    await service
+      .from('subscribers')
+      .update({
+        tier: 'free',
+        subscription_status: null,
+        comp_expires_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', subscriber.id)
+    effectiveTier = 'free'
+    effectiveStatus = null
+    effectiveCompExpiresAt = null
+  }
+
   return NextResponse.json({
     email: user.email,
-    tier: subscriber?.tier ?? 'free',
-    subscription_status: subscriber?.subscription_status ?? null,
+    tier: effectiveTier,
+    subscription_status: effectiveStatus,
     has_billing_account: !!subscriber?.stripe_customer_id,
     weekly_email_enabled: subscriber?.weekly_email_enabled ?? true,
     // Paid-tier global filters (added in migration 029). Both null/
     // empty by default = no filtering applied at send time.
     min_discount_pct: subscriber?.min_discount_pct ?? null,
     allowed_price_tiers: subscriber?.allowed_price_tiers ?? [],
+    // Comp expiry surfaced so the UI can show "Free access until …"
+    // for comped users. Null for everyone else (paying, free, etc.).
+    comp_expires_at: effectiveCompExpiresAt,
   })
 }
 

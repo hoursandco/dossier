@@ -1,20 +1,36 @@
+// POST /api/billing/create-subscription
+//
+// Two redemption paths:
+//
+//   PAID (no code / partial-discount code with requires_credit_card=true):
+//     - Standard Stripe Elements flow. Create an incomplete subscription
+//       at the discounted amount, return a clientSecret, client collects
+//       card and confirms via stripe.confirmPayment.
+//
+//   COMPED (100%-off code with requires_credit_card=false):
+//     - Bypass Stripe entirely. Mark the subscriber as comped, set
+//       comp_expires_at = now() + duration_months, store the promo_code
+//       used. Return { comped: true } so the client skips Elements
+//       and shows the activation success state instead.
+//
+// The split is driven by the validated discount-code row's
+// requires_credit_card flag. Server-side re-validates every time —
+// the client-side preview from /api/checkout/validate-code is
+// advisory only.
+
 import { NextRequest, NextResponse } from 'next/server'
 import type Stripe from 'stripe'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getStripe, priceIdForPlan } from '@/lib/stripe'
+import { getStripe, priceIdForPlan, listPriceCentsForPlan } from '@/lib/stripe'
+import { validateDiscountCode } from '@/lib/discountCodes'
 
 export const dynamic = 'force-dynamic'
 
 const Body = z.object({
-  // Only one plan exists ($4.99/mo). Kept in the schema as an enum
-  // (rather than a literal default) so that adding a future plan
-  // doesn't require a client API contract change.
   plan: z.enum(['monthly']),
-  // Optional promo code typed by the user during checkout. Validated
-  // against Stripe's promotionCodes API; invalid codes return 400 so
-  // the user sees the error before payment. Trimmed + upper-cased
-  // because Stripe codes are case-sensitive but humans aren't.
+  // Optional in-app promo code. Validated server-side against
+  // discount_codes via validateDiscountCode().
   promo_code: z.string().trim().min(1).max(64).optional(),
 })
 
@@ -35,7 +51,7 @@ export async function POST(request: NextRequest) {
     const service = createServiceClient()
     const { data: subscriber, error: subErr } = await service
       .from('subscribers')
-      .select('id, email, stripe_customer_id, stripe_subscription_id, subscription_status, tier')
+      .select('id, email, stripe_customer_id, stripe_subscription_id, subscription_status, tier, comp_expires_at')
       .eq('email', user.email)
       .single()
 
@@ -44,41 +60,82 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Subscriber not found' }, { status: 404 })
     }
 
-    // Reject if already on an active paid subscription — manage via portal instead.
+    // Reject if already actively paid or comped — manage via portal /
+    // wait for comp to expire instead.
+    const compStillActive =
+      subscriber.comp_expires_at != null &&
+      new Date(subscriber.comp_expires_at) > new Date()
     if (
       subscriber.tier === 'paid' &&
-      ['active', 'trialing'].includes(subscriber.subscription_status ?? '')
+      (['active', 'trialing'].includes(subscriber.subscription_status ?? '') || compStillActive)
     ) {
       return NextResponse.json(
-        { error: 'Already subscribed. Use the billing portal to change plan.' },
+        { error: 'Already subscribed. Use the billing portal to change plan, or wait for your comp to expire.' },
         { status: 409 }
       )
     }
 
-    const stripe = getStripe()
+    // ── Validate promo code if supplied ─────────────────────────────
+    // validateDiscountCode is shared with /api/checkout/validate-code
+    // so the client preview and server-side enforcement can't drift.
+    let appliedCode: string | null = null
+    let percentOff = 0
+    let durationMonths = 1
+    let requiresCard = true
 
-    // Validate promo code (if supplied). Look it up by the code string
-    // — Stripe.promotionCodes.list returns the matching active code or
-    // an empty array. We surface invalid/expired codes as a 400 BEFORE
-    // creating the subscription so the user can correct the typo.
-    let promotionCodeId: string | undefined
     if (parsed.data.promo_code) {
-      const search = await stripe.promotionCodes.list({
-        code: parsed.data.promo_code,
-        active: true,
-        limit: 1,
-      })
-      const pc = search.data[0]
-      if (!pc) {
-        return NextResponse.json(
-          { error: 'Promo code not valid or expired.' },
-          { status: 400 }
-        )
+      const result = await validateDiscountCode(
+        service,
+        parsed.data.promo_code,
+        parsed.data.plan,
+      )
+      if (!result.valid) {
+        return NextResponse.json({ error: result.message }, { status: 400 })
       }
-      promotionCodeId = pc.id
+      appliedCode = result.row.code
+      percentOff = result.percent_off
+      durationMonths = result.duration_months
+      requiresCard = result.requires_credit_card
     }
 
-    // Get or create Stripe Customer.
+    // ── COMPED branch: 100%-off code with requires_credit_card=false ─
+    // Never touch Stripe. Mark the subscriber as paid+comped and set
+    // an expiry timestamp the /api/account self-heal will respect.
+    if (appliedCode && !requiresCard) {
+      const expiresAt = new Date()
+      expiresAt.setMonth(expiresAt.getMonth() + durationMonths)
+
+      const { error: compErr } = await service
+        .from('subscribers')
+        .update({
+          tier: 'paid',
+          subscription_status: 'comped',
+          comp_expires_at: expiresAt.toISOString(),
+          promo_code: appliedCode,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', subscriber.id)
+
+      if (compErr) {
+        console.error('[create-subscription] comp activation failed:', JSON.stringify(compErr))
+        return NextResponse.json({ error: 'Could not activate free access.' }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        comped: true,
+        promo_code: appliedCode,
+        duration_months: durationMonths,
+        comp_expires_at: expiresAt.toISOString(),
+      })
+    }
+
+    // ── PAID branch: standard Stripe Elements flow ───────────────────
+    // Either no code, or a code with requires_credit_card=true. For
+    // discounted-with-card we set the discounted amount directly via
+    // a one-off invoice item adjustment — Stripe applies the same %
+    // off without us having to mirror a coupon there.
+    const stripe = getStripe()
+
     let customerId = subscriber.stripe_customer_id as string | null
     if (!customerId) {
       const customer = await stripe.customers.create({
@@ -92,7 +149,34 @@ export async function POST(request: NextRequest) {
         .eq('id', subscriber.id)
     }
 
-    // Create incomplete subscription — payment is collected client-side via Elements.
+    // For partial discounts we have to make Stripe price the first
+    // duration_months invoices at the discounted amount. The simplest
+    // way without mirroring our codes into Stripe coupons is to mint
+    // a one-off Stripe Coupon on the fly, apply it to the subscription,
+    // and let Stripe handle the recurring renewal at full price after.
+    let discountForStripe: { coupon: string } | null = null
+    if (appliedCode && percentOff > 0 && requiresCard) {
+      const listPriceCents = listPriceCentsForPlan(parsed.data.plan)
+      const discountedCents = Math.round(listPriceCents * (1 - percentOff / 100))
+      const offCents = listPriceCents - discountedCents
+      const couponDuration: 'once' | 'forever' | 'repeating' =
+        durationMonths === 1 ? 'once' : 'repeating'
+
+      const ephemeral = await stripe.coupons.create({
+        amount_off: offCents,
+        currency: 'usd',
+        duration: couponDuration,
+        ...(couponDuration === 'repeating' ? { duration_in_months: durationMonths } : {}),
+        name: `In-app: ${appliedCode}`,
+        metadata: {
+          source: 'in_app_discount_code',
+          code: appliedCode,
+          subscriber_id: subscriber.id,
+        },
+      })
+      discountForStripe = { coupon: ephemeral.id }
+    }
+
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
       items: [{ price: priceIdForPlan(parsed.data.plan) }],
@@ -104,14 +188,9 @@ export async function POST(request: NextRequest) {
       expand: ['latest_invoice.confirmation_secret'],
       metadata: {
         subscriber_id: subscriber.id,
-        ...(parsed.data.promo_code ? { promo_code_typed: parsed.data.promo_code } : {}),
+        ...(appliedCode ? { promo_code: appliedCode } : {}),
       },
-      // Apply the validated promotion code (if any). Stripe will
-      // compute the discount automatically based on the coupon
-      // attached to this promotion code.
-      ...(promotionCodeId
-        ? { discounts: [{ promotion_code: promotionCodeId }] }
-        : {}),
+      ...(discountForStripe ? { discounts: [discountForStripe] } : {}),
     })
 
     const invoice = subscription.latest_invoice as Stripe.Invoice | null
@@ -127,7 +206,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Stamp the promo_code on the subscriber so it shows up in the
+    // admin's times_used count. If payment ultimately fails we'll
+    // still have this attribution — fine for analytics; the webhook
+    // handler will clean up state on subscription expiry/cancellation.
+    if (appliedCode) {
+      await service
+        .from('subscribers')
+        .update({ promo_code: appliedCode, updated_at: new Date().toISOString() })
+        .eq('id', subscriber.id)
+    }
+
     return NextResponse.json({
+      comped: false,
       subscriptionId: subscription.id,
       clientSecret,
     })

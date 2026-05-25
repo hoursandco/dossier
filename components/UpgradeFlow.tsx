@@ -37,6 +37,15 @@ export function UpgradeFlow() {
   // clientSecret, which means the PaymentForm remounts and would
   // otherwise lose track of what's applied.
   const [appliedCode, setAppliedCode] = useState<string | null>(null)
+  // Comped success state — set when a 100%-off code with
+  // requires_credit_card=false is applied. Bypasses Stripe entirely
+  // and we render an activation confirmation instead of the
+  // PaymentForm.
+  const [comped, setComped] = useState<{
+    code: string
+    duration_months: number
+    comp_expires_at: string
+  } | null>(null)
 
   // Lazy-load Stripe.js only on the client; bail out cleanly if the key is missing.
   const stripePromise = useMemo<Promise<Stripe | null> | null>(() => {
@@ -95,6 +104,22 @@ export function UpgradeFlow() {
         setError(msg)
         return { ok: false, error: msg }
       }
+      // Server signals which branch was taken. The COMPED branch never
+      // returns a clientSecret because there's no Stripe charge — we
+      // flip to the success state directly.
+      if (data.comped) {
+        setComped({
+          code: data.promo_code,
+          duration_months: data.duration_months,
+          comp_expires_at: data.comp_expires_at,
+        })
+        setAppliedCode(data.promo_code)
+        // Fire begin_checkout/funnel events even on the free path so
+        // it shows up in analytics — same event-funnel shape, just
+        // value=0.
+        trackEvent('begin_checkout', { plan, currency: 'USD' })
+        return { ok: true }
+      }
       setClientSecret(data.clientSecret)
       setAppliedCode(promoCode?.trim() || null)
       return { ok: true }
@@ -112,6 +137,64 @@ export function UpgradeFlow() {
     if (result.ok) {
       trackEvent('begin_checkout', { plan, currency: 'USD' })
     }
+  }
+
+  if (comped) {
+    // 100%-off code applied with requires_credit_card=false. We
+    // bypassed Stripe entirely — show a clean activation success
+    // state with the expiry date so the user knows what they got.
+    const expires = new Date(comped.comp_expires_at).toLocaleDateString(
+      undefined,
+      { month: 'long', day: 'numeric', year: 'numeric' },
+    )
+    return (
+      <div>
+        <div
+          style={{
+            padding: '20px 24px',
+            border: '2px solid var(--ink)',
+            background: '#e8f1d2',
+            boxShadow: '4px 4px 0 var(--ink)',
+            marginBottom: 20,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "'Stardos Stamp', monospace",
+              fontSize: 11,
+              letterSpacing: '.3em',
+              textTransform: 'uppercase',
+              color: 'var(--olive-deep)',
+              marginBottom: 8,
+            }}
+          >
+            ✓ Activated
+          </div>
+          <div
+            style={{
+              fontFamily: "'Alfa Slab One', serif",
+              fontSize: 24,
+              lineHeight: 1.1,
+              color: 'var(--ink)',
+              marginBottom: 6,
+            }}
+          >
+            Personal Shopper, on us.
+          </div>
+          <p style={{ margin: 0, fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink)' }}>
+            Code <strong style={{ fontFamily: 'var(--font-mono, monospace)', fontStyle: 'normal' }}>{comped.code}</strong> got you {comped.duration_months}{' '}
+            {comped.duration_months === 1 ? 'month' : 'months'} of full access — no card, no recurring charge. Free access through <strong>{expires}</strong>.
+          </p>
+        </div>
+        <a
+          href="/"
+          className="btn-primary"
+          style={{ display: 'inline-block', textDecoration: 'none' }}
+        >
+          Open your watchlist <span className="arr">→</span>
+        </a>
+      </div>
+    )
   }
 
   if (clientSecret) {
