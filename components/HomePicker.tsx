@@ -71,7 +71,9 @@ export function HomePicker() {
       .then((r) => (r.ok ? r.json() : { categories: [] }))
       .then((d) => setCategories(d.categories ?? []))
       .catch(() => {})
-    fetch('/api/stores')
+    // Only confirmed brands surface in the picker — pending /
+    // auto_added rows are still in admin review.
+    fetch('/api/stores?confirmed=true')
       .then((r) => (r.ok ? r.json() : { stores: [] }))
       .then((d) => {
         const arr = (d.stores ?? []) as Array<{ id: string; name: string }>
@@ -612,7 +614,7 @@ export function HomePicker() {
                   type="search"
                   value={storeQuery}
                   onChange={(e) => setStoreQuery(e.target.value)}
-                  placeholder={storesLoaded ? 'Search 1,700+ brands — try \'J.Crew\', \'Nordstrom\', \'REI\'…' : 'Loading brands…'}
+                  placeholder={storesLoaded ? `Search ${stores.length.toLocaleString('en-US')} brands — try 'J.Crew', 'Nordstrom', 'REI'…` : 'Loading brands…'}
                   disabled={!storesLoaded}
                   style={{ width: '100%', padding: '12px 14px', fontFamily: "'Special Elite', monospace", fontSize: 16, background: '#fff8e2', border: '2px solid var(--ink)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
                 />
@@ -641,7 +643,7 @@ export function HomePicker() {
 
           {/* In-form links */}
           <p style={{ margin: '16px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', textAlign: 'center' }}>
-            <a href="/stores" style={{ color: 'var(--ink-soft)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>See all 1,700+ brands →</a>
+            <a href="/stores" style={{ color: 'var(--ink-soft)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>See all {storesLoaded ? stores.length.toLocaleString('en-US') : ''} brands →</a>
             {'  ·  '}
             <a href="/suggest" style={{ color: 'var(--ink-soft)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>Suggest a store →</a>
           </p>

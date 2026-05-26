@@ -1,9 +1,11 @@
 // /faq — the questions worth asking, on their own page. Moved off the
 // homepage as part of the single-page restructure; reachable from the
-// footer. Static content — native <details> accordions, no client JS.
+// footer. Server-rendered so the "N brands" copy reflects the live
+// confirmed brand count (admin-curated active rows only).
 
 import type { Metadata } from 'next'
 import { DossierNav } from '@/components/DossierNav'
+import { createServiceClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +16,25 @@ export const metadata: Metadata = {
   alternates: { canonical: 'https://dealdossier.io/faq' },
 }
 
-export default function FaqPage() {
+// Round down to the nearest 100 for marketing copy — "1,742 brands"
+// reads as falsely precise / promotional dishonest. "1,700+ brands"
+// hits the right register (and reflects the current set without
+// hard-coding).
+function brandsMarketingCount(actual: number): string {
+  if (actual < 100) return String(actual)
+  const floored = Math.floor(actual / 100) * 100
+  return `${floored.toLocaleString('en-US')}+`
+}
+
+export default async function FaqPage() {
+  const service = createServiceClient()
+  const { count } = await service
+    .from('stores')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'active')
+    .eq('is_active', true)
+  const brandsLabel = brandsMarketingCount(count ?? 0)
+
   return (
     <>
       <DossierNav />
@@ -29,7 +49,7 @@ export default function FaqPage() {
             <summary>What does Deal Dossier do for me?</summary>
             <div className="ans">
               <p>You tell us what you&rsquo;re shopping for — bath &amp; towels, a new mattress, mens jeans, perfume, whatever. We do the rest.</p>
-              <p>Our AI is subscribed to over 1,700 brand newsletters. Every day it scans an inbox, extracts real discounts, tags each deal by category, and stores them. The moment you ask — by hitting &ldquo;send me deals now&rdquo; — we email everything matching your watchlist. You tell us what you&rsquo;re shopping for, we&rsquo;ll immediately send you a tidy list of recent deals for those categories or brands.</p>
+              <p>Our AI is subscribed to over {brandsLabel} brand newsletters. Every day it scans an inbox, extracts real discounts, tags each deal by category, and stores them. The moment you ask — by hitting &ldquo;send me deals now&rdquo; — we email everything matching your watchlist. You tell us what you&rsquo;re shopping for, we&rsquo;ll immediately send you a tidy list of recent deals for those categories or brands.</p>
               <p style={{ marginTop: 14, fontStyle: 'italic' }}>
                 <a href="/" style={{ color: 'var(--red-deep)', borderBottom: '1.5px solid var(--red-deep)' }}>
                   Pick three brands you actually shop. We&rsquo;ll do the watching. →
@@ -55,7 +75,7 @@ export default function FaqPage() {
             <span className="faq-tag">Q · 03</span>
             <summary>How are deals selected?</summary>
             <div className="ans">
-              <p>AI does the window shopping for you. We scan 1,700+ brand emails daily. Skip the fluff — a 10% discount with a $200 minimum isn&rsquo;t a win, and &ldquo;store cash&rdquo; isn&rsquo;t savings. Just the real ones.</p>
+              <p>AI does the window shopping for you. We scan {brandsLabel} brand emails daily. Skip the fluff — a 10% discount with a $200 minimum isn&rsquo;t a win, and &ldquo;store cash&rdquo; isn&rsquo;t savings. Just the real ones.</p>
               <p style={{ marginTop: 14, fontStyle: 'italic' }}>
                 <a href="/" style={{ color: 'var(--red-deep)', borderBottom: '1.5px solid var(--red-deep)' }}>
                   Choose three. Get the deals. Skip the spam. →

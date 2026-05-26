@@ -79,7 +79,10 @@ export function StoresBrowse() {
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      fetch('/api/stores').then((r) => (r.ok ? r.json() : { stores: [] })),
+      // ?confirmed=true → only admin-curated active brands. Pending /
+      // auto_added rows are still in admin review and shouldn't surface
+      // to public visitors.
+      fetch('/api/stores?confirmed=true').then((r) => (r.ok ? r.json() : { stores: [] })),
       fetch('/api/categories').then((r) => (r.ok ? r.json() : { categories: [] })),
       fetch('/api/store-picks').then((r) => (r.ok ? r.json() : { store_picks: [] })),
       fetch('/api/account').then((r) => (r.ok ? r.json() : null)).catch(() => null),

@@ -103,7 +103,7 @@ export default function PreviewSettings() {
           fetch('/api/account').then((r) => (r.ok ? r.json() : null)).catch(() => null),
           fetch('/api/admin/check').then((r) => r.json()).catch(() => ({ isAdmin: false })),
           fetch('/api/store-picks').then((r) => r.json()).catch(() => ({ store_picks: [] })),
-          fetch('/api/stores').then((r) => r.json()).catch(() => ({ stores: [] })),
+          fetch('/api/stores?confirmed=true').then((r) => r.json()).catch(() => ({ stores: [] })),
         ])
         setWatches(watchesRes.watches ?? [])
         setCategories(catsRes.categories ?? [])
@@ -793,7 +793,7 @@ export default function PreviewSettings() {
                   type="search"
                   value={storeSearch}
                   onChange={(e) => setStoreSearch(e.target.value)}
-                  placeholder="Search 1,700+ brands — try 'J.Crew', 'Nordstrom', 'REI'…"
+                  placeholder={storeDirectory.length > 0 ? `Search ${storeDirectory.length.toLocaleString('en-US')} brands — try 'J.Crew', 'Nordstrom', 'REI'…` : 'Loading brands…'}
                   style={{
                     width: '100%',
                     padding: '12px 14px',

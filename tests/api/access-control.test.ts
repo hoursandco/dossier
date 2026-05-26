@@ -124,7 +124,7 @@ describe('GET /api/stores', () => {
     })
     const { GET } = await import('@/app/api/stores/route')
 
-    const res = await GET()
+    const res = await GET(new Request('http://localhost/api/stores') as unknown as Parameters<typeof GET>[0])
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
@@ -144,7 +144,7 @@ describe('GET /api/stores', () => {
     })
     const { GET } = await import('@/app/api/stores/route')
 
-    await GET()
+    await GET(new Request('http://localhost/api/stores') as unknown as Parameters<typeof GET>[0])
 
     expect(service.queries.stores[0].neq).toHaveBeenCalledWith('status', 'declined')
   })

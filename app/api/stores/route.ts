@@ -7,7 +7,7 @@
 // promo list, sorry." Only 'declined' is hidden — those should not
 // even surface as autofill matches.
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -25,8 +25,18 @@ export interface StoreRow {
   is_active: boolean
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = createServiceClient()
+
+  // `?confirmed=true` narrows the response to the admin-curated set:
+  //   status='active' AND is_active=true
+  // Used by the public /stores browse page and the homepage brand
+  // picker, where pending / auto_added / no_email rows would surface
+  // half-finished brand data. Default (no param) keeps the original
+  // behavior for /suggest's autofill (which wants to know about
+  // pending + no_email rows so it can say "we have that brand but no
+  // email yet").
+  const confirmedOnly = req.nextUrl.searchParams.get('confirmed') === 'true'
 
   // PostgREST caps every request at ~1000 rows regardless of .limit(),
   // and the directory is 1700+. Page through with .range() — otherwise
@@ -35,15 +45,18 @@ export async function GET() {
   // silently invisible.
   const PAGE_SIZE = 1000
 
-  const primaryPage = (i: number) =>
-    supabase
+  const primaryPage = (i: number) => {
+    const q = supabase
       .from('stores')
       .select(
         'id, name, website, categories, sub_types, price_tier, age_group, date_added, status, is_active'
       )
-      .neq('status', 'declined')
       .order('name', { ascending: true })
       .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    return confirmedOnly
+      ? q.eq('status', 'active').eq('is_active', true)
+      : q.neq('status', 'declined')
+  }
 
   const page0 = await primaryPage(0)
 
