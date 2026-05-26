@@ -842,9 +842,13 @@ export function HomePicker() {
 // ─────────────────────────────────────────────────────────────────────
 
 const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
+// 5 chips so the row fits side-by-side with the 4-chip price tier
+// without wrapping. Dropped the 10% step — under 20% off is barely a
+// meaningful threshold (most retailers have a standing 10% offer
+// anyway), so trimming it surfaces tougher thresholds without losing
+// real signal.
 const DISCOUNT_STEPS: Array<{ label: string; value: number | null }> = [
   { label: 'Any', value: null },
-  { label: '10%', value: 10 },
   { label: '20%', value: 20 },
   { label: '30%', value: 30 },
   { label: '40%', value: 40 },
