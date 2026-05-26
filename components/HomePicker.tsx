@@ -51,6 +51,12 @@ export function HomePicker() {
   // badge above the section links to /pricing.
   const [minDiscountPct, setMinDiscountPct] = useState<number | null>(null)
   const [allowedTiers, setAllowedTiers] = useState<Set<string>>(new Set())
+  // Bottom-of-email opt-ins (migration 031). All default false so a
+  // free user sees the cleaner email; paid users opt into compact
+  // brand-list sections at the bottom.
+  const [includeFreeShipping, setIncludeFreeShipping] = useState(false)
+  const [includeBogo, setIncludeBogo] = useState(false)
+  const [includeGwp, setIncludeGwp] = useState(false)
 
   const [storeQuery, setStoreQuery] = useState('')
   const [email, setEmail] = useState('')
@@ -99,6 +105,9 @@ export function HomePicker() {
           if (Array.isArray(d.allowed_price_tiers) && d.allowed_price_tiers.length > 0) {
             setAllowedTiers(new Set(d.allowed_price_tiers))
           }
+          setIncludeFreeShipping(!!d.include_free_shipping)
+          setIncludeBogo(!!d.include_bogo)
+          setIncludeGwp(!!d.include_gwp)
           const [watchesRes, picksRes] = await Promise.all([
             fetch('/api/watches').then((r) => (r.ok ? r.json() : { watches: [] })).catch(() => ({ watches: [] })),
             fetch('/api/store-picks').then((r) => (r.ok ? r.json() : { store_picks: [] })).catch(() => ({ store_picks: [] })),
@@ -290,6 +299,25 @@ export function HomePicker() {
       })
     } catch {}
   }, [])
+
+  // PATCH a single include_* boolean. Optimistic — flip local state
+  // first, then write. If the server rejects we just leave the local
+  // flip (the next page load will rehydrate from the DB).
+  const updateInclude = useCallback(
+    async (key: 'include_free_shipping' | 'include_bogo' | 'include_gwp', value: boolean) => {
+      if (key === 'include_free_shipping') setIncludeFreeShipping(value)
+      else if (key === 'include_bogo') setIncludeBogo(value)
+      else setIncludeGwp(value)
+      try {
+        await fetch('/api/account', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: value }),
+        })
+      } catch {}
+    },
+    [],
+  )
 
   const toggleTier = useCallback(async (tier: string) => {
     const next = new Set(allowedTiers)
@@ -669,6 +697,10 @@ export function HomePicker() {
                 onChangeMinDiscount={saveMinDiscount}
                 allowedTiers={allowedTiers}
                 onToggleTier={toggleTier}
+                includeFreeShipping={includeFreeShipping}
+                includeBogo={includeBogo}
+                includeGwp={includeGwp}
+                onToggleInclude={updateInclude}
               />
 
               <div style={{ marginTop: 20 }}>
@@ -823,12 +855,23 @@ function FilterPanel({
   onChangeMinDiscount,
   allowedTiers,
   onToggleTier,
+  includeFreeShipping,
+  includeBogo,
+  includeGwp,
+  onToggleInclude,
 }: {
   isPaid: boolean
   minDiscountPct: number | null
   onChangeMinDiscount: (next: number | null) => void
   allowedTiers: Set<string>
   onToggleTier: (tier: string) => void
+  includeFreeShipping: boolean
+  includeBogo: boolean
+  includeGwp: boolean
+  onToggleInclude: (
+    key: 'include_free_shipping' | 'include_bogo' | 'include_gwp',
+    value: boolean,
+  ) => void
 }) {
   const disabled = !isPaid
 
@@ -1012,6 +1055,79 @@ function FilterPanel({
               : `${minDiscountPct}%+ off · BOGO/free-shipping pass through`}
           </p>
         </div>
+      </div>
+
+      {/* ── Include section — opt-ins for the bottom-of-email compact
+          brand lists. Default OFF for everyone (cleaner email); paid
+          users can flip each on to surface free-shipping / BOGO / GWP
+          deals as comma-separated brand lists under "Also Today" at
+          the bottom of the email. */}
+      <div
+        style={{
+          marginTop: 18,
+          paddingTop: 14,
+          borderTop: '1.5px dashed var(--ink-25, #cbc4ad)',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: "'Stardos Stamp', monospace",
+            fontSize: 10,
+            letterSpacing: '.22em',
+            textTransform: 'uppercase',
+            color: 'var(--ink-soft)',
+            marginBottom: 8,
+          }}
+        >
+          Also include in email
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px 18px',
+            fontFamily: "'Special Elite', monospace",
+            fontSize: 14,
+            color: 'var(--ink)',
+          }}
+        >
+          {([
+            { key: 'include_free_shipping' as const, label: 'Free shipping', value: includeFreeShipping },
+            { key: 'include_bogo' as const, label: 'BOGO offers', value: includeBogo },
+            { key: 'include_gwp' as const, label: 'Gift with purchase', value: includeGwp },
+          ]).map(({ key, label, value }) => (
+            <label
+              key={key}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                opacity: disabled ? 0.55 : 1,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={value}
+                disabled={disabled}
+                onChange={(e) => onToggleInclude(key, e.target.checked)}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p
+          style={{
+            margin: '8px 0 0',
+            fontFamily: "'IM Fell English', serif",
+            fontStyle: 'italic',
+            fontSize: 12,
+            color: 'var(--ink-soft)',
+          }}
+        >
+          Renders as a compact brand list at the bottom of the email,
+          not full deal blocks. Only your matched brands appear.
+        </p>
       </div>
     </div>
   )

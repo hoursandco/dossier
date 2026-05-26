@@ -47,6 +47,18 @@ export interface WatchlistEmailInput {
   // the "https://google.com/search?q=..." fallback the ingest pipeline
   // writes when the LLM didn't extract a deal link from the email.
   storeUrls?: Record<string, string>
+  // Compact brand lists for the "Also Today" section at the bottom of
+  // the email. Each bucket is either:
+  //   - null  → opt-in is OFF, section header doesn't render
+  //   - []    → opt-in is ON but no brands match today ("None today")
+  //   - [...] → opt-in is ON, list the brand names linked
+  // Free users always pass all-null here (the generator skips the
+  // whole section).
+  compactBuckets?: {
+    free_shipping: string[] | null
+    bogo: string[] | null
+    gwp: string[] | null
+  }
 }
 
 function escape(s: string): string {
@@ -186,6 +198,53 @@ function retailerBlock(
               <a href="${firstLink}" style="font-family:${FONT_DISPLAY};font-size:24px;letter-spacing:.03em;line-height:1.1;color:${INK};text-decoration:none;border-bottom:2px solid ${INK};padding-bottom:2px;">${name}</a>
               <span style="font-family:${FONT_BODY};font-style:italic;color:${INK_SOFT};font-size:14px;margin-left:8px;">— ${count} ${count === 1 ? 'deal' : 'deals'}</span>
             </p>${rows}`
+}
+
+// ── "Also Today" compact section ─────────────────────────────────────
+//
+// Bottom-of-email summary for paid users who've opted into one or
+// more non-percent deal types (free shipping / BOGO / GWP). Each
+// opted-in bucket renders as a single line: bucket label in stamp
+// type, then a comma-separated list of linked brand names. Empty
+// buckets render "None today" so users know we honoured their
+// preference even when nothing matched. The whole section is skipped
+// when no opt-ins are active.
+function compactBucketLine(
+  label: string,
+  brands: string[],
+  storeUrls: Record<string, string>,
+): string {
+  const stampLabel = `<span style="font-family:${FONT_STAMP};font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:${RED_DEEP};">${escape(label)}</span>`
+  if (brands.length === 0) {
+    return `<p style="margin:0 0 14px;font-family:${FONT_TYPE};font-size:14px;line-height:1.55;color:${INK};">${stampLabel}<br><span style="color:${INK_SOFT};font-style:italic;font-family:${FONT_BODY};">None today.</span></p>`
+  }
+  const links = brands.map((name) => {
+    const key = name.toLowerCase()
+    const url =
+      storeUrls[key] ||
+      storeUrls[name.toLowerCase().replace(/[^a-z0-9]/g, '')] ||
+      '#'
+    return `<a href="${escape(url)}" style="color:${INK};text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;">${escape(name)}</a>`
+  })
+  return `<p style="margin:0 0 14px;font-family:${FONT_TYPE};font-size:14px;line-height:1.6;color:${INK};">${stampLabel}<br>${links.join(' · ')}</p>`
+}
+
+function compactSection(
+  buckets: NonNullable<WatchlistEmailInput['compactBuckets']>,
+  storeUrls: Record<string, string>,
+): string {
+  const lines: string[] = []
+  if (buckets.free_shipping !== null) lines.push(compactBucketLine('Free Shipping', buckets.free_shipping, storeUrls))
+  if (buckets.bogo !== null) lines.push(compactBucketLine('BOGO', buckets.bogo, storeUrls))
+  if (buckets.gwp !== null) lines.push(compactBucketLine('Gift With Purchase', buckets.gwp, storeUrls))
+  if (lines.length === 0) return ''
+  return `
+        <tr>
+          <td class="px" style="padding:32px 40px 28px;background:${PANEL};border-top:3px solid ${INK};">
+            <p style="margin:0 0 18px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.4em;text-transform:uppercase;color:${RED_DEEP};">— Also Today —</p>
+            ${lines.join('\n            ')}
+          </td>
+        </tr>`
 }
 
 // ── One watch section: eyebrow + heading + retailer blocks (or empty) ────
@@ -400,6 +459,7 @@ export function generateWatchlistEmail({
   appUrl,
   watchSections,
   storeUrls = {},
+  compactBuckets,
 }: WatchlistEmailInput): string {
   const totalDeals = watchSections.reduce((sum, s) => sum + s.deals.length, 0)
   const matched = watchSections.filter((s) => s.deals.length > 0).length
@@ -510,6 +570,9 @@ export function generateWatchlistEmail({
 
       <!-- Sections -->
 ${sectionsHtml}
+
+      <!-- "Also Today" compact lists (paid opt-ins only) -->
+${compactBuckets ? compactSection(compactBuckets, storeUrls) : ''}
 
       <!-- Postscript -->
       <tr>

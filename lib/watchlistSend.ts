@@ -142,7 +142,7 @@ export async function sendWatchlistEmailForSubscriber(
   // the send path compatible with pre-migration deployments.
   const { data: subRow } = await service
     .from('subscribers')
-    .select('tier, subscription_status, min_discount_pct, allowed_price_tiers')
+    .select('tier, subscription_status, min_discount_pct, allowed_price_tiers, include_free_shipping, include_bogo, include_gwp')
     .eq('id', subscriber.id)
     .single()
 
@@ -158,6 +158,14 @@ export async function sendWatchlistEmailForSubscriber(
     ? new Set<string>((subRow?.allowed_price_tiers ?? []) as string[])
     : new Set<string>()
   const tierFilterActive = allowedTiers.size > 0 && allowedTiers.size < 4
+
+  // Compact-list opt-ins (migration 031). Free users always see
+  // false here — the email skips the "Also Today" section entirely
+  // for them. Paid users get their saved preferences.
+  const includeFreeShipping = isPaid ? !!subRow?.include_free_shipping : false
+  const includeBogo = isPaid ? !!subRow?.include_bogo : false
+  const includeGwp = isPaid ? !!subRow?.include_gwp : false
+  const anyCompactOptIn = includeFreeShipping || includeBogo || includeGwp
 
   // ── Load category watches ────────────────────────────────────────────
   const { data: watchRows } = await service
@@ -232,26 +240,40 @@ export async function sendWatchlistEmailForSubscriber(
     .gte('created_at', sinceIso)
     .or(`expiration_date.is.null,expiration_date.gte.${today}`)
 
+  // Dedupe across the WHOLE pool — keep suppressed deals in scope so
+  // we can pluck them out for the compact-list opt-ins. Main per-watch
+  // sections then filter suppressed types back out.
   const dedupedDeals = dedupeDeals(
-    (dealRows ?? [])
-      .filter((d): d is Deal => !isJunkDeal(d as Deal))
-      // Default-suppress free-shipping + GWP/free-item deals. They
-      // stay in the DB so a future per-subscriber opt-in toggle can
-      // surface them; today every subscriber gets the cleaner email.
-      .filter((d) =>
-        !DEFAULT_SUPPRESSED_DEAL_TYPES.has(d.deal_type ?? '') &&
-        !GWP_DESCRIPTION_RE.test(d.description ?? '')
-      )
+    (dealRows ?? []).filter((d): d is Deal => !isJunkDeal(d as Deal))
   )
 
   const { storeTiers, storeUrls, storeSpendTiers } = await fetchStoreData(appUrl)
 
-  // Apply subscriber-level filters (min discount + price tier). Both
-  // filters are no-ops for free users (set to null/empty above).
+  // Helper: a deal is "suppressed" if it's a type we don't show in
+  // the main per-watch sections by default (free-shipping, free-item)
+  // OR if its description hits the GWP keyword (some retailers tag
+  // GWP promos as flash-sale or percent-off).
+  const isSuppressed = (d: Deal) =>
+    DEFAULT_SUPPRESSED_DEAL_TYPES.has(d.deal_type ?? '') ||
+    GWP_DESCRIPTION_RE.test(d.description ?? '')
+
+  // Price-tier filter applies to BOTH main and compact pools — a paid
+  // user who's locked their tier to $ shouldn't see $$$$ stores in
+  // either bucket.
+  const passesTierFilter = (d: Deal) => {
+    if (!tierFilterActive) return true
+    const retailerKey = (d.retailer ?? '').toLowerCase()
+    const tier = storeSpendTiers[retailerKey] || storeSpendTiers[normName(d.retailer ?? '')]
+    if (tier && !allowedTiers.has(tier)) return false
+    return true
+  }
+
+  // Apply min-discount filter only to the main pool. Non-percent
+  // deals (BOGO/free-item/free-shipping) pass through regardless —
+  // they're filtered into the compact pool by isSuppressed instead.
   const allDeals = dedupedDeals.filter((d) => {
-    // Min discount: percent-off and up-to deals must clear the
-    // threshold. Everything else (free-shipping, BOGO, flash-sale,
-    // etc.) passes through — see NON_PERCENT_DEAL_TYPES above.
+    if (isSuppressed(d)) return false
+    if (!passesTierFilter(d)) return false
     if (minDiscount != null) {
       const isNonPercent = NON_PERCENT_DEAL_TYPES.has(d.deal_type ?? '')
       if (!isNonPercent) {
@@ -259,17 +281,15 @@ export async function sendWatchlistEmailForSubscriber(
         if (pct < minDiscount) return false
       }
     }
-    // Price tier: drop deals whose retailer's spendTier isn't in the
-    // allow-list. Unknown retailers (no tier set) pass through — we
-    // don't want to block deals from new stores that just haven't
-    // been tagged yet.
-    if (tierFilterActive) {
-      const retailerKey = (d.retailer ?? '').toLowerCase()
-      const tier = storeSpendTiers[retailerKey] || storeSpendTiers[normName(d.retailer ?? '')]
-      if (tier && !allowedTiers.has(tier)) return false
-    }
     return true
   })
+
+  // Compact pool: only the suppressed types, tier-filtered. The
+  // email generator further narrows by which opt-ins the subscriber
+  // has flipped on, and by matching brands against their watchlist.
+  const suppressedDeals = dedupedDeals.filter(
+    (d) => isSuppressed(d) && passesTierFilter(d),
+  )
 
   // ── Category sections: deals whose categories include the watch slug ──
   const categorySections: WatchSection[] = watches.map((w) => {
@@ -297,7 +317,60 @@ export async function sendWatchlistEmailForSubscriber(
   const watchSections: WatchSection[] = [...categorySections, ...storeSections]
 
   const totalDeals = watchSections.reduce((sum, s) => sum + s.deals.length, 0)
-  const html = generateWatchlistEmail({ appUrl, watchSections, storeUrls })
+
+  // ── Compact "Also Today" lists ──────────────────────────────────────
+  // Build the brand lists for each opted-in deal type from the
+  // suppressed pool. A deal qualifies if its retailer matches one of
+  // the user's category watches OR their store picks. Free users get
+  // an empty CompactBuckets (anyCompactOptIn === false skips the
+  // entire section in the generator).
+  const watchedSlugs = new Set(watches.map((w) => w.category_slug))
+  const pickedStoreNorms = new Set(storePicks.map((sp) => normName(sp.name)))
+  const matchesUserWatchlist = (d: Deal) => {
+    const retailerNorm = normName(d.retailer ?? '')
+    if (retailerNorm && pickedStoreNorms.has(retailerNorm)) return true
+    const cats = (d.categories ?? []) as string[]
+    return cats.some((c) => watchedSlugs.has(c))
+  }
+
+  // Collect unique brand names per bucket. We dedupe by normalized
+  // retailer name so "J.Crew" and "J. Crew" don't appear twice.
+  const collectBrands = (predicate: (d: Deal) => boolean): string[] => {
+    if (!anyCompactOptIn) return []
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const d of suppressedDeals) {
+      if (!matchesUserWatchlist(d)) continue
+      if (!predicate(d)) continue
+      const key = normName(d.retailer ?? '')
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      out.push(d.retailer ?? '')
+    }
+    return out.sort((a, b) => a.localeCompare(b))
+  }
+
+  const compactBuckets = {
+    free_shipping: includeFreeShipping
+      ? collectBrands((d) => d.deal_type === 'free-shipping')
+      : null,
+    bogo: includeBogo
+      ? collectBrands((d) => d.deal_type === 'bogo-free' || d.deal_type === 'bogo-half')
+      : null,
+    gwp: includeGwp
+      ? collectBrands((d) =>
+          d.deal_type === 'free-item' ||
+          GWP_DESCRIPTION_RE.test(d.description ?? '')
+        )
+      : null,
+  }
+
+  const html = generateWatchlistEmail({
+    appUrl,
+    watchSections,
+    storeUrls,
+    compactBuckets,
+  })
 
   const result = await sendEmail({
     to: subscriber.email,

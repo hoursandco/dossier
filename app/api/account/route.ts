@@ -21,7 +21,7 @@ export async function GET() {
   const service = createServiceClient()
   const { data: subscriber } = await service
     .from('subscribers')
-    .select('id, tier, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at')
+    .select('id, tier, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp')
     .eq('email', user.email)
     .single()
 
@@ -66,6 +66,12 @@ export async function GET() {
       // Comp expiry surfaced so the UI can show "Free access until …"
       // for comped users. Null for everyone else (paying, free, etc.).
       comp_expires_at: effectiveCompExpiresAt,
+      // Paid opt-ins for the bottom-of-email compact lists (migration
+      // 031). All default false so the API stays back-compat with
+      // existing subscribers — they just see the no-extras email.
+      include_free_shipping: subscriber?.include_free_shipping ?? false,
+      include_bogo: subscriber?.include_bogo ?? false,
+      include_gwp: subscriber?.include_gwp ?? false,
     },
     {
       // Hard no-cache so browsers always refetch after a billing
@@ -86,6 +92,12 @@ const PatchSchema = z.object({
   weekly_email_enabled: z.boolean().optional(),
   min_discount_pct: z.number().int().min(1).max(99).nullable().optional(),
   allowed_price_tiers: z.array(z.enum(TIER_VALUES)).optional(),
+  // Paid opt-ins (migration 031). Same paid-gating as the discount/
+  // tier filters below — free users can flip these in the UI but the
+  // server-side guard rejects the PATCH.
+  include_free_shipping: z.boolean().optional(),
+  include_bogo: z.boolean().optional(),
+  include_gwp: z.boolean().optional(),
 })
 
 export async function PATCH(request: NextRequest) {
@@ -108,7 +120,10 @@ export async function PATCH(request: NextRequest) {
   // the filters and they'd apply on send.
   const wantsFilterChange =
     parsed.data.min_discount_pct !== undefined ||
-    parsed.data.allowed_price_tiers !== undefined
+    parsed.data.allowed_price_tiers !== undefined ||
+    parsed.data.include_free_shipping !== undefined ||
+    parsed.data.include_bogo !== undefined ||
+    parsed.data.include_gwp !== undefined
   if (wantsFilterChange) {
     const { data: sub } = await service
       .from('subscribers')
@@ -140,6 +155,15 @@ export async function PATCH(request: NextRequest) {
   }
   if (parsed.data.allowed_price_tiers !== undefined) {
     update.allowed_price_tiers = parsed.data.allowed_price_tiers
+  }
+  if (parsed.data.include_free_shipping !== undefined) {
+    update.include_free_shipping = parsed.data.include_free_shipping
+  }
+  if (parsed.data.include_bogo !== undefined) {
+    update.include_bogo = parsed.data.include_bogo
+  }
+  if (parsed.data.include_gwp !== undefined) {
+    update.include_gwp = parsed.data.include_gwp
   }
 
   const { error } = await service
