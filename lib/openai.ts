@@ -89,6 +89,7 @@ DO NOT EXTRACT:
 - "Enjoy $X+ on select styles", "$X+ on select styles", or "Shop styles from $X" messages — these are just price floors, not discounts
 - "Starting at $X" promotions where no comparison price, discount amount, or promo code is given
 - "Earn $X store cash / store credit with a $Y purchase" — these are deferred-value promotions with redemption windows and spending requirements, not direct discounts (e.g. "Earn $25 LOFT Cash with a $75 purchase")
+- Games, sweepstakes, contests, or play-to-win promotions — anything where the user has to play a game, score points, enter a drawing, scratch a card, or take some kind of action beyond purchasing to qualify for a prize. Examples we never want: "Play the HOME AWAY game and score enough points to win a surprise gift," "Spin the wheel for a chance at savings," "Enter to win," "Scratch & win." These are entertainment + sweepstakes mechanics, not deals.
 
 Return ONLY this exact JSON structure:
 {

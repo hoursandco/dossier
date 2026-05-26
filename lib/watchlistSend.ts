@@ -114,6 +114,23 @@ const NON_PERCENT_DEAL_TYPES = new Set<string>([
   'loyalty', 'stackable',
 ])
 
+// Default-suppressed deal types — extracted and stored in the DB but
+// NOT shown in the email by default. These types are abundant and
+// individually low-value; surfacing each as a full deal block was
+// drowning the percent-off deals readers actually care about.
+//   - free-shipping : ditto
+//   - free-item     : almost always "gift with purchase" / sample
+//                     drops; better as a brand-list summary
+// Future: opt-in toggles in Personal Shopper Filters will let paid
+// users surface these back as a compact brand-list section at the
+// bottom of the email. For now they're silently dropped.
+const DEFAULT_SUPPRESSED_DEAL_TYPES = new Set<string>([
+  'free-shipping', 'free-item',
+])
+// Description-keyword catch for GWP that the LLM tagged as a different
+// type (e.g. flash-sale).
+const GWP_DESCRIPTION_RE = /\bgift\s+with\s+purchase\b/i
+
 export async function sendWatchlistEmailForSubscriber(
   service: SupabaseClient,
   appUrl: string,
@@ -216,7 +233,15 @@ export async function sendWatchlistEmailForSubscriber(
     .or(`expiration_date.is.null,expiration_date.gte.${today}`)
 
   const dedupedDeals = dedupeDeals(
-    (dealRows ?? []).filter((d): d is Deal => !isJunkDeal(d as Deal))
+    (dealRows ?? [])
+      .filter((d): d is Deal => !isJunkDeal(d as Deal))
+      // Default-suppress free-shipping + GWP/free-item deals. They
+      // stay in the DB so a future per-subscriber opt-in toggle can
+      // surface them; today every subscriber gets the cleaner email.
+      .filter((d) =>
+        !DEFAULT_SUPPRESSED_DEAL_TYPES.has(d.deal_type ?? '') &&
+        !GWP_DESCRIPTION_RE.test(d.description ?? '')
+      )
   )
 
   const { storeTiers, storeUrls, storeSpendTiers } = await fetchStoreData(appUrl)

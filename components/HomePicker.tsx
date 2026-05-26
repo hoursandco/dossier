@@ -143,6 +143,23 @@ export function HomePicker() {
     })
   }
 
+  // Wipe every selected category at once. Signed-out users only need
+  // local state cleared; signed-in users also need each saved watch
+  // deleted from the DB. We fire the DELETEs in parallel and don't
+  // wait for them — the UI optimistically clears immediately, and if
+  // one DELETE fails it'll resurface on the next page load (no harm).
+  const clearAllCats = useCallback(async () => {
+    if (pickedCats.size === 0) return
+    if (!confirm(`Clear all ${pickedCats.size} ${pickedCats.size === 1 ? 'category' : 'categories'}?`)) return
+    const ids = Array.from(watchIdBySlug.values())
+    setPickedCats(new Set())
+    setWatchIdBySlug(new Map())
+    if (!signedIn) return
+    await Promise.allSettled(
+      ids.map((id) => fetch(`/api/watches/${id}`, { method: 'DELETE' })),
+    )
+  }, [pickedCats, watchIdBySlug, signedIn])
+
   const toggleCat = useCallback(
     async (slug: string) => {
       if (!signedIn) {
@@ -417,11 +434,9 @@ export function HomePicker() {
             </p>
           )}
 
-          {overLimit && (
-            <div style={{ marginBottom: 16, padding: '14px 18px', background: '#fde0de', border: '2px solid var(--red-deep)', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--red-deep)' }}>
-              <strong>Sends paused.</strong> You have {totalPicks} picks but free tier allows {FREE_PICK_LIMIT}. Remove {totalPicks - FREE_PICK_LIMIT} below, or <a href="/pricing" style={{ color: 'var(--red-deep)', textDecoration: 'underline' }}>upgrade for unlimited</a>.
-            </div>
-          )}
+          {/* (Sends-paused warning moved down — now renders just
+              above SEND ME DEALS NOW so it's right where the user
+              looks for confirmation that the next send will work.) */}
 
           {/* Tabs */}
           <div role="tablist" style={{ display: 'flex', gap: 2, borderBottom: '2px solid var(--ink)', marginBottom: 16 }}>
@@ -466,6 +481,32 @@ export function HomePicker() {
           {/* Categories tab — uses /preferences .cat-list styling */}
           {pickerTab === 'categories' && (
             <div className="dl-field">
+              {/* Clear-all link — only renders when at least one cat
+                  is picked. Saves the user from opening every group
+                  drawer to unpick individually. */}
+              {pickedCats.size > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    onClick={clearAllCats}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: '4px 0',
+                      color: 'var(--red-deep)',
+                      fontFamily: "'Stardos Stamp', monospace",
+                      fontSize: 11,
+                      letterSpacing: '.18em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      textDecorationStyle: 'dotted',
+                    }}
+                  >
+                    Clear all ({pickedCats.size})
+                  </button>
+                </div>
+              )}
               <div className="cat-list">
                 {grouped.length === 0 && (
                   <p style={{ textAlign: 'center', color: 'var(--ink-soft)', fontFamily: "'Special Elite', monospace", margin: 0, padding: '20px 0' }}>
@@ -631,6 +672,16 @@ export function HomePicker() {
               />
 
               <div style={{ marginTop: 20 }}>
+                {/* Sends-paused warning — anchored right above the
+                    SEND button (rather than at the top of the form-
+                    card) so the user sees the reason their send is
+                    blocked at the exact moment they reach for the
+                    button. */}
+                {overLimit && (
+                  <div style={{ marginBottom: 14, padding: '14px 18px', background: '#fde0de', border: '2px solid var(--red-deep)', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--red-deep)' }}>
+                    <strong>Sends paused.</strong> You have {totalPicks} picks but free tier allows {FREE_PICK_LIMIT}. Remove {totalPicks - FREE_PICK_LIMIT} above, or <a href="/pricing" style={{ color: 'var(--red-deep)', textDecoration: 'underline' }}>upgrade for unlimited</a>.
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={sendDealsNow}

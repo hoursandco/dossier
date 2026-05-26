@@ -258,6 +258,14 @@ export function isJunkDeal(deal: Pick<Deal, 'deal_type' | 'description'> & { ret
   if (deal.deal_type === 'loyalty' || /earn\s+(double|triple|\d+x|bonus)\s+points|bonus\s+points\s+event|rewards?\s+(credit\s+card|members?\s+earn)/i.test(desc))
     return true
 
+  // Games / sweepstakes / play-to-win promotions — entertainment
+  // mechanics, not actual discounts. Catches anything that slipped past
+  // the LLM's DO-NOT-EXTRACT rule. Specific real example we hit:
+  // "Customers can win a surprise HOME AWAY gift by playing the HOME
+  // AWAY game and scoring enough points."
+  if (/\b(play(?:ing)?\s+(the\s+)?[a-z]+\s+game|scoring?\s+(enough\s+)?points|enter\s+to\s+win|sweepstakes?|scratch\s*[-&\s]+\s*win|spin\s+(the\s+)?wheel|win\s+a\s+(surprise|free|chance)|prize\s+(drawing|wheel)|chance\s+to\s+win)\b/i.test(desc))
+    return true
+
   // Store cash / deferred credit (e.g. LOFT Cash, Kohl's Cash)
   if (/earn\s+\$\d+\s+\w*\s*(cash|credit|reward)|get\s+\$\d+\s+\w*\s*(cash|credit)\s+when\s+you\s+spend/i.test(desc) &&
     !/\d+%\s*off|\$\d+\s*off/i.test(desc))

@@ -180,10 +180,32 @@ export default async function AdminPage() {
 
   const dataTab = (
     <>
-      {/* 01 Subscribers */}
+      {/* 01 Pipeline Totals — moved above subscribers per request */}
       <Reveal delay={120}>
         <div className="admin-section-label">
-          <SectionLabel n="01">Subscribers</SectionLabel>
+          <SectionLabel n="01">Pipeline Totals</SectionLabel>
+        </div>
+        <div className="admin-stat-row admin-stat-row-4">
+          {[
+            { n: totalEmailsScanned, l: 'Emails Scanned' },
+            { n: totalDealsFound, l: 'Deals Extracted' },
+            { n: totalEmailsSent ?? 0, l: 'Emails Delivered' },
+            { n: sentThisWeek ?? 0, l: 'Delivered This Week' },
+          ].map(({ n, l }) => (
+            <div key={l} className="admin-stat">
+              <div className="admin-stat-num">
+                <FlapNumber value={String(n)} />
+              </div>
+              <div className="t-meta admin-stat-label">{l}</div>
+            </div>
+          ))}
+        </div>
+      </Reveal>
+
+      {/* 02 Subscribers */}
+      <Reveal delay={160}>
+        <div className="admin-section-label" style={{ marginTop: 64 }}>
+          <SectionLabel n="02">Subscribers</SectionLabel>
         </div>
         <div className="admin-stat-row admin-stat-row-5">
           {[
@@ -221,28 +243,6 @@ export default async function AdminPage() {
               </div>
               <div className="t-meta admin-stat-label">{l}</div>
               {sub && <div className="admin-stat-sub">{sub}</div>}
-            </div>
-          ))}
-        </div>
-      </Reveal>
-
-      {/* 02 Pipeline Totals */}
-      <Reveal delay={160}>
-        <div className="admin-section-label" style={{ marginTop: 64 }}>
-          <SectionLabel n="02">Pipeline Totals</SectionLabel>
-        </div>
-        <div className="admin-stat-row admin-stat-row-4">
-          {[
-            { n: totalEmailsScanned, l: 'Emails Scanned' },
-            { n: totalDealsFound, l: 'Deals Extracted' },
-            { n: totalEmailsSent ?? 0, l: 'Emails Delivered' },
-            { n: sentThisWeek ?? 0, l: 'Delivered This Week' },
-          ].map(({ n, l }) => (
-            <div key={l} className="admin-stat">
-              <div className="admin-stat-num">
-                <FlapNumber value={String(n)} />
-              </div>
-              <div className="t-meta admin-stat-label">{l}</div>
             </div>
           ))}
         </div>
