@@ -159,12 +159,32 @@ export async function GET(request: NextRequest) {
     // Fetch the active category list once per run so the LLM prompt can be
     // built with the current taxonomy. Adding/removing categories in the
     // DB takes effect on the next ingest run — no code deploy.
+    //
+    // is_editorial separates content categories (LLM-derivable from
+    // email body — Skincare, Womens Apparel) from editorial vibes
+    // (Mall Stores, Boutique, Heritage). The LLM is told only the
+    // non-editorial slugs (it can't infer vibes from a single email).
+    // The store-category union below filters by is_editorial so vibe
+    // tags from a brand's store row get added to its deals while
+    // content tags do not (avoids the Roomba-in-Athleisure bug we
+    // had under the "union everything" approach).
     const { data: categoryRows } = await supabase
       .from('categories')
-      .select('slug, label')
+      .select('slug, label, is_editorial')
       .eq('is_active', true)
       .order('sort_order')
-    const allCategories: CategoryRow[] = categoryRows ?? []
+    const allCategoryRows = (categoryRows ?? []) as Array<{ slug: string; label: string; is_editorial?: boolean }>
+    // LLM gets non-editorial only — it should never try to tag a
+    // deal as 'mall-stores' or 'luxury' from the email body alone.
+    const allCategories: CategoryRow[] = allCategoryRows
+      .filter((c) => !c.is_editorial)
+      .map((c) => ({ slug: c.slug, label: c.label }))
+    // The cron's per-deal store-category union filters incoming
+    // store.categories against this set — only slugs flagged
+    // is_editorial=true survive.
+    const editorialSlugs = new Set(
+      allCategoryRows.filter((c) => c.is_editorial).map((c) => c.slug),
+    )
 
     // Pull the brand directory once per run and index it by normalized
     // name. When a deal comes in from a known brand, its admin-tagged
@@ -362,18 +382,32 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Per-deal categories come from the LLM ONLY now. The previous
-        // behavior unioned stores.categories into each deal — which
-        // meant a Best Buy Roomba deal got tagged 'athleisure' just
-        // because Best Buy's store row had athleisure in its category
-        // list. Megastore tags polluted unrelated deals.
+        // Per-deal categories = LLM tags (content) + editorial vibes
+        // from the store row.
         //
-        // The full fix (planned with the upcoming categories rebuild)
-        // adds an is_editorial flag on the categories table so only
-        // editorial slugs (Mall Stores, Big Box, Luxury, etc.) get
-        // unioned from stores.categories. Until that lands, no union
-        // happens — deals get exactly what the LLM tagged.
-        const mergedCategories = (deal.categories ?? []) as Category[]
+        //   Content slugs (Skincare, Womens Apparel, ...) come from
+        //   the LLM, which read the email body. They never appear in
+        //   editorialSlugs so they pass through untouched.
+        //
+        //   Editorial vibes (Mall Stores, Boutique, Luxury, Heritage)
+        //   come from the store's stores.categories tags, unioned in
+        //   here. The LLM can't infer "this brand is a mall store"
+        //   from a single email, so editorial tags MUST come from the
+        //   store row to be useful for routing.
+        //
+        // The is_editorial filter prevents the pre-rebuild bug where
+        // every Best Buy deal got tagged athleisure just because the
+        // Best Buy store row happened to have athleisure in its list.
+        const storeCats = storeMatch?.categories ?? []
+        const editorialFromStore = storeCats.filter((c) => editorialSlugs.has(c))
+        const mergedCategories = Array.from(
+          new Set([...(deal.categories ?? []), ...editorialFromStore])
+        ) as Category[]
+        if (editorialFromStore.length > 0) {
+          console.log(
+            `[ingest] vibe-routed ${retailer}: LLM=[${(deal.categories ?? []).join(',')}] + vibes=[${editorialFromStore.join(',')}] → [${mergedCategories.join(',')}]`
+          )
+        }
 
         // Auto-activate pending stores. Only flip 'pending' — never
         // touch 'no_email', 'declined', or 'auto_added' (the new
