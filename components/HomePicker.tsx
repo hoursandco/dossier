@@ -825,7 +825,7 @@ export function HomePicker() {
                     userSelect: 'none',
                   }}
                 >
-                  Danger Zone
+                  Delete account
                   <span
                     aria-hidden="true"
                     className="danger-zone-chevron"
