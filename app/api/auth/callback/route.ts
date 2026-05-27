@@ -12,10 +12,12 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
-      // /preferences IS onboarding in the redesign (empty watchlist +
-      // category picker for new users). The old /welcome route was
-      // removed when the redesign replaced it — never redirect there.
-      return NextResponse.redirect(`${origin}${next ?? '/preferences'}`)
+      // The homepage IS the picker now (the redesign collapsed
+      // /preferences into the HomePicker on /). Land returning users
+      // there so they immediately see their watchlist + SEND ME DEALS
+      // NOW button. A `?next=` query param still overrides if some
+      // call site needs to deep-link somewhere specific.
+      return NextResponse.redirect(`${origin}${next ?? '/'}`)
     }
   }
 
