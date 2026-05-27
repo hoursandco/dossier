@@ -362,15 +362,18 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        const storeCats = storeMatch?.categories ?? []
-        const mergedCategories = Array.from(
-          new Set([...(deal.categories ?? []), ...storeCats])
-        ) as Category[]
-        if (storeCats.length > 0) {
-          console.log(
-            `[ingest] store-routed ${retailer}: LLM=[${(deal.categories ?? []).join(',')}] + store=[${storeCats.join(',')}] → [${mergedCategories.join(',')}]`
-          )
-        }
+        // Per-deal categories come from the LLM ONLY now. The previous
+        // behavior unioned stores.categories into each deal — which
+        // meant a Best Buy Roomba deal got tagged 'athleisure' just
+        // because Best Buy's store row had athleisure in its category
+        // list. Megastore tags polluted unrelated deals.
+        //
+        // The full fix (planned with the upcoming categories rebuild)
+        // adds an is_editorial flag on the categories table so only
+        // editorial slugs (Mall Stores, Big Box, Luxury, etc.) get
+        // unioned from stores.categories. Until that lands, no union
+        // happens — deals get exactly what the LLM tagged.
+        const mergedCategories = (deal.categories ?? []) as Category[]
 
         // Auto-activate pending stores. Only flip 'pending' — never
         // touch 'no_email', 'declined', or 'auto_added' (the new
