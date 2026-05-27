@@ -11,7 +11,7 @@
 //   - Multi-column grid; default sort A-Z but you can switch to
 //     "Newest in directory" or "Most watched."
 //   - Search input (debounced) filters by name.
-//   - Category + price-tier filter chips narrow further.
+//   - Collection + price-tier filter chips narrow further.
 //   - "Popular this week" callout — top 8 brands picked up the most
 //     in the last 7 days, surfaced above the grid for discovery.
 //   - Each card shows name + website link + add-to-watchlist toggle.
@@ -73,7 +73,7 @@ export function StoresBrowse() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [limitModal, setLimitModal] = useState<{ current: number; allowed: number } | null>(null)
 
-  // Bootstrap: load directory, categories, and (if signed in) the
+  // Bootstrap: load directory, collections, and (if signed in) the
   // user's current picks + tier. All in parallel — the page is read-
   // mostly so we batch the initial fetches.
   useEffect(() => {
@@ -83,7 +83,7 @@ export function StoresBrowse() {
       // auto_added rows are still in admin review and shouldn't surface
       // to public visitors.
       fetch('/api/stores?confirmed=true').then((r) => (r.ok ? r.json() : { stores: [] })),
-      fetch('/api/categories').then((r) => (r.ok ? r.json() : { categories: [] })),
+      fetch('/api/collections').then((r) => (r.ok ? r.json() : { collections: [] })),
       fetch('/api/store-picks').then((r) => (r.ok ? r.json() : { store_picks: [] })),
       fetch('/api/account').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       fetch('/api/stores/watch-counts').then((r) => (r.ok ? r.json() : { total: {}, week: {} })).catch(() => ({ total: {}, week: {} })),
@@ -91,7 +91,7 @@ export function StoresBrowse() {
       .then(([storesRes, catsRes, picksRes, accountRes, countsRes]) => {
         if (cancelled) return
         setStores(storesRes.stores ?? [])
-        setCategories(catsRes.categories ?? [])
+        setCategories(catsRes.collections ?? [])
         setStorePicks(picksRes.store_picks ?? [])
         setSignedIn(!!accountRes?.email)
         setIsPaid(accountRes?.tier === 'paid')
@@ -127,7 +127,7 @@ export function StoresBrowse() {
     [storePicks]
   )
 
-  // Filter pipeline: search → category → price tier. Then sort by
+  // Filter pipeline: search → collection → price tier. Then sort by
   // the user's chosen mode (default A-Z mirrors /api/stores' natural
   // order so we only pay for the sort when they switch modes).
   const filteredStores = useMemo(() => {
@@ -243,7 +243,7 @@ export function StoresBrowse() {
 
       <section className="form-section">
         <div className="form-wrap">
-          {/* ── Search + category filter ─────────────────────────────── */}
+          {/* ── Search + collection filter ───────────────────────────── */}
           <div
             style={{
               display: 'flex',
@@ -290,7 +290,7 @@ export function StoresBrowse() {
             )}
           </div>
 
-          {/* Category chip filter — horizontal scroll on narrow screens */}
+          {/* Collection chip filter — horizontal scroll on narrow screens */}
           {categories.length > 0 && (
             <div
               style={{

@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/admin'
+import { normalizeRetailerWebsite } from '@/lib/domainNormalize'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -37,6 +38,11 @@ const NO_EMAIL_STATUS = new Set([
 const REJECTED_STATUS = new Set(['declined', 'rejected', 'blocked', 'blacklisted', 'no'])
 
 type ImportStatus = 'active' | 'pending' | 'no_email' | 'declined'
+
+type ExistingStore = {
+  id: string
+  website: string | null
+}
 
 function classifyStatus(raw: string): ImportStatus {
   const s = raw.toLowerCase().trim()
@@ -117,6 +123,38 @@ function reformatDate(raw: string): string | null {
   return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
+async function loadExistingStoresByNormalizedWebsite(
+  service: ReturnType<typeof createServiceClient>
+): Promise<Map<string, ExistingStore>> {
+  const byNormalized = new Map<string, ExistingStore>()
+  const PAGE_SIZE = 1000
+  let page = 0
+  let lastCount = PAGE_SIZE
+
+  while (lastCount === PAGE_SIZE && page < 20) {
+    const { data, error } = await service
+      .from('stores')
+      .select('id, website')
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+
+    if (error) {
+      console.warn('[seed-from-sheet] could not pre-load stores for normalized dedupe:', JSON.stringify(error))
+      return byNormalized
+    }
+
+    const rows = (data ?? []) as ExistingStore[]
+    for (const row of rows) {
+      const key = normalizeRetailerWebsite(row.website)
+      if (key && !byNormalized.has(key)) byNormalized.set(key, row)
+    }
+
+    lastCount = rows.length
+    page++
+  }
+
+  return byNormalized
+}
+
 export async function POST() {
   // Admin gate
   const sb = await createClient()
@@ -187,7 +225,7 @@ export async function POST() {
     const rawStatus = iStatus >= 0 ? (r[iStatus] ?? '') : ''
     const importStatus = classifyStatus(rawStatus)
 
-    const websiteKey = website.toLowerCase()
+    const websiteKey = normalizeRetailerWebsite(website) ?? website.toLowerCase()
     if (seenWebsites.has(websiteKey)) continue
     seenWebsites.add(websiteKey)
 
@@ -215,7 +253,9 @@ export async function POST() {
   }
 
   const service = createServiceClient()
+  const existingStoresByWebsite = await loadExistingStoresByNormalizedWebsite(service)
   const counts = { active: 0, pending: 0, no_email: 0, declined: 0 }
+  let updated = 0
   let skipped = 0
   // Once we discover the status column is missing on the first row, stop
   // sending it on subsequent inserts — avoids one failed insert per row.
@@ -238,7 +278,20 @@ export async function POST() {
       ? { ...baseRow, status: rec.status }
       : baseRow
 
-    let { error } = await service.from('stores').insert(row)
+    const normalizedWebsite = normalizeRetailerWebsite(rec.website)
+    const existing = normalizedWebsite ? existingStoresByWebsite.get(normalizedWebsite) : undefined
+    let error
+
+    if (existing) {
+      const result = await service
+        .from('stores')
+        .update(row)
+        .eq('id', existing.id)
+      error = result.error
+    } else {
+      const result = await service.from('stores').insert(row)
+      error = result.error
+    }
 
     // 42703 = column does not exist → migration 019 not applied yet.
     // Retry without the status column and remember for the rest of the
@@ -246,7 +299,9 @@ export async function POST() {
     if (error && (error as { code?: string }).code === '42703' && statusColumnExists) {
       console.warn('[seed-from-sheet] status column missing — falling back. Run migration 019.')
       statusColumnExists = false
-      const retry = await service.from('stores').insert(baseRow)
+      const retry = existing
+        ? await service.from('stores').update(baseRow).eq('id', existing.id)
+        : await service.from('stores').insert(baseRow)
       error = retry.error
     }
 
@@ -273,13 +328,18 @@ export async function POST() {
         )
       }
     } else {
-      counts[rec.status]++
+      if (existing) {
+        updated++
+      } else {
+        counts[rec.status]++
+      }
     }
   }
 
   const totalImported = counts.active + counts.pending + counts.no_email + counts.declined
   return NextResponse.json({
     imported: totalImported,
+    updated_existing: updated,
     by_status: counts,
     skipped_duplicate: skipped,
     total_in_sheet: records.length,

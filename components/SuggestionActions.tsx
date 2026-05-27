@@ -3,8 +3,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+type Collection = {
+  slug: string
+  label: string
+  group_name?: string | null
+}
+
 const PRESETS = [
-  { value: 'added',           label: 'Added to watchlist',        glyph: '✓' },
+  { value: 'added',           label: 'Add brand',                 glyph: '✓' },
   { value: 'not_us',          label: 'Not available in the US',   glyph: '✕' },
   { value: 'no_online_store', label: 'No online store',           glyph: '✕' },
   { value: 'no_deals',        label: "Doesn't provide deals/coupons", glyph: '✕' },
@@ -13,10 +19,12 @@ const PRESETS = [
 export function SuggestionActions({
   suggestionId,
   storeName,
+  website,
   initialStatus,
 }: {
   suggestionId: string
   storeName: string
+  website: string | null
   initialStatus: string
 }) {
   const [status, setStatus]   = useState(initialStatus)
@@ -25,6 +33,9 @@ export function SuggestionActions({
   const [sending, setSending] = useState(false)
   const [sent, setSent]       = useState(false)
   const [selected, setSelected] = useState('')
+  const [collections, setCollections] = useState<Collection[]>([])
+  const [selectedCollections, setSelectedCollections] = useState<Set<string>>(new Set())
+  const [collectionsOpen, setCollectionsOpen] = useState(false)
   // Bounding rect of the trigger button, captured at open time so we can
   // anchor the portaled popover. Re-captured every time the popover opens
   // so it follows the button if the page reflowed.
@@ -35,6 +46,13 @@ export function SuggestionActions({
 
   // Close on outside click — check both the wrapper AND the portaled
   // popover, since the popover isn't a DOM child of the wrapper anymore.
+  useEffect(() => {
+    fetch('/api/collections')
+      .then((r) => (r.ok ? r.json() : { collections: [] }))
+      .then((d) => setCollections(d.collections ?? []))
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
@@ -84,6 +102,8 @@ export function SuggestionActions({
         suggestion_id: suggestionId,
         response_type: selected,
         note,
+        website,
+        collection_slugs: Array.from(selectedCollections),
       }),
     })
     if (res.ok) {
@@ -133,6 +153,67 @@ export function SuggestionActions({
           <span>{r.label}</span>
         </label>
       ))}
+      {selected === 'added' && (
+        <div style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className="sug-note"
+            onClick={() => setCollectionsOpen((v) => !v)}
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              cursor: 'pointer',
+              minHeight: 36,
+              color: selectedCollections.size === 0 ? 'var(--ink-40)' : 'var(--ink)',
+            }}
+          >
+            {selectedCollections.size === 0
+              ? 'Collections optional...'
+              : `${selectedCollections.size} collection${selectedCollections.size === 1 ? '' : 's'} selected`}
+          </button>
+          {collectionsOpen && (
+            <div
+              style={{
+                maxHeight: 180,
+                overflowY: 'auto',
+                border: '1px solid var(--ink-15)',
+                borderTop: 0,
+                background: 'var(--paper)',
+              }}
+            >
+              {collections.map((c) => {
+                const checked = selectedCollections.has(c.slug)
+                return (
+                  <label
+                    key={c.slug}
+                    className={`sug-row ${checked ? 'on' : ''}`}
+                    style={{ margin: 0, border: 0 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        setSelectedCollections((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(c.slug)) next.delete(c.slug)
+                          else next.add(c.slug)
+                          return next
+                        })
+                      }}
+                    />
+                    <span>{c.label}</span>
+                  </label>
+                )
+              })}
+              {collections.length === 0 && (
+                <div className="t-meta" style={{ padding: 10, color: 'var(--ink-40)' }}>
+                  No collections found.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <textarea
         className="sug-note"
         placeholder="Optional note…"

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import { isAdminEmail } from '@/lib/admin'
+import { normalizeRetailerWebsite } from '@/lib/domainNormalize'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,6 +52,45 @@ const RESPONSES = {
   },
 }
 
+type ExistingStore = {
+  id: string
+  website: string | null
+  status: string | null
+  is_active: boolean | null
+}
+
+async function loadExistingStoresByNormalizedWebsite(
+  db: ReturnType<typeof createServiceClient>
+): Promise<Map<string, ExistingStore>> {
+  const byNormalized = new Map<string, ExistingStore>()
+  const PAGE_SIZE = 1000
+  let page = 0
+  let lastCount = PAGE_SIZE
+
+  while (lastCount === PAGE_SIZE && page < 20) {
+    const { data, error } = await db
+      .from('stores')
+      .select('id, website, status, is_active')
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+
+    if (error) {
+      console.warn('[respond-suggestion] could not pre-load stores for normalized lookup:', JSON.stringify(error))
+      return byNormalized
+    }
+
+    const rows = (data ?? []) as ExistingStore[]
+    for (const row of rows) {
+      const key = normalizeRetailerWebsite(row.website)
+      if (key && !byNormalized.has(key)) byNormalized.set(key, row)
+    }
+
+    lastCount = rows.length
+    page++
+  }
+
+  return byNormalized
+}
+
 export async function POST(req: NextRequest) {
   // Verify admin
   const authClient = await createClient()
@@ -59,21 +99,72 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { suggestion_id, response_type, note } = await req.json()
+  const { suggestion_id, response_type, note, collection_slugs } = await req.json()
   if (!suggestion_id || !response_type || !RESPONSES[response_type as keyof typeof RESPONSES]) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   }
+  const selectedCollections = Array.isArray(collection_slugs)
+    ? collection_slugs.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    : []
 
   const db = createServiceClient()
 
   // Get suggestion + subscriber email
   const { data: suggestion } = await db
     .from('store_suggestions')
-    .select('store_name, subscriber_id')
+    .select('store_name, website, subscriber_id')
     .eq('id', suggestion_id)
     .single()
 
   if (!suggestion) return NextResponse.json({ error: 'Suggestion not found' }, { status: 404 })
+
+  if (response_type === 'added') {
+    if (!suggestion.website?.trim()) {
+      return NextResponse.json({ error: 'Suggestion is missing a website' }, { status: 400 })
+    }
+
+    let collections: string[] = []
+    if (selectedCollections.length > 0) {
+      const { data: validCollections, error: collectionErr } = await db
+        .from('categories')
+        .select('slug')
+        .eq('is_active', true)
+        .eq('is_editorial', true)
+        .in('slug', selectedCollections)
+
+      if (collectionErr) {
+        console.error('[respond-suggestion] collection lookup error:', JSON.stringify(collectionErr))
+        return NextResponse.json({ error: 'Failed to validate collections' }, { status: 500 })
+      }
+
+      const validSlugs = new Set((validCollections ?? []).map((c) => c.slug))
+      collections = selectedCollections.filter((slug) => validSlugs.has(slug))
+    }
+
+    const normalized = normalizeRetailerWebsite(suggestion.website)
+    const existingStores = await loadExistingStoresByNormalizedWebsite(db)
+    const existing = normalized ? existingStores.get(normalized) : undefined
+    const row = {
+      name: suggestion.store_name,
+      website: suggestion.website,
+      categories: collections,
+      status: existing?.status === 'active' ? 'active' : 'pending',
+      is_active: existing?.status === 'active' || existing?.is_active === true,
+    }
+
+    const write = existing
+      ? await db.from('stores').update(row).eq('id', existing.id)
+      : await db.from('stores').insert(row)
+
+    if (write.error) {
+      const code = (write.error as { code?: string }).code
+      if (code === '23505') {
+        return NextResponse.json({ error: 'A store with that website already exists' }, { status: 409 })
+      }
+      console.error('[respond-suggestion] store write error:', JSON.stringify(write.error))
+      return NextResponse.json({ error: 'Failed to add store' }, { status: 500 })
+    }
+  }
 
   // Get subscriber email
   let subscriberEmail: string | null = null

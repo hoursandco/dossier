@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { normalizeRetailerWebsite } from '@/lib/domainNormalize'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,40 @@ export interface StoreRow {
   date_added: string
   status: string
   is_active: boolean
+}
+
+function normalizeStoreName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function dedupeStores<T extends StoreRow>(stores: T[]): T[] {
+  const byKey = new Map<string, T>()
+
+  for (const store of stores) {
+    const website = normalizeRetailerWebsite(store.website)
+    const name = normalizeStoreName(store.name)
+    const key = website && name ? `${website}::${name}` : store.id
+    const existing = byKey.get(key)
+    if (!existing) {
+      byKey.set(key, store)
+      continue
+    }
+
+    const existingCategoryCount = existing.categories?.length ?? 0
+    const storeCategoryCount = store.categories?.length ?? 0
+    if (storeCategoryCount > existingCategoryCount) {
+      byKey.set(key, store)
+      continue
+    }
+
+    const existingDate = existing.date_added ? new Date(existing.date_added).getTime() : 0
+    const storeDate = store.date_added ? new Date(store.date_added).getTime() : 0
+    if (storeCategoryCount === existingCategoryCount && storeDate > existingDate) {
+      byKey.set(key, store)
+    }
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export async function GET(req: NextRequest) {
@@ -75,7 +110,7 @@ export async function GET(req: NextRequest) {
       lastCount = rows.length
       i++
     }
-    return NextResponse.json({ stores: all })
+    return NextResponse.json({ stores: dedupeStores(all as StoreRow[]) })
   }
 
   // 42703 = status column missing → migration 019 not applied yet. Fall
@@ -89,7 +124,7 @@ export async function GET(req: NextRequest) {
         .eq('is_active', true)
         .order('name', { ascending: true })
         .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
-    const all: Array<Record<string, unknown>> = []
+    const all: StoreRow[] = []
     let lastCount = PAGE_SIZE
     let i = 0
     while (lastCount === PAGE_SIZE && i < 10) {
@@ -99,11 +134,11 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ stores: [], error: 'Failed to load stores' }, { status: 200 })
       }
       const rows = fb.data ?? []
-      all.push(...rows.map((s) => ({ ...s, status: 'active' })))
+      all.push(...rows.map((s) => ({ ...s, status: 'active' } as StoreRow)))
       lastCount = rows.length
       i++
     }
-    return NextResponse.json({ stores: all })
+    return NextResponse.json({ stores: dedupeStores(all) })
   }
 
   console.error('[stores] lookup error:', JSON.stringify(page0.error))

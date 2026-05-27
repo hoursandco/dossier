@@ -1,10 +1,9 @@
 // POST /api/admin/stores/auto-tag-categories
 //
-// Walks every store with an empty categories[] and asks GPT what
-// categories (from the active 61-slug taxonomy) that brand sells. Writes
-// the result back to stores.categories. Idempotent: stores that already
-// have categories assigned are skipped, so re-running the endpoint only
-// fills in the gaps.
+// Walks every store with an empty categories[] and asks GPT which
+// editorial collections fit that brand. Writes the result back to
+// stores.categories. Idempotent: stores that already have collections
+// assigned are skipped, so re-running the endpoint only fills in the gaps.
 //
 // Admin-gated. Runs serverside with concurrency-limited workers so we
 // don't blast OpenAI's rate limit on a large directory.
@@ -57,16 +56,17 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient()
 
-  // Pull the active taxonomy once (shared across all worker calls).
+  // Pull the active collections once (shared across all worker calls).
   const { data: categoryRows } = await service
     .from('categories')
     .select('slug, label')
     .eq('is_active', true)
+    .eq('is_editorial', true)
     .order('sort_order')
   const allCategories: CategoryRow[] = categoryRows ?? []
   if (allCategories.length === 0) {
     return NextResponse.json(
-      { error: 'No active categories found — seed the categories table first.' },
+      { error: 'No active collections found — seed the categories table first.' },
       { status: 500 }
     )
   }

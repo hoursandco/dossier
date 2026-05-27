@@ -47,7 +47,7 @@ const emptyDraft = (): Partial<Store> => ({
 
 export function StoresAdmin() {
   const [stores, setStores] = useState<Store[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
+  const [collections, setCollections] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null) // null = none, 'new' = new row
@@ -76,9 +76,9 @@ export function StoresAdmin() {
 
   useEffect(() => {
     loadStores()
-    fetch('/api/categories')
-      .then((r) => (r.ok ? r.json() : { categories: [] }))
-      .then((data) => setCategories(data.categories ?? []))
+    fetch('/api/collections')
+      .then((r) => (r.ok ? r.json() : { collections: [] }))
+      .then((data) => setCollections(data.collections ?? []))
       .catch(() => {})
   }, [loadStores])
 
@@ -91,8 +91,8 @@ export function StoresAdmin() {
   }, [search, loadStores])
 
   const groupedCategories = useMemo(
-    () => groupCategories(categories),
-    [categories]
+    () => groupCategories(collections),
+    [collections]
   )
 
   const startEdit = (store: Store) => {
@@ -183,8 +183,8 @@ export function StoresAdmin() {
         throw new Error(msg)
       }
       setInfo(
-        `Imported ${data.imported} (${data.imported_pending} pending). ` +
-        `Skipped ${data.skipped_duplicate} existing, ${data.rejected_status} marked declined. ` +
+        `Imported ${data.imported} (${data.by_status?.pending ?? 0} pending). ` +
+        `Updated ${data.updated_existing ?? 0} existing. Skipped ${data.skipped_duplicate} duplicate conflicts. ` +
         `Total processed: ${data.total_in_sheet}.`
       )
       await loadStores(search.trim() || undefined)
@@ -197,8 +197,8 @@ export function StoresAdmin() {
 
   const autoTagCategories = async (force: boolean) => {
     const message = force
-      ? 'Re-tag categories for EVERY store using AI? This will overwrite existing category assignments.'
-      : 'Run AI category tagging for stores with empty categories?'
+      ? 'Re-tag collections for EVERY store using AI? This will overwrite existing collection assignments.'
+      : 'Run AI collection tagging for stores with empty collections?'
     if (!confirm(message)) return
     setAutoTagging(true)
     setError(null)
@@ -264,9 +264,9 @@ export function StoresAdmin() {
           disabled={autoTagging || editingId !== null}
           className="btn-ghost"
           style={{ fontSize: 12 }}
-          title="Fills empty Categories columns by asking the LLM what each brand sells"
+          title="Fills empty Collections columns by asking the LLM which editorial collections fit each brand"
         >
-          {autoTagging ? 'Tagging…' : 'AI tag categories'}
+          {autoTagging ? 'Tagging…' : 'AI tag collections'}
         </button>
         <button
           type="button"
@@ -348,7 +348,7 @@ export function StoresAdmin() {
           }}
         >
           <div>Name</div>
-          <div>Categories</div>
+          <div>Collections</div>
           <div>$</div>
           <div>Status</div>
           <div></div>
@@ -363,7 +363,7 @@ export function StoresAdmin() {
         ) : (
           stores.map((s) => {
             const catLabels = s.categories
-              .map((slug) => categories.find((c) => c.slug === slug)?.label ?? slug)
+              .map((slug) => collections.find((c) => c.slug === slug)?.label ?? slug)
               .slice(0, 3)
               .join(', ')
             const more = s.categories.length > 3 ? ` +${s.categories.length - 3}` : ''
@@ -517,10 +517,10 @@ function StoreForm({
         </div>
       </div>
 
-      {/* Categories — grouped */}
+      {/* Collections — grouped */}
       <div style={{ marginBottom: 16 }}>
         <div className="t-meta" style={{ marginBottom: 6 }}>
-          Categories — pick everything this brand sells
+          Collections — pick every editorial collection this brand belongs to
         </div>
         <div
           style={{

@@ -3,9 +3,9 @@
 // group a slug belongs to; this array just controls THE ORDER groups
 // render in the picker.
 //
-// "Collections" (editorial vibes — Mall Stores / Luxury / Boutique / etc.,
-// added in migration 035) is intentionally first so paid users see the
-// curated browse points before scrolling through content categories.
+// "Collections" is kept here for any admin/internal callers that request
+// editorial category rows. The public picker filters those rows out at
+// /api/categories so shoppers only see the content taxonomy.
 
 export const CATEGORY_GROUP_ORDER = [
   'Collections',
@@ -20,87 +20,6 @@ export const CATEGORY_GROUP_ORDER = [
 
 export const CATEGORY_GROUP_FALLBACK = 'Other'
 
-// Slug → group lookup for the 61 launch categories. Anything not in this
-// map AND not tagged in the DB falls into 'Other'.
-export const SLUG_TO_GROUP: Record<string, string> = {
-  // Clothing
-  'activewear': 'Clothing',
-  'athleisure': 'Clothing',
-  'lingerie-and-intimates': 'Clothing',
-  'mens-clothes': 'Clothing',
-  'outerwear-and-coats': 'Clothing',
-  'pajamas-and-sleepwear': 'Clothing',
-  'plus-sized': 'Clothing',
-  'socks': 'Clothing',
-  'swimwear': 'Clothing',
-  'underwear': 'Clothing',
-  'womens-clothes': 'Clothing',
-
-  // Shoes & Accessories
-  'bags': 'Shoes & Accessories',
-  'bracelets': 'Shoes & Accessories',
-  'eyeglasses': 'Shoes & Accessories',
-  'jewelry': 'Shoes & Accessories',
-  'luggage': 'Shoes & Accessories',
-  'necklaces': 'Shoes & Accessories',
-  'rings': 'Shoes & Accessories',
-  'shoes-and-boots': 'Shoes & Accessories',
-  'sneakers': 'Shoes & Accessories',
-  'sunglasses': 'Shoes & Accessories',
-  'watches': 'Shoes & Accessories',
-
-  // Beauty
-  'fragrance-and-perfume': 'Beauty',
-  'hair-care': 'Beauty',
-  'hair-tools': 'Beauty',
-  'makeup': 'Beauty',
-  'skincare': 'Beauty',
-  'skincare-tools': 'Beauty',
-
-  // Home & Garden
-  'bath-and-towels': 'Home & Garden',
-  'bedding': 'Home & Garden',
-  'cleaning': 'Home & Garden',
-  'home-decor': 'Home & Garden',
-  'kitchen-appliances': 'Home & Garden',
-  'lighting': 'Home & Garden',
-  'mattress': 'Home & Garden',
-  'organization': 'Home & Garden',
-  'outdoor-furniture': 'Home & Garden',
-  'plants': 'Home & Garden',
-  'rugs': 'Home & Garden',
-  'tools': 'Home & Garden',
-  'wall-art-and-frames': 'Home & Garden',
-
-  // Baby & Kids
-  'baby-foods': 'Baby & Kids',
-  'baby-furniture': 'Baby & Kids',
-  'baby-goods': 'Baby & Kids',
-  'kids-clothes': 'Baby & Kids',
-  'kids-furniture': 'Baby & Kids',
-  'toys': 'Baby & Kids',
-
-  // Food & Drink
-  'coffee-and-tea': 'Food & Drink',
-  'fast-food': 'Food & Drink',
-  'meal-kits': 'Food & Drink',
-  'restaurants': 'Food & Drink',
-  'wine-and-alcohol': 'Food & Drink',
-
-  // Pets
-  'pet-food': 'Pets',
-  'pet-goods': 'Pets',
-
-  // Lifestyle
-  'books': 'Lifestyle',
-  'fitness-equipment': 'Lifestyle',
-  'office-and-stationery': 'Lifestyle',
-  'subscription-boxes': 'Lifestyle',
-  'tech-and-electronics': 'Lifestyle',
-  'travel-gear': 'Lifestyle',
-  'vitamins-and-supplements': 'Lifestyle',
-}
-
 export interface CategoryWithGroup {
   slug: string
   label: string
@@ -112,8 +31,7 @@ export interface CategoryWithGroup {
  *
  * Resolution order for each category's group:
  *   1. DB `group_name` if present (admin override)
- *   2. Hardcoded SLUG_TO_GROUP lookup
- *   3. CATEGORY_GROUP_FALLBACK ('Other')
+ *   2. CATEGORY_GROUP_FALLBACK ('Other')
  *
  * Output preserves CATEGORY_GROUP_ORDER for the sections. Within each
  * section the input order is preserved (typically DB sort_order, which
@@ -124,7 +42,7 @@ export function groupCategories<T extends CategoryWithGroup>(
 ): Array<{ name: string; items: T[] }> {
   const byGroup = new Map<string, T[]>()
   for (const c of categories) {
-    const name = c.group_name || SLUG_TO_GROUP[c.slug] || CATEGORY_GROUP_FALLBACK
+    const name = c.group_name || CATEGORY_GROUP_FALLBACK
     const bucket = byGroup.get(name) ?? []
     bucket.push(c)
     byGroup.set(name, bucket)

@@ -375,7 +375,7 @@ export default async function AdminPage() {
               >
                 <div>Store</div>
                 <div>Website</div>
-                <div>Categories</div>
+                <div>Collections</div>
                 <div>Notes</div>
                 <div>Status</div>
                 <div>Date</div>
@@ -419,7 +419,11 @@ export default async function AdminPage() {
                     )}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--ink-70)', lineHeight: 1.5 }}>
-                    {s.category || <span style={{ color: 'var(--ink-25)' }}>—</span>}
+                    {s.status === 'pending'
+                      ? <span style={{ color: 'var(--ink-40)' }}>Choose when adding</span>
+                      : s.status === 'added'
+                        ? <span style={{ color: 'var(--ink-25)' }}>Saved on store</span>
+                        : <span style={{ color: 'var(--ink-25)' }}>—</span>}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--ink-70)', lineHeight: 1.5 }}>
                     {s.notes || <span style={{ color: 'var(--ink-25)' }}>—</span>}
@@ -445,6 +449,7 @@ export default async function AdminPage() {
                     <SuggestionActions
                       suggestionId={s.id}
                       storeName={s.store_name}
+                      website={s.website}
                       initialStatus={s.status}
                     />
                   </div>
