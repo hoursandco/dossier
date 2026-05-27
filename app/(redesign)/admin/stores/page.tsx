@@ -24,7 +24,7 @@ export default async function StoresAdminPage() {
         </a>
         <div className="nav-links">
           <a href="/suggest">Suggest a Store</a>
-          <a href="/preferences">Settings</a>
+          <a href="/">Settings</a>
           <a href="/admin" className="active">Admin</a>
         </div>
       </nav>

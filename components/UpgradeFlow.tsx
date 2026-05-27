@@ -244,7 +244,7 @@ export function UpgradeFlow() {
           },
         }}
       >
-        <PaymentForm plan={plan} appliedCode={applied?.code ?? null} />
+        <PaymentForm plan={plan} applied={applied} />
       </Elements>
     )
   }
@@ -440,10 +440,10 @@ export function UpgradeFlow() {
 
 function PaymentForm({
   plan,
-  appliedCode,
+  applied,
 }: {
   plan: Plan
-  appliedCode: string | null
+  applied: ValidatedPromo | null
 }) {
   const stripe = useStripe()
   const elements = useElements()
@@ -471,27 +471,54 @@ function PaymentForm({
   }
 
   const info = PLAN_LABEL[plan]
+  // Compose the "You'll be charged" copy from the applied promo. The
+  // first N invoices renew at the discounted price (we mint a Stripe
+  // coupon with duration=once or duration=repeating for N months),
+  // then full list price kicks in. Tell the customer that explicitly
+  // so they're not surprised when the second month bills at $4.99.
+  const discountedPrice = applied
+    ? `$${(applied.discounted_amount_cents / 100).toFixed(2)}`
+    : null
+  let chargedCopy: React.ReactNode
+  if (!applied) {
+    chargedCopy = (
+      <>
+        You&rsquo;ll be charged{' '}
+        <strong style={{ color: 'var(--ink)' }}>
+          {info.price}{info.period}
+        </strong>
+        . {info.note}
+      </>
+    )
+  } else if (applied.duration_months === 1) {
+    chargedCopy = (
+      <>
+        You&rsquo;ll be charged{' '}
+        <strong style={{ color: 'var(--ink)' }}>{discountedPrice}</strong>
+        {' '}this month
+        {' '}<span style={{ color: 'var(--ink-55)' }}>(was {info.price}, code {applied.code})</span>
+        , then {info.price}{info.period} after. {info.note}
+      </>
+    )
+  } else {
+    chargedCopy = (
+      <>
+        You&rsquo;ll be charged{' '}
+        <strong style={{ color: 'var(--ink)' }}>{discountedPrice}{info.period}</strong>
+        {' '}for {applied.duration_months} months
+        {' '}<span style={{ color: 'var(--ink-55)' }}>(was {info.price}, code {applied.code})</span>
+        , then {info.price}{info.period} after. {info.note}
+      </>
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit}>
       <div className="t-eyebrow" style={{ marginBottom: 12 }}>
         Payment details
       </div>
-      <div style={{ marginBottom: 20, color: 'var(--ink-70)', fontSize: 14 }}>
-        You&rsquo;ll be charged{' '}
-        <strong style={{ color: 'var(--ink)' }}>
-          {info.price}
-          {info.period}
-        </strong>
-        . {info.note}
-        {appliedCode && (
-          <>
-            {' '}
-            <span style={{ color: 'var(--olive-deep)', fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}>
-              · Code {appliedCode} applied.
-            </span>
-          </>
-        )}
+      <div style={{ marginBottom: 20, color: 'var(--ink-70)', fontSize: 14, lineHeight: 1.5 }}>
+        {chargedCopy}
       </div>
 
       <PaymentElement />

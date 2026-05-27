@@ -203,7 +203,7 @@ export default async function PreviewPricing() {
           DEAL&nbsp;D<span className="o">O</span>SSIER
         </div>
         <div className="footer-meta">
-          <a href="/suggest">Suggest a Store</a> · <a href="/preferences">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
+          <a href="/suggest">Suggest a Store</a> · <a href="/">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
           An Hours &amp; Co. publication · © 2026
         </div>
       </footer>
@@ -250,7 +250,7 @@ function AlreadySubscribed() {
         Unlimited watches, per-watch modifiers, ad-free emails — all switched on.
         Manage your subscription from settings.
       </p>
-      <a href="/preferences" className="submit-btn">OPEN MY WATCHLIST →</a>
+      <a href="/" className="submit-btn">OPEN MY WATCHLIST →</a>
     </div>
   )
 }

@@ -599,7 +599,7 @@ export function StoresBrowse() {
           DEAL&nbsp;D<span className="o">O</span>SSIER
         </div>
         <div className="footer-meta">
-          <a href="/">Home</a> · <a href="/suggest">Suggest a Store</a> · <a href="/preferences">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a><br /><br />
+          <a href="/">Home</a> · <a href="/suggest">Suggest a Store</a> · <a href="/">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a><br /><br />
           An Hours &amp; Co. publication · © 2026
         </div>
       </footer>

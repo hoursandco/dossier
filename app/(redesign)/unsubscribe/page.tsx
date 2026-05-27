@@ -97,7 +97,7 @@ function UnsubscribeForm() {
         </button>
         <p className="fine">
           Changed your mind?<br />
-          <a href="/preferences" style={{ color: 'var(--red)', textDecoration: 'none' }}>Pause emails instead →</a>
+          <a href="/" style={{ color: 'var(--red)', textDecoration: 'none' }}>Pause emails instead →</a>
         </p>
       </div>
     </form>
@@ -114,7 +114,7 @@ export default function PreviewUnsubscribe() {
         </a>
         <div className="nav-links">
           <a href="/suggest">Suggest a Store</a>
-          <a href="/preferences">Settings</a>
+          <a href="/">Settings</a>
         </div>
       </nav>
 
@@ -157,7 +157,7 @@ export default function PreviewUnsubscribe() {
           DEAL&nbsp;D<span className="o">O</span>SSIER
         </div>
         <div className="footer-meta">
-          <a href="/suggest">Suggest a Store</a> · <a href="/preferences">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
+          <a href="/suggest">Suggest a Store</a> · <a href="/">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
           An Hours &amp; Co. publication · © 2026
         </div>
       </footer>

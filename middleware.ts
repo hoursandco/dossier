@@ -4,7 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 // /stores is intentionally NOT here — the brand directory is public
 // (it has its own SEO metadata + OG image, and StoresBrowse handles
 // signed-out visitors with "+ Sign in" buttons rather than a wall).
-const PROTECTED_ROUTES = ['/preferences', '/admin']
+const PROTECTED_ROUTES = ['/admin']
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -47,5 +47,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/preferences/:path*', '/admin/:path*'],
+  matcher: ['/admin/:path*'],
 }
