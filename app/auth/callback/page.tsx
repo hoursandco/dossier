@@ -32,12 +32,13 @@ export default function AuthCallbackPage() {
         return
       }
 
-      // Into the app. /preferences IS onboarding in the redesign — new
-      // users land on an empty watchlist + category picker, returning
-      // users see their picks. The old /welcome route was removed when
-      // the redesign replaced it, so never redirect there.
+      // The picker IS the homepage now (the redesign collapsed
+      // /preferences into HomePicker on /). Land magic-link sign-ins
+      // there so they immediately see the watchlist + SEND ME DEALS
+      // NOW button. A ?next= query param still overrides for any
+      // call site that needs to deep-link somewhere specific.
       const next = new URLSearchParams(window.location.search).get('next')
-      router.replace(next ?? '/preferences')
+      router.replace(next ?? '/')
     }
 
     handleCallback()
