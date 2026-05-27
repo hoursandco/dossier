@@ -23,9 +23,14 @@ export async function POST() {
     return NextResponse.json({ error: 'No billing account on file' }, { status: 404 })
   }
 
+  // return_url is where Stripe sends the user back after they finish
+  // in the portal. Homepage is the post-redesign settings surface
+  // (/preferences was retired). NEXT_PUBLIC_APP_URL fallback covers
+  // local dev where the var might not be set.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealdossier.io'
   const session = await getStripe().billingPortal.sessions.create({
     customer: subscriber.stripe_customer_id,
-    return_url: `${process.env.NEXT_PUBLIC_APP_URL}/preferences`,
+    return_url: `${appUrl}/`,
   })
 
   return NextResponse.json({ url: session.url })

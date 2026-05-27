@@ -34,6 +34,9 @@ export function HomePicker() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null)
   const [accountEmail, setAccountEmail] = useState<string | null>(null)
   const [isPaid, setIsPaid] = useState(false)
+  // Comped users have tier='paid' but no Stripe customer — the
+  // "Manage billing" portal button needs to hide for them.
+  const [isComped, setIsComped] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
   const [stores, setStores] = useState<StoreLite[]>([])
   const [storesLoaded, setStoresLoaded] = useState(false)
@@ -98,6 +101,7 @@ export function HomePicker() {
           setSignedIn(true)
           setAccountEmail(d.email)
           setIsPaid(d.tier === 'paid')
+          setIsComped(d.subscription_status === 'comped')
           // Hydrate the paid-tier filter state from the API. For free
           // users these will be null/empty and the UI stays in
           // "locked, defaults" state.
@@ -359,6 +363,30 @@ export function HomePicker() {
       // page next.
     }
     window.location.href = '/'
+  }
+
+  // Open Stripe's hosted billing portal. Customers can: update card,
+  // view invoice history, cancel subscription (cancels at period end
+  // — they keep paid features through the end of the month). Returns
+  // them to / when done. Only shows for paid (non-comped) users —
+  // free users don't have a Stripe customer to manage and comped
+  // users have no payment to update.
+  const handleManageBilling = async () => {
+    setError('')
+    setStatusMsg('Opening billing portal…')
+    try {
+      const res = await fetch('/api/billing/portal', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !d.url) {
+        setStatusMsg('')
+        setError(d.error || 'Could not open billing portal.')
+        return
+      }
+      window.location.href = d.url
+    } catch {
+      setStatusMsg('')
+      setError('Could not open billing portal.')
+    }
   }
 
   const handleUnsubscribe = async () => {
@@ -815,8 +843,20 @@ export function HomePicker() {
                   <p>
                     <em>Need to step away?</em>{' '}
                     <strong>Log out</strong> ends this session — sign back in any time via magic link.{' '}
-                    <strong>Unsubscribe</strong> keeps your account but clears your watchlist.{' '}
-                    <strong>Delete</strong> wipes everything: watchlist, picks, send history, and your sign-in entirely.
+                    {isPaid && !isComped && (
+                      <>
+                        <strong>Manage billing</strong> opens Stripe&rsquo;s portal — update card, view invoices, or cancel (keeps paid access through your current billing period).{' '}
+                      </>
+                    )}
+                    <strong>Unsubscribe</strong> stops deal emails
+                    {isPaid && !isComped
+                      ? ' and cancels your subscription at the end of your current billing period. '
+                      : '. '}
+                    <strong>Delete</strong> wipes everything
+                    {isPaid && !isComped
+                      ? ' and cancels your subscription immediately — '
+                      : ' — '}
+                    watchlist, picks, send history, sign-in.
                   </p>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     <button
@@ -826,6 +866,17 @@ export function HomePicker() {
                     >
                       Log out
                     </button>
+                    {/* Stripe customers only — free + comped users have
+                        no Stripe customer record to manage. */}
+                    {isPaid && !isComped && (
+                      <button
+                        type="button"
+                        className="btn-ghost-tag"
+                        onClick={handleManageBilling}
+                      >
+                        Manage billing
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn-ghost-tag"
