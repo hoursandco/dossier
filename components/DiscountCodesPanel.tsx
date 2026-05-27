@@ -66,10 +66,9 @@ export function DiscountCodesPanel() {
   const today = new Date().toISOString().slice(0, 10)
   const oneYear = new Date(Date.now() + 365 * 86400_000).toISOString().slice(0, 10)
   const [expiresAt, setExpiresAt] = useState(oneYear)
-  const [requiresCard, setRequiresCardRaw] = useState(true)
-  // Wrap the setter so callers can't get the box back into an
-  // inconsistent state with percent_off=100.
-  const setRequiresCard = setRequiresCardRaw
+  // (requires_credit_card state removed — the field is now derived
+  // from percent_off at submit time. See the read-only display
+  // panel + derivation in the submit handler below.)
   const [maxRedemptions, setMaxRedemptions] = useState('')
   const [formMsg, setFormMsg] = useState<string | null>(null)
 
@@ -103,13 +102,17 @@ export function DiscountCodesPanel() {
     setFormMsg(null)
     setBusy(true)
     try {
+      // requires_credit_card is derived, not selected. <100% always
+      // charges through Stripe; 100% always comps with no card.
+      const pct = Number(percentOff)
+      const derivedRequiresCard = pct < 100
       const body: Record<string, unknown> = {
         code: code.trim().toUpperCase(),
         plan_types: ['monthly'],
-        percent_off: Number(percentOff),
+        percent_off: pct,
         duration_months: Number(durationMonths),
         expires_at: expiresAt,
-        requires_credit_card: requiresCard,
+        requires_credit_card: derivedRequiresCard,
       }
       const max = maxRedemptions.trim()
       if (max) body.max_redemptions = Number(max)
@@ -209,15 +212,7 @@ export function DiscountCodesPanel() {
               <input
                 type="number"
                 value={percentOff}
-                onChange={(e) => {
-                  const next = e.target.value
-                  setPercentOff(next)
-                  // 100%-off codes can't go through Stripe (see the
-                  // validator's comment). Force the "no card" branch
-                  // whenever the admin lands on 100% so the form can't
-                  // submit a state the server will reject.
-                  if (Number(next) >= 100) setRequiresCard(false)
-                }}
+                onChange={(e) => setPercentOff(e.target.value)}
                 min={0}
                 max={100}
                 step="any"
@@ -262,24 +257,37 @@ export function DiscountCodesPanel() {
           </div>
 
           {(() => {
+            // requires_credit_card is fully derived from percent_off
+            // now — there's no scenario where the admin can pick a
+            // different value. We surface the derived state as a
+            // read-only display rather than a checkbox to make the
+            // invariant obvious.
+            //   100% off → "Free comp" (no card, no Stripe)
+            //   <100%   → "Charges through Stripe" (card required)
+            // The actual requires_credit_card POST value is computed
+            // from percent_off in the submit handler.
             const isFullOff = Number(percentOff) >= 100
             return (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, opacity: isFullOff ? 0.55 : 1 }}>
-                <input
-                  type="checkbox"
-                  checked={isFullOff ? false : requiresCard}
-                  onChange={(e) => setRequiresCard(e.target.checked)}
-                  disabled={isFullOff}
-                />
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginBottom: 12,
+                  padding: '8px 12px',
+                  background: isFullOff ? '#e8f1d2' : '#fff8e2',
+                  border: '1.5px solid var(--ink, #181612)',
+                  fontSize: 13,
+                  color: 'var(--ink, #181612)',
+                }}
+              >
+                <span aria-hidden="true">{isFullOff ? '✱' : '💳'}</span>
                 <span>
-                  <strong>Require credit card</strong> — uncheck for free / 100%-off comp codes (no Stripe round-trip).
-                  {isFullOff && (
-                    <em style={{ display: 'block', marginTop: 2, fontSize: 12, color: 'var(--ink-soft)', fontStyle: 'italic' }}>
-                      Locked off — 100%-off codes always skip card collection (Stripe can&rsquo;t process $0 charges).
-                    </em>
-                  )}
+                  {isFullOff
+                    ? <><strong>Free comp.</strong> No card collected, no Stripe charge — user gets full access for the duration.</>
+                    : <><strong>Charges through Stripe.</strong> Card collected at checkout, billed the discounted amount.</>}
                 </span>
-              </label>
+              </div>
             )
           })()}
 

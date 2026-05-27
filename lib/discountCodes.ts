@@ -99,16 +99,22 @@ export async function validateDiscountCode(
     listPriceCents * (1 - row.percent_off / 100),
   )
 
-  // 100%-off codes MUST take the comp branch (no Stripe call).
-  // Stripe refuses to create a $0 PaymentIntent — there's nothing to
-  // confirm, so no clientSecret comes back and the redemption fails.
-  // The admin form prevents creating "100% off + require card" rows
-  // going forward, but we also override here so any legacy rows with
-  // that configuration redeem correctly. A true "free trial that
-  // converts to paid" flow would need stripe trial_period_days, not
-  // a 100% coupon — out of scope for the current promo system.
+  // requires_credit_card is fully derivable from percent_off in the
+  // current implementation, so we override the row's stored value
+  // here rather than trust it:
+  //   percent_off >= 100 → no card collected, comp branch ($0 totals
+  //                        can't pass through Stripe anyway)
+  //   percent_off <  100 → card required, charge the discounted
+  //                        amount through Stripe
+  // Why we override rather than trust the row: the admin used to be
+  // able to uncheck "Require credit card" for a partial-discount
+  // code, which silently turned an "89% off" code into "100% free
+  // for the duration" because the comp branch doesn't look at
+  // percent_off at all. Forcing the relationship here heals existing
+  // bad rows automatically. A real free-trial-converts-to-paid flow
+  // would need stripe trial_period_days; that's a separate feature.
   const isFree = row.percent_off >= 100
-  const effectiveRequiresCard = isFree ? false : row.requires_credit_card
+  const effectiveRequiresCard = !isFree
 
   const monthsLabel = row.duration_months === 1
     ? '1 month'
