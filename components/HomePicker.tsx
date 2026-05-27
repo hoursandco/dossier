@@ -434,12 +434,34 @@ export function HomePicker() {
                 fontFamily: "'Alfa Slab One', serif", fontSize: 22,
                 border: '2px solid var(--ink)', flexShrink: 0,
               }}>✱</div>
-              <div style={{ minWidth: 0, wordBreak: 'break-word' }}>
+              <div style={{ minWidth: 0, wordBreak: 'break-word', flex: 1 }}>
                 <strong>Signed in</strong><br />
                 <span style={{ fontSize: 14 }}>
                   {accountEmail} · {tierLabel} · {totalPicks} active {totalPicks === 1 ? 'pick' : 'picks'}
                 </span>
               </div>
+              {/* Inline Log out — same handler as the danger-zone
+                  button, just surfaced here so users don't have to
+                  hunt for it inside the collapsed Danger Zone drawer. */}
+              <button
+                type="button"
+                onClick={handleLogout}
+                style={{
+                  flexShrink: 0,
+                  padding: '8px 14px',
+                  background: 'transparent',
+                  color: '#fff8e2',
+                  border: '1.5px solid #fff8e2',
+                  fontFamily: "'Stardos Stamp', monospace",
+                  fontSize: 11,
+                  letterSpacing: '.18em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Log out
+              </button>
             </div>
           )}
 
