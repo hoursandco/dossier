@@ -1,18 +1,20 @@
-// Canonical display order for the category groups + a hardcoded fallback
-// map from slug → group. The categories table also has a `group_name`
-// column (migration 015) which wins if set — this map keeps the UI
-// working even before the migration runs and serves as the single source
-// of truth for the launch taxonomy.
+// Canonical display order for the category groups. The categories table's
+// `group_name` column (migration 015) is the source of truth for which
+// group a slug belongs to; this array just controls THE ORDER groups
+// render in the picker.
+//
+// "Collections" (editorial vibes — Mall Stores / Luxury / Boutique / etc.,
+// added in migration 035) is intentionally first so paid users see the
+// curated browse points before scrolling through content categories.
 
 export const CATEGORY_GROUP_ORDER = [
-  'Clothing',
-  'Shoes & Accessories',
-  'Beauty',
-  'Home & Garden',
-  'Baby & Kids',
-  'Food & Drink',
-  'Pets',
-  'Lifestyle',
+  'Collections',
+  'Adventure & Entertainment',
+  'Clothing & Accessories',
+  'Health & Wellness',
+  'Home',
+  'Restaurants & Grocery',
+  'Tech',
   'Other',
 ] as const
 
