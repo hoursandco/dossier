@@ -12,25 +12,24 @@ export async function GET() {
   // Prefer the grouped query; fall back to the pre-015 schema if the
   // group_name column hasn't been added yet. Lets the UI work in either
   // state — clients without groupings just see every category in "Other".
-  const tryWithEditorialFlag = await service
+  const tryWithGroup = await service
     .from('categories')
     .select('slug, label, sort_order, group_name')
     .eq('is_active', true)
-    .eq('is_editorial', false)
     .order('sort_order')
 
-  if (!tryWithEditorialFlag.error) {
-    return NextResponse.json({ categories: tryWithEditorialFlag.data ?? [] })
+  if (!tryWithGroup.error) {
+    return NextResponse.json({ categories: tryWithGroup.data ?? [] })
   }
 
   // 42703 = column does not exist. Anything else is a real failure.
-  const code = (tryWithEditorialFlag.error as { code?: string }).code
+  const code = (tryWithGroup.error as { code?: string }).code
   if (code !== '42703') {
-    console.error('[categories] lookup error:', JSON.stringify(tryWithEditorialFlag.error))
+    console.error('[categories] lookup error:', JSON.stringify(tryWithGroup.error))
     return NextResponse.json({ error: 'Failed to load categories' }, { status: 500 })
   }
 
-  console.warn('[categories] group_name or is_editorial column missing — falling back. Run migrations 015 and 032.')
+  console.warn('[categories] group_name column missing — falling back. Run migration 015.')
   const fallback = await service
     .from('categories')
     .select('slug, label, sort_order')
