@@ -21,7 +21,7 @@ export async function GET() {
   const service = createServiceClient()
   const { data: subscriber } = await service
     .from('subscribers')
-    .select('id, tier, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp')
+    .select('id, tier, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp, cancels_at')
     .eq('email', user.email)
     .single()
 
@@ -72,6 +72,11 @@ export async function GET() {
       include_free_shipping: subscriber?.include_free_shipping ?? false,
       include_bogo: subscriber?.include_bogo ?? false,
       include_gwp: subscriber?.include_gwp ?? false,
+      // ISO timestamp when a scheduled Stripe cancellation takes
+      // effect. Null when the sub is renewing normally (or for free/
+      // comped users). Surfaced in the SIGNED IN banner so users
+      // who hit "Cancel" via the portal know exactly when access ends.
+      cancels_at: subscriber?.cancels_at ?? null,
     },
     {
       // Hard no-cache so browsers always refetch after a billing

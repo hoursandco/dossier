@@ -84,6 +84,18 @@ async function syncSubscription(subscription: Stripe.Subscription) {
   const priceId = subscription.items.data[0]?.price.id ?? null
   const isPaid = PAID_STATUSES.has(subscription.status)
 
+  // Stripe sets cancel_at when the customer schedules cancellation
+  // (cancel_at_period_end=true) — either via our /api/unsubscribe
+  // soft cancel or via the Stripe Billing Portal's "Cancel plan"
+  // button. The UI uses this to render "cancels {date}" in the
+  // SIGNED IN banner so users know the access end-date upfront
+  // instead of being surprised when current_period_end passes.
+  // Null while the sub is renewing normally; populated until the
+  // sub actually deletes or the user un-cancels.
+  const cancelsAt = subscription.cancel_at
+    ? new Date(subscription.cancel_at * 1000).toISOString()
+    : null
+
   await service
     .from('subscribers')
     .update({
@@ -91,6 +103,7 @@ async function syncSubscription(subscription: Stripe.Subscription) {
       stripe_subscription_id: subscription.id,
       stripe_price_id: priceId,
       subscription_status: subscription.status,
+      cancels_at: cancelsAt,
       updated_at: new Date().toISOString(),
     })
     .eq('id', subscriber.id)
@@ -110,6 +123,7 @@ async function clearSubscription(subscription: Stripe.Subscription) {
       stripe_subscription_id: null,
       stripe_price_id: null,
       subscription_status: 'canceled',
+      cancels_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_customer_id', customerId)

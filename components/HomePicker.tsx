@@ -37,6 +37,11 @@ export function HomePicker() {
   // Comped users have tier='paid' but no Stripe customer — the
   // "Manage billing" portal button needs to hide for them.
   const [isComped, setIsComped] = useState(false)
+  // ISO timestamp of a scheduled cancellation (cancel_at_period_end
+  // via Stripe portal or our /api/unsubscribe soft cancel). When
+  // set, paid users keep access until this passes — surfaced in
+  // the banner as "(cancels MMM D)" so they're not surprised.
+  const [cancelsAt, setCancelsAt] = useState<string | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [stores, setStores] = useState<StoreLite[]>([])
   const [storesLoaded, setStoresLoaded] = useState(false)
@@ -102,6 +107,7 @@ export function HomePicker() {
           setAccountEmail(d.email)
           setIsPaid(d.tier === 'paid')
           setIsComped(d.subscription_status === 'comped')
+          setCancelsAt(d.cancels_at ?? null)
           // Hydrate the paid-tier filter state from the API. For free
           // users these will be null/empty and the UI stays in
           // "locked, defaults" state.
@@ -148,6 +154,23 @@ export function HomePicker() {
   const totalPicks = watchCount + storeCount
   const overLimit = totalPicks > FREE_PICK_LIMIT && !isPaid
   const tierLabel = isPaid ? 'Personal Shopper' : 'Inbox Cleaner'
+  // Format the scheduled-cancellation date for the banner. The
+  // user has access UNTIL this date (Stripe period-end). Short
+  // month + day; year only if the cancellation is more than 11
+  // months out (very rare — annual sub cancelled the day after
+  // sign-up — but cheap to handle).
+  const cancelsAtLabel = cancelsAt
+    ? (() => {
+        const d = new Date(cancelsAt)
+        const now = new Date()
+        const sameYear = d.getFullYear() === now.getFullYear()
+        return d.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          ...(sameYear ? {} : { year: 'numeric' }),
+        })
+      })()
+    : null
 
   const toggleGroup = (name: string) => {
     setOpenGroups((prev) => {
@@ -465,7 +488,13 @@ export function HomePicker() {
               <div style={{ minWidth: 0, wordBreak: 'break-word', flex: 1 }}>
                 <strong>Signed in</strong><br />
                 <span style={{ fontSize: 14 }}>
-                  {accountEmail} · {tierLabel} · {totalPicks} active {totalPicks === 1 ? 'pick' : 'picks'}
+                  {accountEmail} · {tierLabel}
+                  {cancelsAtLabel && (
+                    <span style={{ color: '#fff8e2', fontStyle: 'italic', opacity: 0.85 }}>
+                      {' '}(cancels {cancelsAtLabel})
+                    </span>
+                  )}
+                  {' '}· {totalPicks} active {totalPicks === 1 ? 'pick' : 'picks'}
                 </span>
               </div>
               {/* Inline Log out — same handler as the danger-zone
