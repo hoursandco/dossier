@@ -579,7 +579,7 @@ ${compactBuckets ? compactSection(compactBuckets, storeUrls) : ''}
       <!-- Postscript -->
       <tr>
         <td class="px" style="padding:36px 40px;background:${PAPER};border-top:3px solid ${INK};border-bottom:3px solid ${INK};">
-          <p style="margin:0 0 14px;font-family:${FONT_BODY};font-style:italic;font-size:18px;line-height:1.5;color:${INK};">That&rsquo;s it for now. If a deal you wanted didn&rsquo;t make the cut, it&rsquo;s because we ranked it below the noise — not because we missed it.</p>
+          <p style="margin:0 0 14px;font-family:${FONT_BODY};font-style:italic;font-size:18px;line-height:1.5;color:${INK};">That&rsquo;s it for now. New deals roll in around the clock — pop back soon for more.</p>
           <p style="margin:0;font-family:${FONT_TYPE};font-size:14px;line-height:1.5;color:${INK_SOFT};">Want to add or remove a category or store? &nbsp;<a href="${preferencesUrl}" style="color:${RED};text-decoration:none;">Open your watchlist →</a></p>
         </td>
       </tr>
