@@ -129,7 +129,9 @@ function savingsBadge(deal: Deal): string {
     case 'bogo-free':
       return wrap(MAGENTA, `${mid('BUY 1', CREAM_TEXT)}${tag('GET 1', CREAM_TEXT)}${mid('FREE', CREAM_TEXT)}`, '12px 16px 10px')
     case 'bogo-half':
-      return wrap(ORANGE, `${mid('B1G1', INK)}${tag('HALF OFF', INK)}${mid('50%', INK)}`, '12px 16px 10px')
+      // BOGO not B1G1 — readers recognize the former; the latter
+      // reads like a hardware SKU.
+      return wrap(ORANGE, `${mid('BOGO', INK)}${tag('HALF OFF', INK)}${mid('50%', INK)}`, '12px 16px 10px')
     case 'free-item':
       return wrap(GREEN, `${small('YOURS', CREAM_TEXT)}${mid('FREE', CREAM_TEXT)}<div style="font-family:${FONT_STAMP};color:${CREAM_TEXT};font-size:10px;letter-spacing:.2em;text-transform:uppercase;margin-top:2px;">ITEM</div>`, '14px 16px 10px')
     case 'free-shipping':
