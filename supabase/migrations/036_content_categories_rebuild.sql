@@ -85,7 +85,7 @@ ON CONFLICT (slug) DO UPDATE
 INSERT INTO categories (slug, label, group_name, sort_order, is_active, is_editorial) VALUES
   ('baby-gear',         'Baby Gear',          'Home', 400, TRUE, FALSE),
   ('bed-bath',          'Bed & Bath',         'Home', 405, TRUE, FALSE),
-  ('bedding',           'Bedding',            'Home', 410, TRUE, FALSE),
+  -- ('bedding' was removed — redundant with 'bed-bath')
   ('cleaning',          'Cleaning',           'Home', 415, TRUE, FALSE),
   ('holiday',           'Holiday',            'Home', 418, TRUE, FALSE),
   ('home-decor',        'Home Decor',         'Home', 420, TRUE, FALSE),
@@ -157,8 +157,8 @@ WHERE is_editorial = FALSE
     -- Health & Wellness
     'fitness-equipment','fragrance','hair-care','k-beauty','makeup',
     'skincare','vitamins-supplements',
-    -- Home
-    'baby-gear','bed-bath','bedding','cleaning','holiday','home-decor',
+    -- Home (note: 'bedding' was removed — redundant with 'bed-bath')
+    'baby-gear','bed-bath','cleaning','holiday','home-decor',
     'kitchen-cooking','kitchen-appliances','lighting','mattress','office',
     'organization','outdoor-furniture','plants','rugs','wall-art',
     -- Restaurants & Grocery
