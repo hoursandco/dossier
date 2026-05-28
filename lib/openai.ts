@@ -62,8 +62,34 @@ For each deal:
 5. PROMO_CODE: The promotional code if present (null if none)
 6. EXPIRATION_DATE: The expiration date in YYYY-MM-DD format (null if unknown)
 7. LINK: The direct URL to the deal (null if not found)
-8. CATEGORIES: Array of 1-3 category slugs from this list ONLY: ${newList}
-   Tag the deal based on what THIS specific email is about, not what the retailer broadly sells. A Walmart grocery email gets ["grocery", "baby-foods"], NOT every category Walmart carries.
+8. CATEGORIES: Array of 0-2 category slugs from this list ONLY: ${newList}
+
+   STRICT TAGGING RULES — read carefully, this is where most extraction errors happen:
+
+   a) Tag what THE DEAL IS ABOUT, not what the retailer broadly sells.
+      WRONG: Tagging a Macy's "20% off site-wide" email with ["jewelry","shoes","handbags","beauty"] because Macy's sells all those.
+      RIGHT: Site-wide sales with no specific category mentioned get [] (empty array).
+
+   b) Pick the MOST SPECIFIC SINGLE category that fits.
+      WRONG: A Reebok email about running shoes tagged ["shoes","athleisure"] because Reebok is athleisure-adjacent.
+      RIGHT: Just ["shoes"]. Shoes are NEVER athleisure even when sold by athleisure brands.
+
+   c) ONE category is the default. Use TWO only when the email
+      genuinely covers two distinct categories (e.g., "20% off
+      handbags AND watches"). Never three.
+
+   d) Athleisure means leggings / sports bras / joggers / hoodies —
+      stretchy daily-wear apparel. Athleisure does NOT include:
+      shoes (use "shoes"), accessories, or random apparel from a
+      department store. If you're not sure, don't tag athleisure.
+
+   e) A "general department-store sale" without a category focus
+      (e.g., "30% off everything at Marshalls") is []. The "flash-
+      sale" deal_type captures it; no category guess needed.
+
+   f) If the email focuses on one specific product (e.g., a vacuum,
+      a sofa, a perfume), tag the matching slug — NOT a random
+      slug from elsewhere in the email's clutter.
 9. DEAL_SUBTYPE: A single short fine-grained product type if the email is specifically about it (e.g. "jeans", "sneakers", "lipstick", "coffee maker", "yoga pants"). null for generic / site-wide / multi-product sales.
 
 RULES:

@@ -202,7 +202,29 @@ export function overrideCategoriesForRetailer(
       if (!out.includes(cat)) out.push(cat)
     }
   }
+  // Mutual-exclusion cleanup: certain category pairs are LLM
+  // confusion patterns, not legitimate co-tags. Drop the broader
+  // category when the more specific one is also present.
+  out = applyCategoryExclusions(out)
   return out
+}
+
+// Categories the LLM consistently confuses despite prompt rules.
+// Each entry: if `winner` is in the list, drop everything in `losers`.
+// "Shoes are never athleisure" is the big one — Gemini reliably double-
+// tags Reebok/Nike/Adidas shoe sales as both, polluting the Athleisure
+// watch with footwear-only deals.
+const CATEGORY_EXCLUSIONS: Array<{ winner: string; losers: string[] }> = [
+  { winner: 'shoes', losers: ['athleisure'] },
+]
+
+function applyCategoryExclusions(categories: Category[]): Category[] {
+  const set = new Set(categories)
+  for (const { winner, losers } of CATEGORY_EXCLUSIONS) {
+    if (!set.has(winner)) continue
+    for (const l of losers) set.delete(l)
+  }
+  return Array.from(set) as Category[]
 }
 
 const JUNK_DEAL_TYPES = new Set(['free-shipping', 'bogo-free', 'bogo-half', 'free-item'])
