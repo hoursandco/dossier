@@ -145,7 +145,16 @@ async function callOpenAIWithRetry(
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await client.chat.completions.create({
-        model: 'gemini-2.5-flash',
+        // gemini-2.5-flash-lite is roughly 3-6× cheaper than full
+        // flash ($0.10/$0.40 per M tokens vs $0.30/$2.50). Trades a
+        // little judgment quality on edge cases for a much lower
+        // per-extraction cost. Tightened tagging rules in the prompt
+        // (lib/openai.ts buildSystemPrompt + post-processing in
+        // lib/deals.ts) compensate for the lite model's lighter
+        // reasoning. If extraction quality drops noticeably, revert
+        // to 'gemini-2.5-flash' or fall further down to 'gpt-4o-mini'
+        // via the OpenAI direct path.
+        model: 'gemini-2.5-flash-lite',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
