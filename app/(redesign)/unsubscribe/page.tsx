@@ -4,16 +4,11 @@
 // Same POST /api/unsubscribe flow as production; just restyled.
 
 import { useState, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
 
 const STAR_POINTS =
   '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
 
 function UnsubscribeForm() {
-  const searchParams = useSearchParams()
-  const emailParam = searchParams.get('email') || ''
-
-  const [email, setEmail] = useState(emailParam)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
@@ -25,14 +20,12 @@ function UnsubscribeForm() {
     try {
       const res = await fetch('/api/unsubscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
       })
       if (res.ok) {
         setDone(true)
       } else {
         const data = await res.json()
-        setError(data.error || 'Something went wrong.')
+        setError(res.status === 401 ? 'Sign in first, then unsubscribe from this page.' : data.error || 'Something went wrong.')
       }
     } catch {
       setError('Something went wrong. Please try again.')
@@ -76,26 +69,17 @@ function UnsubscribeForm() {
       )}
 
       <p style={{ fontFamily: "'IM Fell English', serif", fontSize: 17, lineHeight: 1.5, color: 'var(--ink-soft)', margin: '0 0 24px' }}>
-        Enter the email address you signed up with. We&rsquo;ll remove you from every list and delete your watchlist data. No questions, no &ldquo;are you sure&rdquo; popups.
+        We&rsquo;ll remove the signed-in account from every list and delete its watchlist data. No questions, no &ldquo;are you sure&rdquo; popups.
       </p>
 
-      <div className="dl-field">
-        <label className="lbl-top">Email address</label>
-        <input
-          type="email"
-          placeholder="you@inbox.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoFocus
-        />
-      </div>
-
       <div className="submit-row">
-        <button className="submit-btn" type="submit" disabled={submitting || !email}>
+        <button className="submit-btn" type="submit" disabled={submitting}>
           {submitting ? 'PROCESSING…' : 'UNSUBSCRIBE →'}
         </button>
         <p className="fine">
+          Need to sign in first?<br />
+          <a href="/login?next=/unsubscribe" style={{ color: 'var(--red)', textDecoration: 'none' }}>Send me a magic link →</a>
+          <br /><br />
           Changed your mind?<br />
           <a href="/" style={{ color: 'var(--red)', textDecoration: 'none' }}>Pause emails instead →</a>
         </p>
@@ -139,7 +123,7 @@ export default function PreviewUnsubscribe() {
           <p className="page-kicker">— Unsubscribe —</p>
           <h1 className="page-title">Stopping the <em>mail.</em></h1>
           <p className="page-sub">
-            We won&rsquo;t make this hard. Confirm your email below and you&rsquo;re out — every list, every watchlist row, gone.
+            We won&rsquo;t make this hard. Sign in, confirm once, and you&rsquo;re out — every list, every watchlist row, gone.
           </p>
         </div>
       </section>

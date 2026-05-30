@@ -90,10 +90,15 @@ describe('POST /api/admin/respond-suggestion', () => {
           {
             data: {
               store_name: '<Best Store>',
+              website: 'https://best.example',
               subscriber_id: 'sub_1',
             },
             error: null,
           },
+          { data: null, error: null },
+        ],
+        stores: [
+          { data: [], error: null },
           { data: null, error: null },
         ],
         subscribers: { data: { email: 'reader@example.com' }, error: null },
@@ -119,6 +124,13 @@ describe('POST /api/admin/respond-suggestion', () => {
     )
     expect(sendEmail.mock.calls[0][0].html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(sendEmail.mock.calls[0][0].html).not.toContain('<script>alert(1)</script>')
+    expect(service.queries.stores[1].insert).toHaveBeenCalledWith({
+      name: '<Best Store>',
+      website: 'https://best.example',
+      categories: [],
+      status: 'pending',
+      is_active: false,
+    })
     expect(service.queries.store_suggestions[1].update).toHaveBeenCalledWith({ status: 'added' })
     expect(service.queries.store_suggestions[1].eq).toHaveBeenCalledWith('id', 'suggestion_1')
   })

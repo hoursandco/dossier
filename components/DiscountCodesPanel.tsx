@@ -54,6 +54,12 @@ function formatDate(iso: string): string {
   }
 }
 
+function isoDateDaysFromNow(days: number): string {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
 export function DiscountCodesPanel() {
   const [rows, setRows] = useState<CodeRow[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -63,9 +69,8 @@ export function DiscountCodesPanel() {
   const [code, setCode] = useState('')
   const [percentOff, setPercentOff] = useState('20')
   const [durationMonths, setDurationMonths] = useState('1')
-  const today = new Date().toISOString().slice(0, 10)
-  const oneYear = new Date(Date.now() + 365 * 86400_000).toISOString().slice(0, 10)
-  const [expiresAt, setExpiresAt] = useState(oneYear)
+  const [today] = useState(() => isoDateDaysFromNow(0))
+  const [expiresAt, setExpiresAt] = useState(() => isoDateDaysFromNow(365))
   // (requires_credit_card state removed — the field is now derived
   // from percent_off at submit time. See the read-only display
   // panel + derivation in the submit handler below.)

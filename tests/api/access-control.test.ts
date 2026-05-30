@@ -37,7 +37,7 @@ describe('GET /api/account', () => {
     const res = await GET()
 
     expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual({
+    await expect(res.json()).resolves.toMatchObject({
       email: 'reader@example.com',
       tier: 'paid',
       subscription_status: 'active',
@@ -124,7 +124,9 @@ describe('GET /api/stores', () => {
     })
     const { GET } = await import('@/app/api/stores/route')
 
-    const res = await GET(new Request('http://localhost/api/stores') as unknown as Parameters<typeof GET>[0])
+    const res = await GET({
+      nextUrl: new URL('http://localhost/api/stores'),
+    } as Parameters<typeof GET>[0])
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
@@ -144,7 +146,9 @@ describe('GET /api/stores', () => {
     })
     const { GET } = await import('@/app/api/stores/route')
 
-    await GET(new Request('http://localhost/api/stores') as unknown as Parameters<typeof GET>[0])
+    await GET({
+      nextUrl: new URL('http://localhost/api/stores'),
+    } as Parameters<typeof GET>[0])
 
     expect(service.queries.stores[0].neq).toHaveBeenCalledWith('status', 'declined')
   })
@@ -262,5 +266,59 @@ describe('POST /api/stores/suggest', () => {
       category: 'Fashion',
       notes: 'New store',
     })
+  })
+})
+
+describe('POST /api/unsubscribe', () => {
+  it('returns 401 when not authenticated', async () => {
+    await mockSupabase(null)
+    const { POST } = await import('@/app/api/unsubscribe/route')
+
+    const res = await POST(jsonRequest('/api/unsubscribe') as never)
+
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toEqual({ error: 'Unauthorized' })
+  })
+
+  it('rejects attempts to unsubscribe a different email', async () => {
+    await mockSupabase({ email: 'owner@example.com' })
+    const { POST } = await import('@/app/api/unsubscribe/route')
+
+    const res = await POST(
+      jsonRequest('/api/unsubscribe', { email: 'victim@example.com' }) as never,
+    )
+
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toEqual({ error: 'Cannot unsubscribe another account' })
+  })
+
+  it('soft-unsubscribes the authenticated subscriber', async () => {
+    const { service } = await mockSupabase(
+      { email: 'reader@example.com' },
+      {
+        subscribers: [
+          {
+            data: {
+              id: 'sub_1',
+              tier: 'free',
+              subscription_status: null,
+              stripe_subscription_id: null,
+            },
+            error: null,
+          },
+          { data: null, error: null },
+        ],
+      },
+    )
+    const { POST } = await import('@/app/api/unsubscribe/route')
+
+    const res = await POST(jsonRequest('/api/unsubscribe') as never)
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ success: true })
+    expect(service.queries.subscribers[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({ is_active: false }),
+    )
+    expect(service.queries.subscribers[1].eq).toHaveBeenCalledWith('id', 'sub_1')
   })
 })

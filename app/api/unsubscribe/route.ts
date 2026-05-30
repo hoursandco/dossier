@@ -1,18 +1,18 @@
 // POST /api/unsubscribe
 //
 // Soft-deactivate the subscriber: stop sending deal emails, but
-// keep their data so they can resubscribe. Two callers historically:
-//   1. The HomePicker danger-zone button (signed-in user, no body)
-//   2. The /unsubscribe?token=... one-click email-footer link
+// keep their data so they can resubscribe. The request must come from
+// a signed-in user; the email is derived from that authenticated
+// session.
 //
 // For paying subscribers this ALSO schedules a Stripe subscription
 // cancellation at period end (cancel_at_period_end=true) so they
 // get the rest of what they paid for but no future renewal. Comped
 // subscribers just have the comp cleared (no Stripe call needed).
 //
-// Schema flexibility: email comes from either (a) the request body
-// (legacy / token-link path) or (b) the authenticated session
-// (HomePicker path). Body wins if both are present.
+// Legacy clients may still send an email body, but it must match the
+// authenticated session. Never trust a bare email body here: otherwise
+// anyone who knows an address could unsubscribe or cancel that account.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -33,15 +33,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid email' }, { status: 400 })
     }
 
-    // Resolve email: body wins, fall back to session.
-    let email = parsed.data.email
-    if (!email) {
-      const authClient = await createClient()
-      const { data: { user } } = await authClient.auth.getUser()
-      email = user?.email ?? undefined
+    const authClient = await createClient()
+    const { data: { user } } = await authClient.auth.getUser()
+    if (!user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (!email) {
-      return NextResponse.json({ error: 'No email available' }, { status: 400 })
+
+    const email = user.email
+    const requestedEmail = parsed.data.email
+    if (requestedEmail && requestedEmail.toLowerCase() !== email.toLowerCase()) {
+      return NextResponse.json({ error: 'Cannot unsubscribe another account' }, { status: 403 })
     }
 
     const service = createServiceClient()

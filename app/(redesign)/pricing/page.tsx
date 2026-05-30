@@ -1,9 +1,8 @@
 // /preview-pricing — Personal Shopper upgrade page in the Dossier Look.
 //
-// Three states based on auth + subscription:
-//   - Not signed in        → sign-in CTA card
-//   - Signed in, free tier → Stripe upgrade flow (UpgradeFlow)
-//   - Signed in, paid      → "already subscribed" card
+// Two states based on auth:
+//   - Not signed in → sign-in CTA card
+//   - Signed in     → Stripe upgrade flow (UpgradeFlow)
 //
 // The UpgradeFlow component keeps its own internal styling (Stripe
 // Elements has its own visual system anyway) — we just restyle the page
@@ -15,9 +14,6 @@ import { DossierNav } from '@/components/DossierNav'
 import { StickyPricingBar } from '@/components/StickyPricingBar'
 
 export const dynamic = 'force-dynamic'
-
-const STAR_POINTS =
-  '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
 
 export default async function PreviewPricing() {
   const supabase = await createClient()
@@ -106,9 +102,7 @@ export default async function PreviewPricing() {
             // TEMPORARY: rendering the UpgradeFlow for ALL signed-in
             // users (including already-paid) so the admin can verify
             // the promo-code field is wired up. Re-enable the
-            // AlreadySubscribed branch by restoring the
-            // `alreadyPaid ? <AlreadySubscribed /> : ...` ternary
-            // around this block.
+            // already-subscribed branch around this block.
             <div className="form-card flush">
               {alreadyPaid && (
                 <div style={{
@@ -226,31 +220,6 @@ function SignInPrompt() {
       >
         SIGN IN →
       </a>
-    </div>
-  )
-}
-
-function AlreadySubscribed() {
-  return (
-    <div className="form-card flush" style={{ textAlign: 'center', position: 'relative' }}>
-      <div style={{ position: 'absolute', top: -30, left: '50%', transform: 'translateX(-50%) rotate(-4deg)' }}>
-        <div className="sticker sh-starburst" style={{ width: 130, height: 130 }}>
-          <div className="star">
-            <svg viewBox="0 0 200 200"><polygon points={STAR_POINTS} fill="#4ea843" stroke="#181612" strokeWidth="2" /></svg>
-          </div>
-          <div className="content">
-            <div style={{ fontFamily: "'Alfa Slab One',serif", color: '#fff8e2', fontSize: 26, lineHeight: 1 }}>ACTIVE</div>
-            <div style={{ fontFamily: "'Stardos Stamp',sans-serif", color: '#fff8e2', fontSize: 10, letterSpacing: '.2em', marginTop: 2 }}>SHOPPER</div>
-          </div>
-        </div>
-      </div>
-      <p className="form-step" style={{ marginTop: 50 }}>— You&rsquo;re a Shopper —</p>
-      <h2 className="form-h">Personal Shopper, <em style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal', color: 'var(--ink)', textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)', padding: '0 .04em' }}>active.</em></h2>
-      <p style={{ fontFamily: "'IM Fell English', serif", fontSize: 18, lineHeight: 1.5, color: 'var(--ink-soft)', maxWidth: '50ch', margin: '0 auto 32px' }}>
-        Unlimited watches, per-watch modifiers, ad-free emails — all switched on.
-        Manage your subscription from settings.
-      </p>
-      <a href="/" className="submit-btn">OPEN MY WATCHLIST →</a>
     </div>
   )
 }
