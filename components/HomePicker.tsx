@@ -487,7 +487,7 @@ export function HomePicker() {
                 fontFamily: "'Alfa Slab One', serif", fontSize: 22,
                 border: '2px solid var(--ink)', flexShrink: 0,
               }}>✱</div>
-              <div style={{ minWidth: 0, wordBreak: 'break-word', flex: 1 }}>
+              <div style={{ minWidth: 0, overflowWrap: 'break-word', flex: '1 1 180px' }}>
                 <strong>Signed in</strong><br />
                 <span style={{ fontSize: 14 }}>
                   {accountEmail} · {tierLabel}

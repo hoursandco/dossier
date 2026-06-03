@@ -1126,7 +1126,10 @@
   border: 2px solid var(--ink);
   padding: 18px 22px;
   margin-bottom: 28px;
-  display: flex; align-items: center; gap: 14px;
+  /* flex-wrap lets the Log-out button drop to its own row on narrow
+     viewports so the email + tier text never gets squeezed into a
+     column of single characters. */
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   box-shadow: 4px 4px 0 var(--ink);
   font-family: "Special Elite", monospace;
   font-size: 15px;
