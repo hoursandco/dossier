@@ -46,11 +46,13 @@ export function makeQuery<T = unknown>(result: QueryResult<T>) {
   }
 
   query.single = vi.fn(async () => result)
+  query.maybeSingle = vi.fn(async () => result)
   query.then = (resolve: (value: QueryResult<T>) => unknown, reject: (reason?: unknown) => unknown) =>
     Promise.resolve(result).then(resolve, reject)
 
   return query as Record<string, ReturnType<typeof vi.fn>> & {
     single: ReturnType<typeof vi.fn>
+    maybeSingle: ReturnType<typeof vi.fn>
     then: Promise<QueryResult<T>>['then']
   }
 }

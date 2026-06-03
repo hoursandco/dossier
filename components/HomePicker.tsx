@@ -37,6 +37,7 @@ export function HomePicker() {
   // Comped users have tier='paid' but no Stripe customer — the
   // "Manage billing" portal button needs to hide for them.
   const [isComped, setIsComped] = useState(false)
+  const [hasBillingAccount, setHasBillingAccount] = useState(false)
   // ISO timestamp of a scheduled cancellation (cancel_at_period_end
   // via Stripe portal or our /api/unsubscribe soft cancel). When
   // set, paid users keep access until this passes — surfaced in
@@ -107,6 +108,7 @@ export function HomePicker() {
           setAccountEmail(d.email)
           setIsPaid(d.tier === 'paid')
           setIsComped(d.subscription_status === 'comped')
+          setHasBillingAccount(!!d.has_billing_account)
           setCancelsAt(d.cancels_at ?? null)
           // Hydrate the paid-tier filter state from the API. For free
           // users these will be null/empty and the UI stays in
@@ -872,17 +874,17 @@ export function HomePicker() {
                   <p>
                     <em>Need to step away?</em>{' '}
                     <strong>Log out</strong> ends this session — sign back in any time via magic link.{' '}
-                    {isPaid && !isComped && (
+                    {isPaid && !isComped && hasBillingAccount && (
                       <>
                         <strong>Manage billing</strong> opens Stripe&rsquo;s portal — update card, view invoices, or cancel (keeps paid access through your current billing period).{' '}
                       </>
                     )}
                     <strong>Unsubscribe</strong> stops deal emails
-                    {isPaid && !isComped
+                    {isPaid && !isComped && hasBillingAccount
                       ? ' and cancels your subscription at the end of your current billing period. '
                       : '. '}
                     <strong>Delete</strong> wipes everything
-                    {isPaid && !isComped
+                    {isPaid && !isComped && hasBillingAccount
                       ? ' and cancels your subscription immediately — '
                       : ' — '}
                     watchlist, picks, send history, sign-in.
@@ -897,7 +899,7 @@ export function HomePicker() {
                     </button>
                     {/* Stripe customers only — free + comped users have
                         no Stripe customer record to manage. */}
-                    {isPaid && !isComped && (
+                    {isPaid && !isComped && hasBillingAccount && (
                       <button
                         type="button"
                         className="btn-ghost-tag"

@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isPaidSubscriber } from '@/lib/subscriberTier'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,13 +103,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unknown category' }, { status: 400 })
   }
 
-  // Free-tier limit: up to 3 active watches. Paid is unlimited.
+  // Free-tier limit: up to 3 active watches. Paid or comped is unlimited.
   const { data: tierRow } = await service
     .from('subscribers')
-    .select('tier')
+    .select('tier, is_comped')
     .eq('id', subscriberId)
     .single()
-  const isFreeTier = tierRow?.tier !== 'paid'
+  const isFreeTier = !isPaidSubscriber(tierRow)
   if (isFreeTier) {
     const { count } = await service
       .from('subscriber_watches')

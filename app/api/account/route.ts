@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isPaidSubscriber } from '@/lib/subscriberTier'
 
 export const dynamic = 'force-dynamic'
 
@@ -144,12 +145,10 @@ export async function PATCH(request: NextRequest) {
   if (wantsFilterChange) {
     const { data: sub } = await service
       .from('subscribers')
-      .select('tier, subscription_status')
+      .select('tier, is_comped')
       .eq('email', user.email)
       .single()
-    const isPaid =
-      sub?.tier === 'paid' &&
-      ['active', 'trialing'].includes(sub.subscription_status ?? '')
+    const isPaid = isPaidSubscriber(sub)
     if (!isPaid) {
       return NextResponse.json(
         { error: 'Personal Shopper required for filters.' },

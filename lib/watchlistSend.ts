@@ -24,6 +24,7 @@ import {
 } from '@/lib/watchlistEmailGenerator'
 import { rankDeals, isJunkDeal } from '@/lib/deals'
 import { fetchStoreData } from '@/lib/stores'
+import { isPaidSubscriber } from '@/lib/subscriberTier'
 
 const LOOKBACK_DAYS = 14
 const MAX_DEALS_PER_WATCH = 15
@@ -142,17 +143,15 @@ export async function sendWatchlistEmailForSubscriber(
   // the send path compatible with pre-migration deployments.
   const { data: subRow } = await service
     .from('subscribers')
-    .select('tier, subscription_status, min_discount_pct, allowed_price_tiers, include_free_shipping, include_bogo, include_gwp')
+    .select('tier, is_comped, min_discount_pct, allowed_price_tiers, include_free_shipping, include_bogo, include_gwp')
     .eq('id', subscriber.id)
     .single()
 
-  // Only honour the filters when the subscriber is actively paid.
+  // Only honour the filters when the subscriber is paid or comped.
   // Defense in depth — the UI gates writes, but if a free user ever
   // had filters set (e.g. they were paid, set filters, downgraded) we
   // ignore them rather than silently apply.
-  const isPaid =
-    subRow?.tier === 'paid' &&
-    ['active', 'trialing'].includes(subRow.subscription_status ?? '')
+  const isPaid = isPaidSubscriber(subRow)
   const minDiscount = isPaid ? (subRow?.min_discount_pct ?? null) : null
   const allowedTiers = isPaid
     ? new Set<string>((subRow?.allowed_price_tiers ?? []) as string[])

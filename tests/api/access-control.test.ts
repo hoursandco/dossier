@@ -103,6 +103,27 @@ describe('PATCH /api/account', () => {
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toEqual({ error: 'Invalid body' })
   })
+
+  it('allows comped subscribers to save paid filters', async () => {
+    const { service } = await mockSupabase(
+      { email: 'reader@example.com' },
+      {
+        subscribers: [
+          { data: { tier: 'free', is_comped: true }, error: null },
+          { data: null, error: null },
+        ],
+      },
+    )
+    const { PATCH } = await import('@/app/api/account/route')
+
+    const res = await PATCH(jsonRequest('/api/account', { min_discount_pct: 25 }) as never)
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ success: true })
+    expect(service.queries.subscribers[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({ min_discount_pct: 25 }),
+    )
+  })
 })
 
 describe('GET /api/stores', () => {
@@ -209,6 +230,37 @@ describe('POST /api/watches', () => {
     const res = await POST(jsonRequest('/api/watches', { category_slug: 'fashion' }) as never)
 
     expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({
+      watch: expect.objectContaining({ id: 'watch_1', category_slug: 'fashion' }),
+    })
+  })
+
+  it('creates a watch for a comped subscriber over the free limit', async () => {
+    const { service } = await mockSupabase(
+      { email: 'reader@example.com' },
+      {
+        subscribers: [
+          { data: { id: 'sub_1' }, error: null },
+          { data: { tier: 'free', is_comped: true }, error: null },
+        ],
+        categories: { data: { slug: 'fashion' }, error: null },
+        subscriber_watches: {
+          data: {
+            id: 'watch_1',
+            category_slug: 'fashion',
+            sub_type: null,
+            created_at: '2026-05-23T00:00:00.000Z',
+          },
+          error: null,
+        },
+      },
+    )
+    const { POST } = await import('@/app/api/watches/route')
+
+    const res = await POST(jsonRequest('/api/watches', { category_slug: 'fashion' }) as never)
+
+    expect(res.status).toBe(200)
+    expect(service.queries.subscriber_watches).toHaveLength(1)
     await expect(res.json()).resolves.toEqual({
       watch: expect.objectContaining({ id: 'watch_1', category_slug: 'fashion' }),
     })
