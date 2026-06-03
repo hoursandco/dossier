@@ -52,8 +52,8 @@ export async function POST(request: NextRequest) {
     const { data: subscriber, error: subErr } = await service
       .from('subscribers')
       .select('id, email, stripe_customer_id, stripe_subscription_id, subscription_status, tier, comp_expires_at')
-      .eq('email', user.email)
-      .single()
+      .ilike('email', user.email)
+      .maybeSingle()
 
     if (subErr || !subscriber) {
       console.error('[create-subscription] subscriber lookup failed', { email: user.email, error: subErr })

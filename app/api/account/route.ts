@@ -19,11 +19,17 @@ export async function GET() {
   }
 
   const service = createServiceClient()
-  const { data: subscriber } = await service
+  const { data: subscriber, error: subErr } = await service
     .from('subscribers')
     .select('id, tier, is_comped, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp, cancels_at')
-    .eq('email', user.email)
-    .single()
+    .ilike('email', user.email)
+    .maybeSingle()
+
+  if (subErr) {
+    console.error('[account GET] subscriber lookup error:', { email: user.email, error: JSON.stringify(subErr) })
+  } else if (!subscriber) {
+    console.warn('[account GET] no subscriber row matched', { email: user.email })
+  }
 
   // Self-heal expired comps. A comped subscriber whose
   // comp_expires_at has passed gets quietly flipped back to free here
