@@ -65,10 +65,12 @@ export async function POST(request: NextRequest) {
     // portal, but comped subscribers have no portal — pointing them
     // there is the misleading bit Matt hit.
     const compStillActive =
-      subscriber.comp_expires_at != null &&
-      new Date(subscriber.comp_expires_at) > new Date()
-    const isComped =
-      subscriber.subscription_status === 'comped' || compStillActive
+      subscriber.subscription_status === 'comped' &&
+      (
+        subscriber.comp_expires_at == null ||
+        new Date(subscriber.comp_expires_at) > new Date()
+      )
+    const isComped = compStillActive
     const isActivelyPaying = ['active', 'trialing'].includes(
       subscriber.subscription_status ?? ''
     )

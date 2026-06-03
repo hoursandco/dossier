@@ -126,6 +126,99 @@ describe('PATCH /api/account', () => {
   })
 })
 
+describe('POST /api/billing/create-subscription', () => {
+  const freeCode = {
+    id: 'code_1',
+    code: 'FRIENDS4FREE',
+    plan_types: ['monthly'],
+    percent_off: 100,
+    duration_months: 1,
+    expires_at: '2999-01-01',
+    requires_credit_card: false,
+    active: true,
+    max_redemptions: null,
+  }
+
+  it('allows an expired comped subscriber to redeem a fresh free code', async () => {
+    const { service } = await mockSupabase(
+      { email: 'reader@example.com' },
+      {
+        subscribers: [
+          {
+            data: {
+              id: 'sub_1',
+              email: 'reader@example.com',
+              stripe_customer_id: null,
+              stripe_subscription_id: null,
+              subscription_status: 'comped',
+              tier: 'paid',
+              comp_expires_at: '2000-01-01T00:00:00.000Z',
+            },
+            error: null,
+          },
+          { data: null, error: null },
+        ],
+        discount_codes: { data: freeCode, error: null },
+      },
+    )
+    const { POST } = await import('@/app/api/billing/create-subscription/route')
+
+    const res = await POST(
+      jsonRequest('/api/billing/create-subscription', {
+        plan: 'monthly',
+        promo_code: 'FRIENDS4FREE',
+      }) as never,
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      comped: true,
+      promo_code: 'FRIENDS4FREE',
+      duration_months: 1,
+    })
+    expect(service.queries.subscribers[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tier: 'paid',
+        subscription_status: 'comped',
+        promo_code: 'FRIENDS4FREE',
+      }),
+    )
+  })
+
+  it('still rejects a currently active comped subscriber', async () => {
+    await mockSupabase(
+      { email: 'reader@example.com' },
+      {
+        subscribers: {
+          data: {
+            id: 'sub_1',
+            email: 'reader@example.com',
+            stripe_customer_id: null,
+            stripe_subscription_id: null,
+            subscription_status: 'comped',
+            tier: 'paid',
+            comp_expires_at: '2999-01-01T00:00:00.000Z',
+          },
+          error: null,
+        },
+      },
+    )
+    const { POST } = await import('@/app/api/billing/create-subscription/route')
+
+    const res = await POST(
+      jsonRequest('/api/billing/create-subscription', {
+        plan: 'monthly',
+        promo_code: 'FRIENDS4FREE',
+      }) as never,
+    )
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({
+      error: "You're already on the paid tier — your free access is active. Refresh the page to see your paid features.",
+    })
+  })
+})
+
 describe('GET /api/stores', () => {
   it('returns the public store directory', async () => {
     await mockSupabase(null, {
