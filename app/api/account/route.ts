@@ -24,27 +24,46 @@ export async function GET() {
   // historical subscriber rows or Supabase's own casing can drift,
   // and any whitespace stowaway would silently miss .eq().
   const lookupEmail = user.email.trim().toLowerCase()
+  type SubRow = {
+    id: string
+    tier: string | null
+    is_comped: boolean | null
+    subscription_status: string | null
+    stripe_customer_id: string | null
+    weekly_email_enabled: boolean | null
+    min_discount_pct: number | null
+    allowed_price_tiers: string[] | null
+    comp_expires_at: string | null
+    include_free_shipping: boolean | null
+    include_bogo: boolean | null
+    include_gwp: boolean | null
+    cancels_at: string | null
+    email: string | null
+  }
   const cols =
-    'id, tier, is_comped, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp, cancels_at'
-  let { data: subscriber, error: subErr } = await service
+    'id, tier, is_comped, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp, cancels_at, email'
+  const first = await service
     .from('subscribers')
     .select(cols)
     .ilike('email', lookupEmail)
     .maybeSingle()
+  let subscriber: SubRow | null = (first.data as unknown as SubRow) ?? null
+  const subErr = first.error
 
-  // Fallback: if ilike misses (multi-row, or stray characters in DB
-  // value that wreck a case-insensitive match), scan and filter in
-  // memory. This is bounded — one email at most matches.
+  // Fallback: if ilike misses (stray characters or whitespace in
+  // the DB column), scan and trim+lowercase compare. Bounded — at
+  // most one row matches.
   if (!subscriber) {
-    const { data: rows, error: scanErr } = await service
+    const scan = await service
       .from('subscribers')
-      .select(cols + ', email')
+      .select(cols)
       .limit(2000)
-    if (scanErr) {
-      console.error('[account GET] fallback scan error:', JSON.stringify(scanErr))
+    const rows = ((scan.data as unknown) as SubRow[]) ?? []
+    if (scan.error) {
+      console.error('[account GET] fallback scan error:', JSON.stringify(scan.error))
     } else {
-      subscriber = (rows ?? []).find(
-        (r) => (r.email ?? '').trim().toLowerCase() === lookupEmail
+      subscriber = rows.find(
+        (r) => String(r.email ?? '').trim().toLowerCase() === lookupEmail
       ) ?? null
       if (subscriber) {
         console.warn('[account GET] matched via fallback scan', { email: lookupEmail, id: subscriber.id })
