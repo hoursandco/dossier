@@ -20,16 +20,42 @@ export async function GET() {
   }
 
   const service = createServiceClient()
-  const { data: subscriber, error: subErr } = await service
+  // Defensively normalize — Supabase auth lowercases emails but
+  // historical subscriber rows or Supabase's own casing can drift,
+  // and any whitespace stowaway would silently miss .eq().
+  const lookupEmail = user.email.trim().toLowerCase()
+  const cols =
+    'id, tier, is_comped, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp, cancels_at'
+  let { data: subscriber, error: subErr } = await service
     .from('subscribers')
-    .select('id, tier, is_comped, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp, cancels_at')
-    .ilike('email', user.email)
+    .select(cols)
+    .ilike('email', lookupEmail)
     .maybeSingle()
 
+  // Fallback: if ilike misses (multi-row, or stray characters in DB
+  // value that wreck a case-insensitive match), scan and filter in
+  // memory. This is bounded — one email at most matches.
+  if (!subscriber) {
+    const { data: rows, error: scanErr } = await service
+      .from('subscribers')
+      .select(cols + ', email')
+      .limit(2000)
+    if (scanErr) {
+      console.error('[account GET] fallback scan error:', JSON.stringify(scanErr))
+    } else {
+      subscriber = (rows ?? []).find(
+        (r) => (r.email ?? '').trim().toLowerCase() === lookupEmail
+      ) ?? null
+      if (subscriber) {
+        console.warn('[account GET] matched via fallback scan', { email: lookupEmail, id: subscriber.id })
+      }
+    }
+  }
+
   if (subErr) {
-    console.error('[account GET] subscriber lookup error:', { email: user.email, error: JSON.stringify(subErr) })
+    console.error('[account GET] subscriber lookup error:', { email: lookupEmail, error: JSON.stringify(subErr) })
   } else if (!subscriber) {
-    console.warn('[account GET] no subscriber row matched', { email: user.email })
+    console.warn('[account GET] no subscriber row matched', { email: lookupEmail })
   }
 
   // Self-heal expired comps. A comped subscriber whose
