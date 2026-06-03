@@ -99,7 +99,16 @@ export function StoresAdmin() {
     setError(null)
     setInfo(null)
     setEditingId(store.id)
-    setDraft({ ...store })
+    // Strip any non-Collection (orphan content) slugs from the draft.
+    // Pre-migration-036 rows can still carry slugs like 'womens-clothes'
+    // or 'lighting' in stores.categories. The picker only shows editorial
+    // Collections, so those orphans would otherwise be invisible AND
+    // re-saved untouched on every edit. Filtering here means: the picker
+    // accurately reflects what's about to be saved, and any silent
+    // re-save cleans up the orphans automatically.
+    const editorialSlugs = new Set(collections.map((c) => c.slug))
+    const cleanedCategories = (store.categories ?? []).filter((s) => editorialSlugs.has(s))
+    setDraft({ ...store, categories: cleanedCategories })
   }
 
   const startNew = () => {
@@ -125,10 +134,19 @@ export function StoresAdmin() {
       const isNew = editingId === 'new'
       const url = isNew ? '/api/admin/stores' : `/api/admin/stores/${editingId}`
       const method = isNew ? 'POST' : 'PATCH'
+      // Defense in depth: re-filter categories to editorial slugs only,
+      // in case the draft picked up orphans somehow (programmatic
+      // sets, race conditions, etc.). startEdit already does this, but
+      // belts and suspenders on the write path is cheap.
+      const editorialSlugs = new Set(collections.map((c) => c.slug))
+      const payload = {
+        ...draft,
+        categories: (draft.categories ?? []).filter((s) => editorialSlugs.has(s)),
+      }
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -362,11 +380,18 @@ export function StoresAdmin() {
           </div>
         ) : (
           stores.map((s) => {
-            const catLabels = s.categories
+            // Only render slugs that actually exist as editorial
+            // Collections. Orphan content slugs (legacy 'womens-clothes'
+            // etc.) show as raw strings otherwise — looks like garbage
+            // data and confuses the admin about what's saved.
+            const editorialOnly = s.categories.filter((slug) =>
+              collections.some((c) => c.slug === slug)
+            )
+            const catLabels = editorialOnly
               .map((slug) => collections.find((c) => c.slug === slug)?.label ?? slug)
               .slice(0, 3)
               .join(', ')
-            const more = s.categories.length > 3 ? ` +${s.categories.length - 3}` : ''
+            const more = editorialOnly.length > 3 ? ` +${editorialOnly.length - 3}` : ''
             return (
               <div
                 key={s.id}
