@@ -60,19 +60,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Subscriber not found' }, { status: 404 })
     }
 
-    // Reject if already actively paid or comped — manage via portal /
-    // wait for comp to expire instead.
+    // Reject if already actively paid or comped. Differentiate the
+    // message: paying subscribers can manage via the Stripe billing
+    // portal, but comped subscribers have no portal — pointing them
+    // there is the misleading bit Matt hit.
     const compStillActive =
       subscriber.comp_expires_at != null &&
       new Date(subscriber.comp_expires_at) > new Date()
-    if (
-      subscriber.tier === 'paid' &&
-      (['active', 'trialing'].includes(subscriber.subscription_status ?? '') || compStillActive)
-    ) {
-      return NextResponse.json(
-        { error: 'Already subscribed. Use the billing portal to change plan, or wait for your comp to expire.' },
-        { status: 409 }
-      )
+    const isComped =
+      subscriber.subscription_status === 'comped' || compStillActive
+    const isActivelyPaying = ['active', 'trialing'].includes(
+      subscriber.subscription_status ?? ''
+    )
+    if (subscriber.tier === 'paid' && (isActivelyPaying || isComped)) {
+      const message = isComped
+        ? "You're already on the paid tier — your free access is active. Refresh the page to see your paid features."
+        : "You're already subscribed. Use the billing portal to change your plan."
+      return NextResponse.json({ error: message }, { status: 409 })
     }
 
     // ── Validate promo code if supplied ─────────────────────────────

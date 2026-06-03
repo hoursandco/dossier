@@ -21,7 +21,7 @@ export async function GET() {
   const service = createServiceClient()
   const { data: subscriber } = await service
     .from('subscribers')
-    .select('id, tier, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp, cancels_at')
+    .select('id, tier, is_comped, subscription_status, stripe_customer_id, weekly_email_enabled, min_discount_pct, allowed_price_tiers, comp_expires_at, include_free_shipping, include_bogo, include_gwp, cancels_at')
     .eq('email', user.email)
     .single()
 
@@ -30,7 +30,13 @@ export async function GET() {
   // so we don't need a cron. Cheap: single read on every /api/account
   // hit; the index on comp_expires_at makes the in-line UPDATE a
   // single-row primary-key write.
-  let effectiveTier = subscriber?.tier ?? 'free'
+  //
+  // Also: honor the admin Comp button's is_comped=true signal. That
+  // path doesn't touch the `tier` column, so without this OR the user
+  // would still see "Inbox Cleaner" in their own UI even though
+  // admin shows them as paid.
+  let effectiveTier =
+    subscriber?.is_comped === true ? 'paid' : (subscriber?.tier ?? 'free')
   let effectiveStatus = subscriber?.subscription_status ?? null
   let effectiveCompExpiresAt = subscriber?.comp_expires_at ?? null
   if (
