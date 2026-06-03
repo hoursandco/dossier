@@ -670,8 +670,32 @@ export function HomePicker() {
             <div className="dl-field">
               {pickedStores.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <div className="t-meta" style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-55)', marginBottom: 8 }}>
-                    Watching {storeCount} {storeCount === 1 ? 'store' : 'stores'}
+                  <div className="t-meta" style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-55)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <span>Watching {storeCount} {storeCount === 1 ? 'store' : 'stores'}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!confirm(`Clear all ${storeCount} ${storeCount === 1 ? 'store' : 'stores'}?`)) return
+                        // Snapshot ids first so removeStore can iterate
+                        // without racing the setState chain.
+                        const ids = pickedStores.map((s) => s.id)
+                        ids.forEach((id) => removeStore(id))
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        color: 'var(--red-deep)',
+                        fontFamily: 'inherit',
+                        fontSize: 11,
+                        letterSpacing: '.16em',
+                        textTransform: 'uppercase',
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Clear all
+                    </button>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {pickedStores.map((p) => (

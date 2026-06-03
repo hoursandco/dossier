@@ -72,6 +72,15 @@ export function StoresBrowse() {
   const [watchWeek, setWatchWeek] = useState<Record<string, number>>({})
   const [busyId, setBusyId] = useState<string | null>(null)
   const [limitModal, setLimitModal] = useState<{ current: number; allowed: number } | null>(null)
+  // Back-to-top FAB visibility — appears after the user scrolls past
+  // ~600px so they can jump back to the top of a long brand list.
+  const [showToTop, setShowToTop] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setShowToTop(window.scrollY > 600)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   // Bootstrap: load directory, collections, and (if signed in) the
   // user's current picks + tier. All in parallel — the page is read-
@@ -596,8 +605,12 @@ export function StoresBrowse() {
           )}
 
           {/* CTA at the bottom of the page so visitors who scroll the whole
-              list still have a clear next action. */}
-          <div style={{ marginTop: 36, textAlign: 'center' }}>
+              list still have a clear next action. Back link on the left
+              gets users home in one tap without scrolling all the way up. */}
+          <div style={{ marginTop: 36, display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'center', alignItems: 'center' }}>
+            <a href="/" className="btn-ghost" style={{ display: 'inline-block', padding: '12px 22px', fontFamily: "'Stardos Stamp', monospace", fontSize: 13, letterSpacing: '.14em', textTransform: 'uppercase' }}>
+              ← Back to your picks
+            </a>
             <a href="/suggest" className="btn-ghost" style={{ display: 'inline-block', padding: '12px 22px', fontFamily: "'Stardos Stamp', monospace", fontSize: 13, letterSpacing: '.14em', textTransform: 'uppercase' }}>
               Missing a brand? Suggest one →
             </a>
@@ -621,6 +634,36 @@ export function StoresBrowse() {
           allowed={limitModal.allowed}
           onClose={() => setLimitModal(null)}
         />
+      )}
+
+      {/* ── Back-to-top FAB ─────────────────────────────────────────────
+          Fixed bottom-right, shows after the user scrolls past the fold.
+          Stamp-styled square in the Dossier ink+paper palette so it
+          reads as native to the page rather than a generic Material FAB. */}
+      {showToTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="Back to top"
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            width: 52,
+            height: 52,
+            border: '2px solid var(--ink)',
+            background: 'var(--red, #c8413a)',
+            color: 'var(--paper, #f6ecd2)',
+            boxShadow: '3px 3px 0 var(--ink)',
+            fontFamily: "'Stardos Stamp', monospace",
+            fontSize: 12,
+            letterSpacing: '.1em',
+            cursor: 'pointer',
+            zIndex: 50,
+          }}
+        >
+          ↑ TOP
+        </button>
       )}
     </>
   )
