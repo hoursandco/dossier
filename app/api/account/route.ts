@@ -50,23 +50,31 @@ export async function GET() {
   let subscriber: SubRow | null = (first.data as unknown as SubRow) ?? null
   const subErr = first.error
 
-  // Fallback: if ilike misses (stray characters or whitespace in
-  // the DB column), scan and trim+lowercase compare. Bounded — at
-  // most one row matches.
+  // Fallback: ilike kept missing for at least one paid user even
+  // though the row genuinely matches at the SQL level. Filter at
+  // the DB by the local-part of the email (everything before @) so
+  // the scan is tiny but covers any whitespace / casing drift on
+  // either side. Then pick the exact trim+lowercase match.
   if (!subscriber) {
+    const localPart = lookupEmail.split('@')[0]
     const scan = await service
       .from('subscribers')
       .select(cols)
-      .limit(2000)
+      .ilike('email', `*${localPart}*`)
+      .limit(50)
     const rows = ((scan.data as unknown) as SubRow[]) ?? []
-    if (scan.error) {
-      console.error('[account GET] fallback scan error:', JSON.stringify(scan.error))
-    } else {
+    console.warn('[account GET] fallback scan', {
+      email: lookupEmail,
+      localPart,
+      rowsReturned: rows.length,
+      error: scan.error ? JSON.stringify(scan.error) : null,
+    })
+    if (!scan.error) {
       subscriber = rows.find(
         (r) => String(r.email ?? '').trim().toLowerCase() === lookupEmail
       ) ?? null
       if (subscriber) {
-        console.warn('[account GET] matched via fallback scan', { email: lookupEmail, id: subscriber.id })
+        console.warn('[account GET] matched via fallback scan', { email: lookupEmail, id: subscriber.id, dbEmail: subscriber.email })
       }
     }
   }
