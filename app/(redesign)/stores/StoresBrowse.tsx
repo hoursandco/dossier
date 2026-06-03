@@ -238,17 +238,6 @@ export function StoresBrowse() {
 
       <section className="page-head light">
         <div className="page-head-inner">
-          {/* Back link to the picker — once a user has dropped into
-              /stores from the home picker, they need a one-tap way
-              back to finish editing categories or hit Send. */}
-          <p style={{ margin: '0 0 14px', fontFamily: "'Stardos Stamp', monospace", fontSize: 13, letterSpacing: '.08em' }}>
-            <a
-              href="/"
-              style={{ color: 'var(--red-deep)', textDecoration: 'none' }}
-            >
-              ← Back to your picks
-            </a>
-          </p>
           <p className="page-kicker">— The Directory —</p>
           <h1 className="page-title">
             Browse <em>every brand</em> we track.
@@ -263,6 +252,19 @@ export function StoresBrowse() {
 
       <section className="form-section">
         <div className="form-wrap">
+          {/* Back link to the picker — once a user has dropped into
+              /stores from the home picker, they need a one-tap way
+              back to finish editing or hit Send. Sits right above the
+              search input so it's the first thing a returning visitor
+              sees inside the working area. */}
+          <p style={{ margin: '0 0 14px', fontFamily: "'Stardos Stamp', monospace", fontSize: 13, letterSpacing: '.08em' }}>
+            <a
+              href="/"
+              style={{ color: 'var(--red-deep)', textDecoration: 'none' }}
+            >
+              ← Back to your picks
+            </a>
+          </p>
           {/* ── Search + collection filter ───────────────────────────── */}
           <div
             style={{
