@@ -491,10 +491,28 @@ export function generateWatchlistEmail({
                   <div style="font-family:${FONT_STAMP};font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:${INK_SOFT};margin-top:4px;">${label}</div>
                 </td>`
 
-  const sectionsHtml = watchSections
+  // Split sections into those that found deals and those that didn't.
+  // Empty sections used to render a full eyebrow/heading/"Nothing fresh
+  // yet" block each, which made a lightly-matched email feel mostly
+  // empty. Now we render only the non-empty sections in the main flow
+  // and collapse all the empty ones into a single roll-up block at
+  // the very bottom ("Nothing fresh yet but we'll keep watching.").
+  const filledSections = watchSections.filter((s) => s.deals.length > 0)
+  const emptySections = watchSections.filter((s) => s.deals.length === 0)
+
+  const sectionsHtml = filledSections
     .map((s, i) => sectionBlock(s, i, storeUrls))
     .join(`
         <tr><td class="px" style="padding:0 40px;background:${PANEL};"><hr style="border:0;border-top:3px solid ${INK};margin:0;"></td></tr>`)
+
+  const stillWatchingHtml = emptySections.length === 0 ? '' : `
+        <tr>
+          <td class="px" style="padding:32px 40px 28px;background:${PANEL};border-top:3px solid ${INK};">
+            <p style="margin:0 0 14px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.4em;text-transform:uppercase;color:${RED_DEEP};">— Still Watching —</p>
+            <p style="margin:0 0 10px;font-family:${FONT_BODY};font-style:italic;font-size:18px;line-height:1.4;color:${INK};">Nothing fresh yet but we&rsquo;ll keep watching.</p>
+            <p style="margin:0;font-family:${FONT_TYPE};font-size:14px;line-height:1.6;color:${INK_SOFT};">${emptySections.map((s) => escape(s.label)).join(' · ')}</p>
+          </td>
+        </tr>`
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -572,6 +590,11 @@ export function generateWatchlistEmail({
 
       <!-- Sections -->
 ${sectionsHtml}
+
+      <!-- Still Watching roll-up: every section with no fresh deals
+           lands here as a comma-separated list so an under-matched
+           email still feels intentional, not empty. -->
+${stillWatchingHtml}
 
       <!-- "Also Today" compact lists (paid opt-ins only) -->
 ${compactBuckets ? compactSection(compactBuckets, storeUrls) : ''}
