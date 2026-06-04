@@ -318,6 +318,17 @@ export default function PreviewSuggest() {
       {/* ============ FORM ============ */}
       <section className="form-section">
         <div className="form-wrap-narrow">
+          {/* Back link to the picker — visitors land here from the
+              /stores "Suggest one" CTA and need a one-tap exit back
+              to their watchlist if they decide not to tip a brand. */}
+          <p style={{ margin: '0 0 18px', fontFamily: "'Stardos Stamp', monospace", fontSize: 13, letterSpacing: '.08em' }}>
+            <a
+              href="/"
+              style={{ color: 'var(--red-deep)', textDecoration: 'none' }}
+            >
+              ← Back to your picks
+            </a>
+          </p>
           <div className="form-tag left">
             <div className="sticker sh-starburst" style={{ width: 130, height: 130 }}>
               <div className="star">
@@ -402,7 +413,7 @@ export default function PreviewSuggest() {
                 <div className="seal">!</div>
                 <p>
                   <strong>FYI: USA only.</strong><br />
-                  We only track retailers that ship within the United States. Worth a quick check on the brand&rsquo;s site before you send.
+                  At this time, we only track retailers that ship within the United States. Worth a quick check on the brand&rsquo;s site before you send.
                 </p>
               </div>
 
