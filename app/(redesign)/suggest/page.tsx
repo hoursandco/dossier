@@ -320,8 +320,11 @@ export default function PreviewSuggest() {
         <div className="form-wrap-narrow">
           {/* Back link to the picker — visitors land here from the
               /stores "Suggest one" CTA and need a one-tap exit back
-              to their watchlist if they decide not to tip a brand. */}
-          <p style={{ margin: '0 0 18px', fontFamily: "'Stardos Stamp', monospace", fontSize: 13, letterSpacing: '.08em' }}>
+              to their watchlist if they decide not to tip a brand.
+              Padded from the left to clear the absolutely-positioned
+              "TAKES 2 MIN" sticker that hovers in the top-left of
+              the form area. */}
+          <p style={{ margin: '0 0 18px', paddingLeft: 'clamp(110px, 18vw, 160px)', fontFamily: "'Stardos Stamp', monospace", fontSize: 13, letterSpacing: '.08em' }}>
             <a
               href="/"
               style={{ color: 'var(--red-deep)', textDecoration: 'none' }}
