@@ -509,7 +509,7 @@ export function generateWatchlistEmail({
         <tr>
           <td class="px" style="padding:32px 40px 28px;background:${PANEL};border-top:3px solid ${INK};">
             <p style="margin:0 0 14px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.4em;text-transform:uppercase;color:${RED_DEEP};">— Still Watching —</p>
-            <p style="margin:0 0 10px;font-family:${FONT_BODY};font-style:italic;font-size:18px;line-height:1.4;color:${INK};">Nothing fresh yet but we&rsquo;ll keep watching.</p>
+            <p style="margin:0 0 10px;font-family:${FONT_BODY};font-style:italic;font-size:18px;line-height:1.4;color:${INK};">No deals this week, we&rsquo;ll keep watching.</p>
             <p style="margin:0;font-family:${FONT_TYPE};font-size:14px;line-height:1.6;color:${INK_SOFT};">${emptySections.map((s) => escape(s.label)).join(' · ')}</p>
           </td>
         </tr>`
