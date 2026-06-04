@@ -591,13 +591,14 @@ export function generateWatchlistEmail({
       <!-- Sections -->
 ${sectionsHtml}
 
-      <!-- Still Watching roll-up: every section with no fresh deals
-           lands here as a comma-separated list so an under-matched
-           email still feels intentional, not empty. -->
-${stillWatchingHtml}
-
       <!-- "Also Today" compact lists (paid opt-ins only) -->
 ${compactBuckets ? compactSection(compactBuckets, storeUrls) : ''}
+
+      <!-- Still Watching roll-up: every section with no fresh deals
+           lands here as a comma-separated list so an under-matched
+           email still feels intentional, not empty. Sits below
+           "Also Today" so the bonus paid lists keep their prime spot. -->
+${stillWatchingHtml}
 
       <!-- Postscript -->
       <tr>
