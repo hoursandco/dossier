@@ -90,6 +90,12 @@ For each deal:
    f) If the email focuses on one specific product (e.g., a vacuum,
       a sofa, a perfume), tag the matching slug — NOT a random
       slug from elsewhere in the email's clutter.
+
+   g) Furniture deals use the slug "furnature" (intentional taxonomy
+      spelling) for sofas, couches, sectionals, chairs, dining tables,
+      desks, dressers, bed frames, nightstands, bookshelves, cabinets,
+      patio furniture, and similar home furniture. Do not use
+      "home-decor" for actual furniture.
 9. DEAL_SUBTYPE: A single short fine-grained product type if the email is specifically about it (e.g. "jeans", "sneakers", "lipstick", "coffee maker", "yoga pants"). null for generic / site-wide / multi-product sales.
 
 RULES:

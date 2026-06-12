@@ -4,13 +4,18 @@ import { useState } from 'react'
 
 export function RunIngestButton() {
   const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const [mode, setMode] = useState<'normal' | 'backfill'>('normal')
   const [result, setResult] = useState<Record<string, unknown> | null>(null)
 
-  const handleRun = async () => {
+  const handleRun = async (nextMode: 'normal' | 'backfill') => {
+    setMode(nextMode)
     setStatus('running')
     setResult(null)
     try {
-      const res = await fetch('/api/admin/run-ingest', { method: 'POST' })
+      const url = nextMode === 'backfill'
+        ? '/api/admin/run-ingest?hours=48&limit=200'
+        : '/api/admin/run-ingest'
+      const res = await fetch(url, { method: 'POST' })
       const data = await res.json()
       setResult(data)
       setStatus(res.ok ? 'done' : 'error')
@@ -27,22 +32,41 @@ export function RunIngestButton() {
       : null
 
   return (
-    <button
-      type="button"
-      onClick={handleRun}
-      disabled={status === 'running'}
-      className={`admin-btn ${status === 'running' ? 'is-running' : ''} ${
-        status === 'done' ? 'is-done' : ''
-      }`}
-    >
-      <span>
-        {status === 'idle' && 'Run Ingest'}
-        {status === 'running' && 'Scanning…'}
-        {status === 'done' && (summary || '✓ Done')}
-        {status === 'error' &&
-          ((result?.error as string | undefined) ?? 'Error — try again')}
-      </span>
-      {status === 'running' && <span className="admin-btn-spinner" aria-hidden="true" />}
-    </button>
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <button
+        type="button"
+        onClick={() => handleRun('normal')}
+        disabled={status === 'running'}
+        className={`admin-btn ${status === 'running' && mode === 'normal' ? 'is-running' : ''} ${
+          status === 'done' && mode === 'normal' ? 'is-done' : ''
+        }`}
+      >
+        <span>
+          {status === 'idle' || mode !== 'normal' ? 'Run Ingest' : null}
+          {status === 'running' && mode === 'normal' && 'Scanning...'}
+          {status === 'done' && mode === 'normal' && (summary || 'Done')}
+          {status === 'error' && mode === 'normal' &&
+            ((result?.error as string | undefined) ?? 'Error - try again')}
+        </span>
+        {status === 'running' && mode === 'normal' && <span className="admin-btn-spinner" aria-hidden="true" />}
+      </button>
+      <button
+        type="button"
+        onClick={() => handleRun('backfill')}
+        disabled={status === 'running'}
+        className={`admin-btn admin-btn-ghost ${status === 'running' && mode === 'backfill' ? 'is-running' : ''} ${
+          status === 'done' && mode === 'backfill' ? 'is-done' : ''
+        }`}
+      >
+        <span>
+          {status === 'idle' || mode !== 'backfill' ? '48h Backfill' : null}
+          {status === 'running' && mode === 'backfill' && 'Scanning 48h...'}
+          {status === 'done' && mode === 'backfill' && (summary || 'Done')}
+          {status === 'error' && mode === 'backfill' &&
+            ((result?.error as string | undefined) ?? 'Error - try again')}
+        </span>
+        {status === 'running' && mode === 'backfill' && <span className="admin-btn-spinner" aria-hidden="true" />}
+      </button>
+    </div>
   )
 }

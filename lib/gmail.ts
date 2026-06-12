@@ -49,6 +49,10 @@ export interface FetchOptions {
    *  mailbox's current UIDVALIDITY, the cursor is invalid and we fall
    *  back to the date window. */
   uidValidity?: number
+  /** Force a date-window fetch even when a valid UID cursor exists. Used for
+   *  one-time taxonomy backfills where recent already-processed emails need
+   *  to be reclassified without moving the steady-state cursor. */
+  forceDateWindow?: boolean
 }
 
 function getCreds(): { user: string; pass: string } {
@@ -104,6 +108,7 @@ export async function fetchPromotionalEmails(
       let searchRange: { uid: string } | { since: Date }
       let modeDescription: string
       if (
+        !options.forceDateWindow &&
         options.afterUid !== undefined &&
         options.afterUid > 0 &&
         options.uidValidity !== undefined &&

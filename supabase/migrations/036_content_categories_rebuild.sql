@@ -87,6 +87,7 @@ INSERT INTO categories (slug, label, group_name, sort_order, is_active, is_edito
   ('bed-bath',          'Bed & Bath',         'Home', 405, TRUE, FALSE),
   -- ('bedding' was removed — redundant with 'bed-bath')
   ('cleaning',          'Cleaning',           'Home', 415, TRUE, FALSE),
+  ('furnature',         'Furniture',          'Home', 417, TRUE, FALSE),
   ('holiday',           'Holiday',            'Home', 418, TRUE, FALSE),
   ('home-decor',        'Home Decor',         'Home', 420, TRUE, FALSE),
   ('kitchen-cooking',   'Kitchen & Cooking',  'Home', 425, TRUE, FALSE),
@@ -158,7 +159,7 @@ WHERE is_editorial = FALSE
     'fitness-equipment','fragrance','hair-care','k-beauty','makeup',
     'skincare','vitamins-supplements',
     -- Home (note: 'bedding' was removed — redundant with 'bed-bath')
-    'baby-gear','bed-bath','cleaning','holiday','home-decor',
+    'baby-gear','bed-bath','cleaning','furnature','holiday','home-decor',
     'kitchen-cooking','kitchen-appliances','lighting','mattress','office',
     'organization','outdoor-furniture','plants','rugs','wall-art',
     -- Restaurants & Grocery

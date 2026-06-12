@@ -114,11 +114,23 @@ export async function GET(request: NextRequest) {
   const supabase = createServiceClient()
   const weekOf = getCurrentWeekOf()
   const weekOfStr = format(weekOf, 'yyyy-MM-dd')
+  const hoursParam = request.nextUrl.searchParams.get('hours')
+  const requestedHours = hoursParam ? Number(hoursParam) : 24
+  const lookbackHours = Number.isFinite(requestedHours)
+    ? Math.min(168, Math.max(1, Math.floor(requestedHours)))
+    : 24
+  const forceDateWindow =
+    request.nextUrl.searchParams.get('backfill') === '1' || hoursParam !== null
+  const limitParam = request.nextUrl.searchParams.get('limit')
+  const requestedLimit = limitParam ? Number(limitParam) : INGEST_MAX_PER_RUN
+  const perRunLimit = Number.isFinite(requestedLimit)
+    ? Math.min(500, Math.max(1, Math.floor(requestedLimit)))
+    : INGEST_MAX_PER_RUN
 
   // Fallback date window. Only used if the IMAP UID cursor is missing
   // (very first run) or invalidated by a UIDVALIDITY change. Steady-state
   // hourly runs never look at this — they pick up at `UID > last_uid`.
-  const since = subHours(new Date(), 24)
+  const since = subHours(new Date(), lookbackHours)
 
   try {
     // Read the IMAP cursor. {uid_validity, last_uid} from ingest_state.
@@ -138,16 +150,19 @@ export async function GET(request: NextRequest) {
     }
 
     const tFetchStart = Date.now()
-    const fetchResult = await fetchPromotionalEmails(since, cursor)
+    const fetchResult = await fetchPromotionalEmails(
+      since,
+      forceDateWindow ? { forceDateWindow: true } : cursor,
+    )
     const emails = fetchResult.messages
     console.log(
       `[ingest] IMAP fetch: ${emails.length} new messages in ${Date.now() - tFetchStart}ms ` +
-        `(cursor: afterUid=${cursor.afterUid}, uidValidity=${cursor.uidValidity ?? 'none'} → maxUid=${fetchResult.maxUid}, uidValidity=${fetchResult.uidValidity})`
+        `(mode=${forceDateWindow ? `${lookbackHours}h backfill` : 'cursor'}, cursor: afterUid=${cursor.afterUid}, uidValidity=${cursor.uidValidity ?? 'none'} → maxUid=${fetchResult.maxUid}, uidValidity=${fetchResult.uidValidity})`
     )
     if (emails.length === 0) {
       // Even with zero new messages we advance uid_validity if it changed
       // — keeps the cursor pinned to the right mailbox generation.
-      if (fetchResult.uidValidity && fetchResult.uidValidity !== cursor.uidValidity) {
+      if (!forceDateWindow && fetchResult.uidValidity && fetchResult.uidValidity !== cursor.uidValidity) {
         await supabase
           .from('ingest_state')
           .update({ uid_validity: fetchResult.uidValidity, updated_at: new Date().toISOString() })
@@ -266,7 +281,7 @@ export async function GET(request: NextRequest) {
     const newEmails = emails
       .slice()
       .sort((a, b) => b.uid - a.uid)
-      .slice(0, INGEST_MAX_PER_RUN)
+      .slice(0, perRunLimit)
 
     const deferred = emails.length - newEmails.length
     console.log(
@@ -278,12 +293,16 @@ export async function GET(request: NextRequest) {
     // the same sale twice even if 3 emails announce it
     const { data: existingDealsThisWeek } = await supabase
       .from('deals')
-      .select('retailer, deal_type, percent_off, promo_code, description')
+      .select('id, retailer, deal_type, percent_off, promo_code, description, categories')
       .eq('week_of', weekOfStr)
 
-    const seenDealKeys = new Set(
-      (existingDealsThisWeek || []).map((d) => makeDealKey(d))
+    const existingDealByKey = new Map(
+      (existingDealsThisWeek || []).map((d) => [
+        makeDealKey(d),
+        { id: d.id as string, categories: (d.categories ?? []) as string[] },
+      ])
     )
+    const seenDealKeys = new Set(existingDealByKey.keys())
 
     let newDeals = 0
     let emailsWithDeals = 0
@@ -323,13 +342,7 @@ export async function GET(request: NextRequest) {
           continue
         }
 
-        // Skip duplicates within this week (check+add is synchronous — safe with parallel emails)
         const dealKey = makeDealKey(normalizedDeal)
-        if (seenDealKeys.has(dealKey)) {
-          console.log(`[ingest] skipping duplicate: ${retailer} ${deal.deal_type} ${deal.percent_off}%`)
-          continue
-        }
-        seenDealKeys.add(dealKey)
 
         // Look up the brand in the stores table. Three paths:
         //   1. Match exists → use its categories for routing
@@ -408,6 +421,41 @@ export async function GET(request: NextRequest) {
             `[ingest] vibe-routed ${retailer}: LLM=[${(deal.categories ?? []).join(',')}] + vibes=[${editorialFromStore.join(',')}] → [${mergedCategories.join(',')}]`
           )
         }
+
+        // Skip duplicates within this week, but let backfill/reprocessing
+        // merge in newly learned categories such as the added furnature slug.
+        // This keeps existing deal rows useful without creating duplicate
+        // cards for the same promotion.
+        const existingDeal = existingDealByKey.get(dealKey)
+        if (existingDeal) {
+          const nextCategories = Array.from(
+            new Set([...(existingDeal.categories ?? []), ...mergedCategories])
+          )
+          const changed = nextCategories.length !== existingDeal.categories.length
+          if (changed) {
+            const { error: updateError } = await supabase
+              .from('deals')
+              .update({
+                categories: nextCategories,
+                last_seen_at: new Date().toISOString(),
+              })
+              .eq('id', existingDeal.id)
+            if (updateError) {
+              console.error('[ingest] duplicate category update error:', JSON.stringify(updateError))
+            } else {
+              existingDeal.categories = nextCategories
+              console.log(`[ingest] updated duplicate categories: ${retailer} → [${nextCategories.join(',')}]`)
+            }
+          } else {
+            console.log(`[ingest] skipping duplicate: ${retailer} ${deal.deal_type} ${deal.percent_off}%`)
+          }
+          continue
+        }
+        if (seenDealKeys.has(dealKey)) {
+          console.log(`[ingest] skipping in-run duplicate: ${retailer} ${deal.deal_type} ${deal.percent_off}%`)
+          continue
+        }
+        seenDealKeys.add(dealKey)
 
         // Auto-activate pending stores. Only flip 'pending' — never
         // touch 'no_email', 'declined', or 'auto_added' (the new
@@ -567,7 +615,7 @@ export async function GET(request: NextRequest) {
     // mid-run). If processedUids is empty for any reason — every email
     // hit an exception — leave the cursor where it was so next run
     // retries.
-    if (processedUids.length > 0) {
+    if (!forceDateWindow && processedUids.length > 0) {
       const newLastUid = Math.max(...processedUids)
       const { error: cursorErr } = await supabase
         .from('ingest_state')
@@ -594,6 +642,9 @@ export async function GET(request: NextRequest) {
       emails_with_no_deals: emailsWithNoDeals,
       new_deals: newDeals,
       total_deals_this_week: totalDeals ?? 0,
+      mode: forceDateWindow ? 'backfill' : 'cursor',
+      lookback_hours: lookbackHours,
+      per_run_limit: perRunLimit,
       cursor: {
         last_uid: processedUids.length > 0 ? Math.max(...processedUids) : cursor.afterUid,
         uid_validity: fetchResult.uidValidity,
