@@ -32,6 +32,7 @@ const DealSchema = z.object({
   link: z.string().nullable().optional(),
   categories: z.array(z.string()).catch([]),
   deal_subtype: z.string().nullable().optional(),
+  keywords: z.array(z.string()).catch([]),
 })
 
 const ExtractionSchema = z.object({
@@ -97,6 +98,7 @@ For each deal:
       patio furniture, and similar home furniture. Do not use
       "home-decor" for actual furniture.
 9. DEAL_SUBTYPE: A single short fine-grained product type if the email is specifically about it (e.g. "jeans", "sneakers", "lipstick", "coffee maker", "yoga pants"). null for generic / site-wide / multi-product sales.
+10. KEYWORDS: Array of 5–15 specific product terms a shopper might type when searching for this deal. Focus on the actual items on sale, not the discount mechanics. Be specific and varied — include synonyms and common names. Examples: a furniture email → ["couch","sofa","sectional","dining table","bookshelf","nightstand"]; a shoe sale → ["sneakers","boots","heels","sandals","running shoes"]; a skincare email → ["moisturizer","sunscreen","serum","face cream","SPF"]. For a generic site-wide sale with no specific products mentioned, use [].
 
 RULES:
 - Extract any sale, discount, promo code, or special offer — even if the percentage is not stated
@@ -135,7 +137,8 @@ Return ONLY this exact JSON structure:
       "expiration_date": "2024-12-31",
       "link": "https://example.com",
       "categories": ["womens-clothes"],
-      "deal_subtype": "jeans"
+      "deal_subtype": "jeans",
+      "keywords": ["jeans", "denim", "skinny jeans", "straight leg jeans"]
     }
   ]
 }

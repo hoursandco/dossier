@@ -490,6 +490,7 @@ export async function GET(request: NextRequest) {
           affiliate_link: null,
           categories: mergedCategories,
           deal_subtype: deal.deal_subtype ?? null,
+          keywords: deal.keywords ?? [],
           last_seen_at: new Date().toISOString(),
           week_of: weekOfStr,
           source_email_id: email.id,
@@ -546,6 +547,18 @@ export async function GET(request: NextRequest) {
           continue
         }
         newDeals++
+
+        // Upsert keywords into the global vocabulary table via a Postgres
+        // function that properly increments deal_count on conflict (a plain
+        // upsert would reset it to 1). Fire-and-forget — never blocks ingestion.
+        const kws = dealRow.keywords
+        if (kws && kws.length > 0) {
+          supabase
+            .rpc('upsert_keywords', { kws })
+            .then(({ error: kwErr }) => {
+              if (kwErr) console.error('[ingest] keywords upsert error:', JSON.stringify(kwErr))
+            })
+        }
       }
 
       // Log to retailer_scan_log
