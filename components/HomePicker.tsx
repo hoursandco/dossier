@@ -582,32 +582,47 @@ export function HomePicker() {
               )}
             </form>
 
-            {/* Min discount — inline row below search */}
+            {/* Price tier + include filters — inline below search */}
             {signedIn === true && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10 }}>
-                <span style={{
-                  fontFamily: "'Stardos Stamp', monospace", fontSize: 9,
-                  letterSpacing: '.18em', textTransform: 'uppercase',
-                  color: 'var(--ink-soft)', marginRight: 2,
-                }}>Min:</span>
-                {DISCOUNT_STEPS.map((step) => (
-                  <button
-                    key={step.label}
-                    type="button"
-                    disabled={!isPaid}
-                    onClick={() => saveMinDiscount(step.value)}
-                    style={{
-                      fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
-                      letterSpacing: '.12em', textTransform: 'uppercase',
-                      padding: '5px 10px', minHeight: 30,
-                      background: (minDiscountPct ?? null) === step.value ? 'var(--ink)' : '#fffbe6',
-                      color: (minDiscountPct ?? null) === step.value ? 'var(--paper, #f6ecd2)' : 'var(--ink)',
-                      border: '1.5px solid var(--ink)',
-                      cursor: !isPaid ? 'not-allowed' : 'pointer',
-                      opacity: !isPaid ? 0.55 : 1,
-                    }}
-                  >{step.label}</button>
-                ))}
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    fontFamily: "'Stardos Stamp', monospace", fontSize: 9,
+                    letterSpacing: '.18em', textTransform: 'uppercase',
+                    color: 'var(--ink-soft)', marginRight: 2,
+                  }}>Price:</span>
+                  {PRICE_TIERS.map((tier) => (
+                    <button
+                      key={tier}
+                      type="button"
+                      disabled={!isPaid}
+                      onClick={() => toggleTier(tier)}
+                      aria-pressed={allowedTiers.has(tier)}
+                      style={{
+                        fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
+                        letterSpacing: '.12em', textTransform: 'uppercase',
+                        padding: '5px 10px', minHeight: 30,
+                        background: allowedTiers.has(tier) ? 'var(--ink)' : '#fffbe6',
+                        color: allowedTiers.has(tier) ? 'var(--paper, #f6ecd2)' : 'var(--ink)',
+                        border: '1.5px solid var(--ink)',
+                        cursor: !isPaid ? 'not-allowed' : 'pointer',
+                        opacity: !isPaid ? 0.55 : 1,
+                      }}
+                    >{tier}</button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px', marginTop: 10, fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink)' }}>
+                  {([
+                    { key: 'include_free_shipping' as const, label: 'Free shipping', value: includeFreeShipping },
+                    { key: 'include_bogo' as const, label: 'BOGO offers', value: includeBogo },
+                    { key: 'include_gwp' as const, label: 'Gift with purchase', value: includeGwp },
+                  ]).map(({ key, label, value }) => (
+                    <label key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: !isPaid ? 'not-allowed' : 'pointer', opacity: !isPaid ? 0.55 : 1 }}>
+                      <input type="checkbox" checked={value} disabled={!isPaid} onChange={(e) => updateInclude(key, e.target.checked)} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -749,19 +764,9 @@ export function HomePicker() {
             <p style={{ marginTop: 28, textAlign: 'center', color: 'var(--ink-soft)', fontFamily: "'Special Elite', monospace" }}>Loading…</p>
           )}
 
-          {/* Signed-in: filters + send + danger zone */}
+          {/* Signed-in: send + danger zone */}
           {signedIn === true && (
             <>
-              <FilterPanel
-                isPaid={isPaid}
-                allowedTiers={allowedTiers}
-                onToggleTier={toggleTier}
-                includeFreeShipping={includeFreeShipping}
-                includeBogo={includeBogo}
-                includeGwp={includeGwp}
-                onToggleInclude={updateInclude}
-              />
-
               {storeCount > 0 && (
                 <div style={{ marginTop: 20 }}>
                   <button
@@ -928,8 +933,6 @@ function DealCard({ deal }: { deal: DealResult }) {
   )
 }
 
-// ── FilterPanel ─────────────────────────────────────────────────────────
-
 const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
 const DISCOUNT_STEPS: Array<{ label: string; value: number | null }> = [
   { label: 'Any', value: null },
@@ -939,70 +942,3 @@ const DISCOUNT_STEPS: Array<{ label: string; value: number | null }> = [
   { label: '50%+', value: 50 },
 ]
 
-function FilterPanel({
-  isPaid,
-  allowedTiers, onToggleTier,
-  includeFreeShipping, includeBogo, includeGwp, onToggleInclude,
-}: {
-  isPaid: boolean
-  allowedTiers: Set<string>
-  onToggleTier: (tier: string) => void
-  includeFreeShipping: boolean
-  includeBogo: boolean
-  includeGwp: boolean
-  onToggleInclude: (key: 'include_free_shipping' | 'include_bogo' | 'include_gwp', value: boolean) => void
-}) {
-  const disabled = !isPaid
-
-  const chipStyle = (active: boolean): React.CSSProperties => ({
-    fontFamily: "'Stardos Stamp', monospace", fontSize: 12,
-    letterSpacing: '.14em', textTransform: 'uppercase',
-    padding: '8px 14px', minHeight: 36,
-    background: active ? 'var(--ink)' : '#fffbe6',
-    color: active ? 'var(--paper, #f6ecd2)' : 'var(--ink)',
-    border: '2px solid var(--ink)', boxShadow: '2px 2px 0 var(--ink)',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.55 : 1,
-    transition: 'transform .12s',
-  })
-
-  return (
-    <div style={{ marginTop: 28, padding: '18px 20px', background: '#fff8e2', border: '2px solid var(--ink)', boxShadow: '3px 3px 0 var(--ink)', position: 'relative' }}>
-      {disabled && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-          <a href="/pricing" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'var(--ink)', color: 'var(--yellow)', fontFamily: "'Stardos Stamp', monospace", fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', textDecoration: 'none', border: '1.5px solid var(--ink)' }} title="Upgrade to use these filters" aria-label="Upgrade to Personal Shopper">
-            <span aria-hidden="true">🔒</span>Locked
-          </a>
-        </div>
-      )}
-
-      <div>
-        <div style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 10, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--ink-soft)', marginBottom: 8 }}>Price tier</div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {PRICE_TIERS.map((tier) => (
-            <button key={tier} type="button" disabled={disabled} onClick={() => onToggleTier(tier)} style={chipStyle(allowedTiers.has(tier))} aria-pressed={allowedTiers.has(tier)}>{tier}</button>
-          ))}
-        </div>
-        <p style={{ margin: '8px 0 0', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 12, color: 'var(--ink-soft)' }}>
-          {allowedTiers.size === 0 || allowedTiers.size === 4 ? 'All tiers' : `Only ${Array.from(allowedTiers).join(' / ')} stores`}
-        </p>
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        <div style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 10, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--ink-soft)', marginBottom: 8 }}>Also include</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink)' }}>
-          {([
-            { key: 'include_free_shipping' as const, label: 'Free shipping', value: includeFreeShipping },
-            { key: 'include_bogo' as const, label: 'BOGO offers', value: includeBogo },
-            { key: 'include_gwp' as const, label: 'Gift with purchase', value: includeGwp },
-          ]).map(({ key, label, value }) => (
-            <label key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1 }}>
-              <input type="checkbox" checked={value} disabled={disabled} onChange={(e) => onToggleInclude(key, e.target.checked)} />
-              {label}
-            </label>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
