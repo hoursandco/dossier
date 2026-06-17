@@ -12,17 +12,31 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServiceClient()
 
-  const { data, error } = await supabase
-    .from('keywords')
-    .select('keyword, deal_count')
-    .ilike('keyword', `${q}%`)
-    .order('deal_count', { ascending: false })
-    .limit(10)
+  const [keywordsResult, storesResult] = await Promise.all([
+    supabase
+      .from('keywords')
+      .select('keyword, deal_count')
+      .ilike('keyword', `${q}%`)
+      .order('deal_count', { ascending: false })
+      .limit(8),
+    supabase
+      .from('stores')
+      .select('name')
+      .ilike('name', `%${q}%`)
+      .eq('confirmed', true)
+      .limit(4),
+  ])
 
-  if (error) {
-    console.error('[keywords/suggest] error:', JSON.stringify(error))
-    return NextResponse.json({ keywords: [] }, { status: 500 })
-  }
+  const brands = (storesResult.data ?? []).map((s) => ({
+    keyword: s.name,
+    deal_count: 0,
+    type: 'brand' as const,
+  }))
 
-  return NextResponse.json({ keywords: data ?? [] })
+  const keywords = (keywordsResult.data ?? []).map((k) => ({
+    ...k,
+    type: 'keyword' as const,
+  }))
+
+  return NextResponse.json({ keywords: [...brands, ...keywords] })
 }
