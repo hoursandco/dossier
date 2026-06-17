@@ -7,8 +7,7 @@ import './globals.css'
 const GA_MEASUREMENT_ID = 'G-8N54H781N4'
 const ADSENSE_CLIENT_ID = 'ca-pub-7740708597836782'
 
-// AdSense is shown to anonymous visitors and free-tier subscribers; paid
-// subscribers are ad-free as part of the value proposition.
+// AdSense is hidden only for legacy paid subscribers.
 async function viewerIsPaid(): Promise<boolean> {
   try {
     const supabase = await createClient()
@@ -156,8 +155,7 @@ export default async function RootLayout({
           `}
         </Script>
 
-        {/* Google AdSense — shown only to anonymous visitors and free-tier
-            subscribers. Paid subscribers are ad-free.
+        {/* Google AdSense — hidden only for legacy paid subscribers.
 
             Rendered as a plain <script> element (not next/script) so it
             appears as a real <script async src="..."> tag in the

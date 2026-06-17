@@ -4,6 +4,7 @@
 // Same POST /api/unsubscribe flow as production; just restyled.
 
 import { useState, Suspense } from 'react'
+import { DlFooter } from '@/components/DlFooter'
 
 const STAR_POINTS =
   '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
@@ -136,15 +137,7 @@ export default function PreviewUnsubscribe() {
         </div>
       </section>
 
-      <footer className="dl-footer">
-        <div className="footer-wordmark" aria-label="Deal Dossier">
-          DEAL&nbsp;D<span className="o">O</span>SSIER
-        </div>
-        <div className="footer-meta">
-          <a href="/suggest">Suggest a Store</a> · <a href="/">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
-          An Hours &amp; Co. publication · © 2026
-        </div>
-      </footer>
+      <DlFooter />
     </>
   )
 }

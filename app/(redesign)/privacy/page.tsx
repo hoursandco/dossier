@@ -4,6 +4,7 @@
 // heading + body — mirrors the editorial sectioning used elsewhere.
 
 import { DossierNav } from '@/components/DossierNav'
+import { DlFooter } from '@/components/DlFooter'
 
 export const metadata = {
   title: 'Privacy Policy — Deal Dossier',
@@ -12,7 +13,7 @@ export const metadata = {
 const SECTIONS: Array<{ title: string; body: string }> = [
   {
     title: 'Information We Collect',
-    body: 'We collect your email address when you subscribe. When you configure your account we also collect your delivery preferences (send day, minimum discount threshold), content filters (deal categories, deal types, gender, spend tier), and, for subscribers who choose retailer mode, a list of individual retailers you have selected. For paid subscribers, we also collect billing information through our payment processor (Stripe) — Hours & Co., LLC does not directly store credit card numbers.',
+    body: 'We collect your email address when you subscribe or sign in. When you configure your account we also collect your delivery preferences (send day, minimum discount threshold), content filters (deal categories, deal types, gender, spend tier), and any individual retailers you have selected. You can search for deals without entering an email address.',
   },
   {
     title: 'How We Use Your Information',
@@ -28,11 +29,11 @@ const SECTIONS: Array<{ title: string; body: string }> = [
   },
   {
     title: 'Security',
-    body: 'We use industry-standard encryption (TLS) for data in transit and at rest. Authentication is handled via magic links — no passwords are ever created or stored. Hours & Co., LLC, as the data controller, operates Deal Dossier on infrastructure provided by Supabase (database and auth), Vercel (hosting), Resend (email delivery), and Stripe (billing for paid subscribers). All providers operate enterprise-grade security practices. Your email address is shared with Resend solely for the purpose of delivering sign-in links and your weekly brief.',
+    body: 'We use industry-standard encryption (TLS) for data in transit and at rest. Authentication is handled via magic links — no passwords are ever created or stored. Hours & Co., LLC, as the data controller, operates Deal Dossier on infrastructure provided by Supabase (database and auth), Vercel (hosting), and Resend (email delivery). All providers operate enterprise-grade security practices. Your email address is shared with Resend solely for the purpose of delivering sign-in links and your weekly brief.',
   },
   {
     title: 'Cookies & Analytics',
-    body: 'We use session cookies required for authentication. We also use Google Analytics to understand aggregate site usage — it sets analytics cookies (such as _ga and _ga_*) that do not identify individual users. Free-tier and anonymous visitors see advertisements delivered by Google AdSense, which uses cookies to personalize ads and measure performance; paid subscribers do not see ads. You can opt out of personalized advertising at adssettings.google.com, or block third-party cookies in your browser settings.',
+    body: 'We use session cookies required for authentication. We also use Google Analytics to understand aggregate site usage — it sets analytics cookies (such as _ga and _ga_*) that do not identify individual users. Visitors may see advertisements delivered by Google AdSense, which uses cookies to personalize ads and measure performance. You can opt out of personalized advertising at adssettings.google.com, or block third-party cookies in your browser settings.',
   },
   {
     title: 'Your Rights',
@@ -121,15 +122,7 @@ export default function PreviewPrivacy() {
         </div>
       </section>
 
-      <footer className="dl-footer">
-        <div className="footer-wordmark" aria-label="Deal Dossier">
-          DEAL&nbsp;D<span className="o">O</span>SSIER
-        </div>
-        <div className="footer-meta">
-          <a href="/suggest">Suggest a Store</a> · <a href="/">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
-          An Hours &amp; Co. publication · © 2026
-        </div>
-      </footer>
+      <DlFooter />
     </>
   )
 }

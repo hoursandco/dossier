@@ -75,6 +75,37 @@ const INGEST_MAX_PER_RUN = Math.max(
   Number(process.env.INGEST_MAX_PER_RUN) || 60
 )
 
+// Returns true when an email body is mostly images — stripping tags leaves
+// fewer than 500 characters of real text. These emails need their hosted
+// web version fetched to get actual sale content.
+function isBodySparse(html: string): boolean {
+  const text = html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text.length < 500
+}
+
+// Fetch the hosted "view in browser" version of an email. Retailers like
+// Gap and Bath & Body Works send image-only emails but host a text-rich
+// web version at the same URL — this gets us the actual sale copy.
+async function fetchWebVersion(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DealDossierBot/1.0)' },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+    if (html.length < 500) return null
+    return html
+  } catch {
+    return null
+  }
+}
+
 // Queue-based worker pool. Unlike batched Promise.all, a new task starts the
 // moment any worker frees up — no head-of-line blocking when one email's
 // OpenAI call is slow.
@@ -117,7 +148,7 @@ export async function GET(request: NextRequest) {
   const hoursParam = request.nextUrl.searchParams.get('hours')
   const requestedHours = hoursParam ? Number(hoursParam) : 24
   const lookbackHours = Number.isFinite(requestedHours)
-    ? Math.min(168, Math.max(1, Math.floor(requestedHours)))
+    ? Math.min(336, Math.max(1, Math.floor(requestedHours)))
     : 24
   const forceDateWindow =
     request.nextUrl.searchParams.get('backfill') === '1' || hoursParam !== null
@@ -309,6 +340,17 @@ export async function GET(request: NextRequest) {
         (deferred > 0 ? ` (${deferred} deferred to next run)` : '')
     )
 
+    // Pre-load processed email IDs for this week so backfill re-runs skip
+    // emails the LLM already saw. Without this, re-running a backfill on the
+    // same inbox window re-calls the LLM on the same email and can produce a
+    // slightly different description, generating a new dedup key and inserting
+    // a duplicate deal (the Charlotte Tilbury triple-card bug).
+    const { data: processedEmailRows } = await supabase
+      .from('processed_emails')
+      .select('email_id')
+      .eq('week_of', weekOfStr)
+    const alreadyProcessedIds = new Set((processedEmailRows ?? []).map((r) => r.email_id))
+
     // Build a set of already-seen deal keys this week so we never insert
     // the same sale twice even if 3 emails announce it
     const { data: existingDealsThisWeek } = await supabase
@@ -337,6 +379,15 @@ export async function GET(request: NextRequest) {
     const dryRunWouldInsertDeals: Array<{ retailer: string; deal_type: string; description: string }> = []
 
     async function processEmail(email: (typeof newEmails)[number]): Promise<void> {
+      // Skip emails already processed this week — prevents duplicate deals when
+      // a backfill re-run hits the same inbox window and the LLM returns a
+      // slightly different description, bypassing the deal-key dedup.
+      if (alreadyProcessedIds.has(email.id)) {
+        console.log(`[ingest] skip already-processed: ${email.id}`)
+        processedUids.push(email.uid)
+        return
+      }
+
       // Fast-path: skip obviously transactional emails without an OpenAI call
       if (isTransactionalEmail(email.subject)) {
         console.log(`[ingest] skip transactional: "${email.subject}"`)
@@ -346,7 +397,19 @@ export async function GET(request: NextRequest) {
         return
       }
 
-      const extracted = await extractDealsFromEmail(email.from, email.subject, email.body, allCategories)
+      let emailBody = email.body
+      if (isBodySparse(email.body) && email.viewInBrowserUrl) {
+        console.log(`[ingest] sparse body, fetching web version: ${email.viewInBrowserUrl}`)
+        const webHtml = await fetchWebVersion(email.viewInBrowserUrl)
+        if (webHtml) {
+          emailBody = webHtml
+          console.log(`[ingest] web version fetched (${webHtml.length} chars)`)
+        } else {
+          console.log(`[ingest] web version fetch failed, using original body`)
+        }
+      }
+
+      const extracted = await extractDealsFromEmail(email.from, email.subject, emailBody, allCategories)
       console.log(`[ingest] ${email.from} | subject: ${email.subject} | extracted: ${extracted.length}`)
       if (extracted.length > 0) emailsWithDeals++
       else emailsWithNoDeals++

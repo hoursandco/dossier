@@ -4,6 +4,7 @@
 // only; the design system carries the visual identity.
 
 import { DossierNav } from '@/components/DossierNav'
+import { DlFooter } from '@/components/DlFooter'
 
 export const metadata = {
   title: 'Terms of Service — Deal Dossier',
@@ -28,8 +29,8 @@ const SECTIONS: Array<{ title: string; body: string }> = [
     body: 'You agree not to: (a) scrape, copy, or systematically extract content from the Service; (b) interfere with or disrupt the Service or its infrastructure; (c) attempt to gain unauthorized access to any part of the Service or to another user’s account; (d) automate sign-ups, sign-ins, or self-sends beyond the limits we enforce; (e) use the Service for any unlawful purpose or in violation of these Terms. We may suspend or terminate accounts that violate these rules, with or without notice.',
   },
   {
-    title: 'Subscriptions, Billing & Cancellation',
-    body: 'Deal Dossier offers a free tier ("Inbox Cleaner") and a paid tier ("Personal Shopper") priced at $4.99/month. Paid subscriptions auto-renew at the end of each billing period unless you cancel before renewal. You can cancel at any time from your account settings; you will keep paid access through the end of the billing period you have already paid for. We do not offer pro-rated refunds for partial periods. All payments are processed by Stripe; we never see or store your full payment card details. If a payment fails, we may downgrade your account to the free tier until the issue is resolved.',
+    title: 'Fees',
+    body: 'Deal Dossier does not currently charge a subscription fee for shopper-facing features. We may introduce paid offerings in the future, but we will not charge you unless you affirmatively choose a paid product and provide any required billing information.',
   },
   {
     title: 'Affiliate Relationships',
@@ -45,7 +46,7 @@ const SECTIONS: Array<{ title: string; body: string }> = [
   },
   {
     title: 'Disclaimers & Limitation of Liability',
-    body: 'The Service is provided "as is" and "as available," without warranties of any kind, express or implied, including warranties of merchantability, fitness for a particular purpose, and non-infringement. To the maximum extent permitted by law, Hours & Co., LLC’s total cumulative liability for any claim arising from your use of the Service is limited to the greater of (a) the amount you have paid us in the twelve months preceding the claim, or (b) $50 USD. We are not liable for indirect, incidental, consequential, special, or punitive damages — including but not limited to lost profits, lost savings, or losses on purchases made through affiliate links.',
+    body: 'The Service is provided "as is" and "as available," without warranties of any kind, express or implied, including warranties of merchantability, fitness for a particular purpose, and non-infringement. To the maximum extent permitted by law, Hours & Co., LLC’s total cumulative liability for any claim arising from your use of the Service is limited to $50 USD. We are not liable for indirect, incidental, consequential, special, or punitive damages — including but not limited to lost profits, lost savings, or losses on purchases made through affiliate links.',
   },
   {
     title: 'Indemnification',
@@ -53,7 +54,7 @@ const SECTIONS: Array<{ title: string; body: string }> = [
   },
   {
     title: 'Termination',
-    body: 'We may suspend or terminate your account at any time, with or without notice, for any reason — most commonly for violation of the Acceptable Use rules above, suspected fraud, or non-payment of fees. You may stop using the Service and delete your account at any time from your settings. Sections of these Terms that by their nature should survive termination (including Intellectual Property, Disclaimers, Limitation of Liability, and Indemnification) will continue to apply after termination.',
+    body: 'We may suspend or terminate your account at any time, with or without notice, for any reason — most commonly for violation of the Acceptable Use rules above, abuse, or suspected fraud. You may stop using the Service and delete your account at any time from your settings. Sections of these Terms that by their nature should survive termination (including Intellectual Property, Disclaimers, Limitation of Liability, and Indemnification) will continue to apply after termination.',
   },
   {
     title: 'Governing Law & Disputes',
@@ -138,15 +139,7 @@ export default function TermsPage() {
         </div>
       </section>
 
-      <footer className="dl-footer">
-        <div className="footer-wordmark" aria-label="Deal Dossier">
-          DEAL&nbsp;D<span className="o">O</span>SSIER
-        </div>
-        <div className="footer-meta">
-          <a href="/suggest">Suggest a Store</a> · <a href="/">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
-          An Hours &amp; Co. publication · © 2026
-        </div>
-      </footer>
+      <DlFooter />
     </>
   )
 }

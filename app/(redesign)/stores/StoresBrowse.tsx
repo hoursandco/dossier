@@ -17,14 +17,12 @@
 //   - Each card shows name + website link + add-to-watchlist toggle.
 //   - Signed-out users tapping + are redirected to /login?next=/stores
 //     so they come back here after sign-in.
-//   - 3-pick free-tier limit is honored — clicking + when at cap pops
-//     the same upgrade modal we built for /preferences.
+//   - Store picks are available to every signed-in subscriber.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DossierNav } from '@/components/DossierNav'
+import { DlFooter } from '@/components/DlFooter'
 import { trackEvent } from '@/lib/analytics'
-
-const FREE_PICK_LIMIT = 3
 
 interface DirectoryStore {
   id: string
@@ -59,7 +57,6 @@ export function StoresBrowse() {
   const [categories, setCategories] = useState<Category[]>([])
   const [storePicks, setStorePicks] = useState<StorePick[]>([])
   const [signedIn, setSignedIn] = useState(false)
-  const [isPaid, setIsPaid] = useState(false)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -71,7 +68,6 @@ export function StoresBrowse() {
   const [watchTotal, setWatchTotal] = useState<Record<string, number>>({})
   const [watchWeek, setWatchWeek] = useState<Record<string, number>>({})
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [limitModal, setLimitModal] = useState<{ current: number; allowed: number } | null>(null)
   // Back-to-top FAB visibility — appears after the user scrolls past
   // ~600px so they can jump back to the top of a long brand list.
   const [showToTop, setShowToTop] = useState(false)
@@ -83,7 +79,7 @@ export function StoresBrowse() {
   }, [])
 
   // Bootstrap: load directory, collections, and (if signed in) the
-  // user's current picks + tier. All in parallel — the page is read-
+  // user's current picks. All in parallel — the page is read-
   // mostly so we batch the initial fetches.
   useEffect(() => {
     let cancelled = false
@@ -103,7 +99,6 @@ export function StoresBrowse() {
         setCategories(catsRes.collections ?? [])
         setStorePicks(picksRes.store_picks ?? [])
         setSignedIn(!!accountRes?.email)
-        setIsPaid(accountRes?.tier === 'paid')
         setWatchTotal(countsRes.total ?? {})
         setWatchWeek(countsRes.week ?? {})
       })
@@ -196,13 +191,6 @@ export function StoresBrowse() {
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) {
-        if (d?.over_limit) {
-          setLimitModal({
-            current: d.current_picks ?? FREE_PICK_LIMIT,
-            allowed: d.allowed_picks ?? FREE_PICK_LIMIT,
-          })
-          return
-        }
         alert(d.error ?? 'Could not add')
         return
       }
@@ -426,13 +414,12 @@ export function StoresBrowse() {
               >
                 {popularThisWeek.map(({ store, count }) => {
                   const picked = pickedStoreIds.has(store.id)
-                  const overCap = signedIn && !isPaid && !picked && storePicks.length >= FREE_PICK_LIMIT
                   return (
                     <button
                       key={store.id}
                       type="button"
                       onClick={() => (picked ? removePick(store.id) : addPick(store.id))}
-                      disabled={busyId === store.id || (overCap && !picked)}
+                      disabled={busyId === store.id}
                       title={
                         picked
                           ? `Watching ${store.name}`
@@ -450,8 +437,8 @@ export function StoresBrowse() {
                         color: picked ? '#fff8e2' : 'var(--ink)',
                         border: `1.5px solid ${picked ? 'var(--olive-deep)' : 'var(--ink)'}`,
                         boxShadow: '2px 2px 0 var(--ink)',
-                        cursor: overCap && !picked ? 'not-allowed' : 'pointer',
-                        opacity: overCap && !picked ? 0.5 : 1,
+                        cursor: 'pointer',
+                        opacity: 1,
                         fontFamily: 'var(--font-serif)',
                         fontSize: 14,
                         fontWeight: 500,
@@ -517,7 +504,6 @@ export function StoresBrowse() {
               {filteredStores.map((s) => {
                 const picked = pickedStoreIds.has(s.id)
                 const busy = busyId === s.id
-                const overCap = signedIn && !isPaid && !picked && storePicks.length >= FREE_PICK_LIMIT
                 return (
                   <div
                     key={s.id}
@@ -581,19 +567,17 @@ export function StoresBrowse() {
                         <button
                           type="button"
                           onClick={() => addPick(s.id)}
-                          disabled={busy || overCap}
+                          disabled={busy}
                           title={
                             !signedIn
                               ? 'Sign in to add this store to your watchlist'
-                              : overCap
-                                ? 'Free-tier limit reached — upgrade for unlimited'
-                                : 'Add to your watchlist'
+                              : 'Add to your watchlist'
                           }
                           style={{
-                            ...pillStyle(overCap ? 'transparent' : '#fff8e2', overCap ? 'var(--ink-40)' : 'var(--ink)'),
-                            border: `1.5px solid ${overCap ? 'var(--ink-25, #cbc4ad)' : 'var(--ink)'}`,
-                            cursor: overCap ? 'not-allowed' : (busy ? 'wait' : 'pointer'),
-                            opacity: overCap ? 0.6 : 1,
+                            ...pillStyle('#fff8e2', 'var(--ink)'),
+                            border: '1.5px solid var(--ink)',
+                            cursor: busy ? 'wait' : 'pointer',
+                            opacity: 1,
                           }}
                         >
                           {busy ? '…' : signedIn ? '+ Add' : '+ Sign in'}
@@ -620,23 +604,7 @@ export function StoresBrowse() {
         </div>
       </section>
 
-      <footer className="dl-footer">
-        <div className="footer-wordmark" aria-label="Deal Dossier">
-          DEAL&nbsp;D<span className="o">O</span>SSIER
-        </div>
-        <div className="footer-meta">
-          <a href="/">Home</a> · <a href="/suggest">Suggest a Store</a> · <a href="/">Settings</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a><br /><br />
-          An Hours &amp; Co. publication · © 2026
-        </div>
-      </footer>
-
-      {limitModal && (
-        <LimitModal
-          current={limitModal.current}
-          allowed={limitModal.allowed}
-          onClose={() => setLimitModal(null)}
-        />
-      )}
+      <DlFooter />
 
       {/* ── Back-to-top FAB ─────────────────────────────────────────────
           Fixed bottom-right, shows after the user scrolls past the fold.
@@ -698,96 +666,4 @@ function pillStyle(bg: string, fg: string): React.CSSProperties {
     letterSpacing: '.14em',
     textTransform: 'uppercase',
   }
-}
-
-// Tiny inline modal — kept here instead of importing the
-// LimitReachedModal from /preferences so this page has no cross-page
-// dependency. Same visual language so the experience is consistent.
-function LimitModal({
-  current,
-  allowed,
-  onClose,
-}: {
-  current: number
-  allowed: number
-  onClose: () => void
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
-    }
-  }, [onClose])
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(13, 12, 10, 0.65)',
-        zIndex: 1200,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px 16px',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#f6ecd2',
-          maxWidth: 460,
-          width: '100%',
-          border: '2.5px solid #181612',
-          boxShadow: '6px 6px 0 #181612',
-          padding: 'clamp(20px, 5vw, 28px)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          position: 'relative',
-        }}
-      >
-        <div style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: '#b3211a', marginBottom: 8 }}>
-          — You&rsquo;ve hit your limit —
-        </div>
-        <h3 style={{ margin: '0 0 14px', fontFamily: "'Alfa Slab One', serif", fontWeight: 400, fontSize: 'clamp(22px, 6vw, 28px)', lineHeight: 1.05 }}>
-          {allowed} picks max <span style={{ fontFamily: "'Alfa Slab One', serif", textShadow: '2px 2px 0 #d4322a, 4px 4px 0 #b3211a', padding: '0 .04em' }}>on free.</span>
-        </h3>
-        <p style={{ margin: '0 0 22px', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 16, lineHeight: 1.5 }}>
-          You have {current} picks. Upgrade to <strong style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal' }}>Personal Shopper</strong> for unlimited category and store picks.
-        </p>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <a
-            href="/pricing"
-            style={{
-              flex: '1 1 200px', minHeight: 48,
-              fontFamily: "'Alfa Slab One', serif", fontSize: 14, letterSpacing: '.08em', textTransform: 'uppercase',
-              background: '#d4322a', color: '#fff8e2',
-              padding: '14px 18px 12px', border: '2px solid #181612', boxShadow: '4px 4px 0 #181612',
-              textDecoration: 'none', textAlign: 'center',
-            }}
-          >
-            Upgrade →
-          </a>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              flex: '1 1 200px', minHeight: 48,
-              fontFamily: "'Special Elite', monospace", fontSize: 13,
-              background: 'transparent', color: '#181612',
-              padding: '14px 18px 12px', border: '2px solid #181612', cursor: 'pointer',
-            }}
-          >
-            Maybe later
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }

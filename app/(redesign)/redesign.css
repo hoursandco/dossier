@@ -195,21 +195,139 @@
   border-bottom: 4px solid var(--ink);
 }
 
-/* Side-by-side hero + search layout */
+/* Two-column search + live results layout */
 .dl-shell .hero-search-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 29vw, 380px);
   align-items: flex-start;
   gap: 0;
+  min-height: min(760px, calc(100vh - 24px));
 }
-.dl-shell .hero-search-row > * { flex: 1 1 0; min-width: 0; }
+.dl-shell .hero-search-row > * { min-width: 0; }
+.dl-shell .home-search-column,
+.dl-shell .deal-results-column {
+  min-height: min(760px, calc(100vh - 24px));
+}
+.dl-shell .home-search-column {
+  background: var(--cream);
+}
+.dl-shell .home-search-hero {
+  max-width: 840px;
+  margin: 22px auto 0;
+  padding: 0 clamp(12px, 2.4vw, 24px);
+  text-align: center;
+}
+.dl-shell .home-search-hero h1 {
+  margin: 0;
+  font-family: "Alfa Slab One", serif;
+  font-weight: 400;
+  color: var(--ink);
+  font-size: clamp(42px, 6.1vw, 86px);
+  line-height: .96;
+  letter-spacing: .02em;
+  text-indent: .02em;
+  text-shadow: 3px 3px 0 var(--red), 6px 6px 0 var(--red-deep);
+  white-space: nowrap;
+}
+.dl-shell .home-search-hero .home-search-hero-script {
+  display: block;
+  font-family: "IM Fell English", serif;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--red-deep);
+  font-size: clamp(25px, 3.8vw, 54px);
+  line-height: 1;
+  letter-spacing: 0;
+  text-indent: 0;
+  text-shadow: none;
+  margin-bottom: .08em;
+}
+.dl-shell .home-search-hero .home-search-hero-main {
+  display: block;
+  white-space: nowrap;
+}
+.dl-shell .home-search-hero p {
+  margin: 18px 0 0;
+  font-family: "Stardos Stamp", sans-serif;
+  letter-spacing: .35em;
+  text-transform: uppercase;
+  text-indent: .35em;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.dl-shell .deal-results-column {
+  background: var(--cream);
+  border-left: 3px solid var(--ink);
+  padding: 84px clamp(14px, 2vw, 24px) 32px;
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+.dl-shell .deal-results-shell {
+  max-width: 520px;
+  margin: 0 auto;
+  padding-bottom: 32px;
+}
+.dl-shell .deal-results-empty {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 2px dashed rgba(24,22,18,.45);
+  background: #fff8e2;
+  padding: 24px;
+  box-shadow: 4px 4px 0 rgba(24,22,18,.16);
+}
+.dl-shell .deal-results-empty p {
+  margin: 0;
+  font-family: "IM Fell English", serif;
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
 /* In the side-by-side row the form-card must not lift above its column;
    the negative margin was sized for the old stacked layout. */
 .dl-shell .hero-search-row .form-card { margin-top: 0; }
 .dl-shell .hero-search-row .form-section { padding-top: 20px; }
 @media (max-width: 880px) {
-  .dl-shell .hero-search-row { flex-direction: column; }
-  /* Restore the lift effect for the stacked column view. */
-  .dl-shell .hero-search-row .form-card { margin-top: -120px; }
+  .dl-shell .hero-search-row {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .dl-shell .home-search-column,
+  .dl-shell .deal-results-column {
+    min-height: 0;
+    width: 100%;
+  }
+  /* On mobile the layout stacks: hero → DossierNav → form-section.
+     Negative margin would pull the form-card up through the nav. Zero it. */
+  .dl-shell .hero-search-row .form-card { margin-top: 0; }
+  .dl-shell .home-search-hero {
+    margin-top: 18px;
+  }
+  .dl-shell .home-search-hero h1 {
+    font-size: clamp(16px, 8vw, 42px);
+    letter-spacing: 0;
+    text-indent: 0;
+    text-shadow: 2px 2px 0 var(--red), 4px 4px 0 var(--red-deep);
+  }
+  .dl-shell .home-search-hero p {
+    letter-spacing: .22em;
+    text-indent: .22em;
+  }
+  .dl-shell .deal-results-column {
+    position: static;
+    max-height: none;
+    min-height: 0;
+    border-left: none;
+    border-top: 3px solid var(--ink);
+    padding: 28px clamp(14px, 4vw, 24px) 36px;
+  }
+  .dl-shell .deal-results-shell { max-width: 680px; }
 }
 
 /* Counters trio that sits ON the boundary between the dark hero and
@@ -1673,6 +1791,7 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
+.dl-shell .admin-stat-row-2 { grid-template-columns: repeat(2, 1fr); }
 .dl-shell .admin-stat-row-4 { grid-template-columns: repeat(4, 1fr); }
 .dl-shell .admin-stat-row-5 { grid-template-columns: repeat(5, 1fr); }
 @media (max-width: 980px) {

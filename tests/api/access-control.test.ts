@@ -49,7 +49,12 @@ describe('GET /api/account', () => {
   it('returns free defaults for a new authenticated user', async () => {
     await mockSupabase(
       { email: 'new@example.com' },
-      { subscribers: { data: null, error: null } },
+      {
+        subscribers: [
+          { data: null, error: null },
+          { data: [], error: null },
+        ],
+      },
     )
     const { GET } = await import('@/app/api/account/route')
 
@@ -104,14 +109,11 @@ describe('PATCH /api/account', () => {
     await expect(res.json()).resolves.toEqual({ error: 'Invalid body' })
   })
 
-  it('allows comped subscribers to save paid filters', async () => {
+  it('allows any signed-in subscriber to save filters', async () => {
     const { service } = await mockSupabase(
       { email: 'reader@example.com' },
       {
-        subscribers: [
-          { data: { tier: 'free', is_comped: true }, error: null },
-          { data: null, error: null },
-        ],
+        subscribers: { data: null, error: null },
       },
     )
     const { PATCH } = await import('@/app/api/account/route')
@@ -120,7 +122,7 @@ describe('PATCH /api/account', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ success: true })
-    expect(service.queries.subscribers[1].update).toHaveBeenCalledWith(
+    expect(service.queries.subscribers[0].update).toHaveBeenCalledWith(
       expect.objectContaining({ min_discount_pct: 25 }),
     )
   })
@@ -278,24 +280,31 @@ describe('POST /api/watches', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 403 when a free user is over the watch limit', async () => {
+  it('creates a watch for a free subscriber with existing watches', async () => {
     await mockSupabase(
       { email: 'reader@example.com' },
       {
-        subscribers: [
-          { data: { id: 'sub_1' }, error: null },
-          { data: { tier: 'free' }, error: null },
-        ],
+        subscribers: { data: { id: 'sub_1' }, error: null },
         categories: { data: { slug: 'fashion' }, error: null },
-        subscriber_watches: { data: null, error: null, count: 3 },
+        subscriber_watches: {
+          data: {
+            id: 'watch_1',
+            category_slug: 'fashion',
+            sub_type: null,
+            created_at: '2026-05-23T00:00:00.000Z',
+          },
+          error: null,
+        },
       },
     )
     const { POST } = await import('@/app/api/watches/route')
 
     const res = await POST(jsonRequest('/api/watches', { category_slug: 'fashion' }) as never)
 
-    expect(res.status).toBe(403)
-    await expect(res.json()).resolves.toMatchObject({ upgrade_url: '/pricing' })
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({
+      watch: expect.objectContaining({ id: 'watch_1', category_slug: 'fashion' }),
+    })
   })
 
   it('creates a watch for a paid subscriber', async () => {

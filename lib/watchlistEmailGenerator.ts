@@ -204,7 +204,7 @@ function retailerBlock(
 
 // ── "Also Today" compact section ─────────────────────────────────────
 //
-// Bottom-of-email summary for paid users who've opted into one or
+// Bottom-of-email summary for subscribers who've opted into one or
 // more non-percent deal types (free shipping / BOGO / GWP). Each
 // opted-in bucket renders as a single line: bucket label in stamp
 // type, then a comma-separated list of linked brand names. Empty
@@ -591,13 +591,13 @@ export function generateWatchlistEmail({
       <!-- Sections -->
 ${sectionsHtml}
 
-      <!-- "Also Today" compact lists (paid opt-ins only) -->
+      <!-- "Also Today" compact lists -->
 ${compactBuckets ? compactSection(compactBuckets, storeUrls) : ''}
 
       <!-- Still Watching roll-up: every section with no fresh deals
            lands here as a comma-separated list so an under-matched
            email still feels intentional, not empty. Sits below
-           "Also Today" so the bonus paid lists keep their prime spot. -->
+           "Also Today" so the bonus lists keep their prime spot. -->
 ${stillWatchingHtml}
 
       <!-- Postscript -->

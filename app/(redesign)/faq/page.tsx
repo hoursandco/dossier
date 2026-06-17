@@ -5,6 +5,7 @@
 
 import type { Metadata } from 'next'
 import { DossierNav } from '@/components/DossierNav'
+import { DlFooter } from '@/components/DlFooter'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   title: 'FAQ · Deal Dossier',
   description:
-    'How Deal Dossier works — what it does for you, the free tier, how deals are selected and ranked, and how billing works.',
+    'How Deal Dossier works — what it does for you, how deals are selected and ranked, and what it costs.',
   alternates: { canonical: 'https://dealdossier.io/faq' },
 }
 
@@ -60,12 +61,12 @@ export default async function FaqPage() {
 
           <details className="faq-item">
             <span className="faq-tag">Q · 02</span>
-            <summary>Is the free tier really free?</summary>
+            <summary>Is Deal Dossier really free?</summary>
             <div className="ans">
-              <p>Yes, absolutely. No credit card required. Up to 3 active picks plus the on-demand refresh — enough to track most short-term shopping projects at no cost.</p>
+              <p>Yes. No credit card required, and the deal search works even if you do not enter an email address. If you sign in, your watchlist and filters are saved for next time.</p>
               <p style={{ marginTop: 14, fontStyle: 'italic' }}>
                 <a href="/" style={{ color: 'var(--red-deep)', borderBottom: '1.5px solid var(--red-deep)' }}>
-                  Start free — no card, no catch. →
+                  Start searching — no card, no catch. →
                 </a>
               </p>
             </div>
@@ -99,9 +100,9 @@ export default async function FaqPage() {
 
           <details className="faq-item">
             <span className="faq-tag">Q · 05</span>
-            <summary>How does paid billing work?</summary>
+            <summary>What does it cost?</summary>
             <div className="ans">
-              <p>Personal Shopper is $4.99/month. Billing handled by Stripe — your card details never touch our servers. Cancel any time from settings; you keep access through the end of the period you&rsquo;ve paid for.</p>
+              <p>Nothing right now. Deal Dossier does not have a paid tier, and all shopping/search features are available without a subscription.</p>
               <p style={{ marginTop: 14, fontStyle: 'italic' }}>
                 <a href="/" style={{ color: 'var(--red-deep)', borderBottom: '1.5px solid var(--red-deep)' }}>
                   Lock in your three brands. We&rsquo;ll handle the rest. →
@@ -112,15 +113,7 @@ export default async function FaqPage() {
         </div>
       </section>
 
-      <footer className="dl-footer">
-        <div className="footer-wordmark" aria-label="Deal Dossier">
-          DEAL&nbsp;D<span className="o">O</span>SSIER
-        </div>
-        <div className="footer-meta">
-          <a href="/">Home</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
-          An Hours &amp; Co. publication · © 2026
-        </div>
-      </footer>
+      <DlFooter />
     </>
   )
 }

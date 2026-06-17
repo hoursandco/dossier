@@ -3,14 +3,11 @@
 //   Body: { store_id: uuid }
 //
 // Counterpart to /api/watches but for individual brands instead of
-// categories. The free-tier 3-pick limit is shared across BOTH tables
-// (watches + store_picks combined). Paid (or comped) is unlimited.
+// categories. Store picks are available to every signed-in subscriber.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { isPaidSubscriber } from '@/lib/subscriberTier'
-import { countTotalPicks, FREE_PICK_LIMIT } from '@/lib/pickLimits'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,29 +102,6 @@ export async function POST(req: NextRequest) {
   }
 
   const service = createServiceClient()
-
-  // Free-tier limit shared across watches + store picks.
-  const { data: tierRow } = await service
-    .from('subscribers')
-    .select('tier, is_comped')
-    .eq('id', subscriberId)
-    .single()
-  const isFreeTier = !isPaidSubscriber(tierRow)
-  if (isFreeTier) {
-    const total = await countTotalPicks(service, subscriberId)
-    if (total >= FREE_PICK_LIMIT) {
-      return NextResponse.json(
-        {
-          error: `Free tier is limited to ${FREE_PICK_LIMIT} total picks across categories and stores. Remove one or upgrade for unlimited.`,
-          over_limit: true,
-          current_picks: total,
-          allowed_picks: FREE_PICK_LIMIT,
-          upgrade_url: '/pricing',
-        },
-        { status: 403 }
-      )
-    }
-  }
 
   // Verify the store exists + is reachable (not declined). We allow
   // pending/no_email/auto_added so subscribers can opt into brands

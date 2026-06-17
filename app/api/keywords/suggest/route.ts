@@ -7,6 +7,16 @@ function normalizeSuggestion(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
+// Group similar keyword variants under one suggestion. Strips apostrophes and
+// trailing " gift" / " gifts" so "father's day", "fathers day gift", and
+// "fathers day gifts" all collapse to the same entry.
+function normalizeKeywordForDedup(kw: string): string {
+  return kw.toLowerCase()
+    .replace(/[''`]/g, '')
+    .replace(/\s+gifts?\s*$/, '')
+    .trim()
+}
+
 // Build a fuzzy store-name pattern from a user query by treating "&" and the
 // word "and" as interchangeable noise connectors.  Strips them out, then
 // joins remaining words with "%" wildcards, producing a pattern like
@@ -73,13 +83,17 @@ export async function GET(request: NextRequest) {
   // keywords table has both a capitalized and a lowercase variant.
   const seen = new Map<string, Suggestion>()
   for (const item of [...brands, ...keywords]) {
-    const key = item.keyword.toLowerCase()
+    const key = normalizeKeywordForDedup(item.keyword)
     const existing = seen.get(key)
     if (!existing) { seen.set(key, item); continue }
     // Brands always win over keyword rows
     if (item.type === 'brand' && existing.type !== 'brand') { seen.set(key, item); continue }
-    // Among same type, higher deal_count wins
-    if (item.type === existing.type && item.deal_count > existing.deal_count) seen.set(key, item)
+    // Among same type, prefer shorter label (base term over "gift" variant),
+    // then higher deal_count as tiebreaker
+    if (item.type === existing.type) {
+      if (item.keyword.length < existing.keyword.length) { seen.set(key, item); continue }
+      if (item.keyword.length === existing.keyword.length && item.deal_count > existing.deal_count) seen.set(key, item)
+    }
   }
 
   const merged = Array.from(seen.values())

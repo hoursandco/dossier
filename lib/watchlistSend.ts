@@ -24,7 +24,6 @@ import {
 } from '@/lib/watchlistEmailGenerator'
 import { rankDeals, isJunkDeal } from '@/lib/deals'
 import { fetchStoreData } from '@/lib/stores'
-import { isPaidSubscriber } from '@/lib/subscriberTier'
 
 const LOOKBACK_DAYS = 14
 const MAX_DEALS_PER_WATCH = 15
@@ -122,8 +121,8 @@ const NON_PERCENT_DEAL_TYPES = new Set<string>([
 //   - free-shipping : ditto
 //   - free-item     : almost always "gift with purchase" / sample
 //                     drops; better as a brand-list summary
-// Future: opt-in toggles in Personal Shopper Filters will let paid
-// users surface these back as a compact brand-list section at the
+// Future: opt-in toggles in Filters will let subscribers surface
+// these back as a compact brand-list section at the
 // bottom of the email. For now they're silently dropped.
 const DEFAULT_SUPPRESSED_DEAL_TYPES = new Set<string>([
   'free-shipping', 'free-item',
@@ -137,33 +136,24 @@ export async function sendWatchlistEmailForSubscriber(
   appUrl: string,
   subscriber: { id: string; email: string },
 ): Promise<WatchlistSendResult> {
-  // ── Load subscriber-level filters (paid feature) ─────────────────────
+  // ── Load subscriber-level filters ────────────────────────────────────
   // min_discount_pct + allowed_price_tiers were added in migration 029.
   // Falling back to null/empty if the columns aren't there yet — keeps
   // the send path compatible with pre-migration deployments.
   const { data: subRow } = await service
     .from('subscribers')
-    .select('tier, is_comped, min_discount_pct, allowed_price_tiers, include_free_shipping, include_bogo, include_gwp')
+    .select('min_discount_pct, allowed_price_tiers, include_free_shipping, include_bogo, include_gwp')
     .eq('id', subscriber.id)
     .single()
 
-  // Only honour the filters when the subscriber is paid or comped.
-  // Defense in depth — the UI gates writes, but if a free user ever
-  // had filters set (e.g. they were paid, set filters, downgraded) we
-  // ignore them rather than silently apply.
-  const isPaid = isPaidSubscriber(subRow)
-  const minDiscount = isPaid ? (subRow?.min_discount_pct ?? null) : null
-  const allowedTiers = isPaid
-    ? new Set<string>((subRow?.allowed_price_tiers ?? []) as string[])
-    : new Set<string>()
+  const minDiscount = subRow?.min_discount_pct ?? null
+  const allowedTiers = new Set<string>((subRow?.allowed_price_tiers ?? []) as string[])
   const tierFilterActive = allowedTiers.size > 0 && allowedTiers.size < 4
 
-  // Compact-list opt-ins (migration 031). Free users always see
-  // false here — the email skips the "Also Today" section entirely
-  // for them. Paid users get their saved preferences.
-  const includeFreeShipping = isPaid ? !!subRow?.include_free_shipping : false
-  const includeBogo = isPaid ? !!subRow?.include_bogo : false
-  const includeGwp = isPaid ? !!subRow?.include_gwp : false
+  // Compact-list opt-ins (migration 031).
+  const includeFreeShipping = !!subRow?.include_free_shipping
+  const includeBogo = !!subRow?.include_bogo
+  const includeGwp = !!subRow?.include_gwp
   const anyCompactOptIn = includeFreeShipping || includeBogo || includeGwp
 
   // ── Load category watches ────────────────────────────────────────────
@@ -256,9 +246,7 @@ export async function sendWatchlistEmailForSubscriber(
     DEFAULT_SUPPRESSED_DEAL_TYPES.has(d.deal_type ?? '') ||
     GWP_DESCRIPTION_RE.test(d.description ?? '')
 
-  // Price-tier filter applies to BOTH main and compact pools — a paid
-  // user who's locked their tier to $ shouldn't see $$$$ stores in
-  // either bucket.
+  // Price-tier filter applies to BOTH main and compact pools.
   const passesTierFilter = (d: Deal) => {
     if (!tierFilterActive) return true
     const retailerKey = (d.retailer ?? '').toLowerCase()

@@ -53,6 +53,11 @@ const DEAL_RANK_SCORE = (deal: Deal): number => {
 // (e.g. H-E-B "Buy X get Y free" items). Use a description snippet so each
 // product stays distinct. Otherwise deduplicate by retailer + type + discount.
 export function makeDealKey(deal: { retailer: string; deal_type: string; percent_off?: number | null; promo_code?: string | null; description?: string | null }): string {
+  // Free shipping wording varies too much across emails ("purchases" vs "orders"
+  // vs "items") — deduplicate per retailer regardless of description.
+  if (deal.deal_type === 'free-shipping' && !deal.promo_code) {
+    return `${deal.retailer}||free-shipping`
+  }
   if (deal.percent_off == null && !deal.promo_code) {
     // Product-specific deal — use normalized description snippet as tiebreaker
     const snippet = (deal.description ?? '')
@@ -112,7 +117,7 @@ export function filterDealsForSubscriber(
     genderFilter?: string[]         // e.g. ['men','women','unisex']
     subscriptionMode?: 'category' | 'retailer'
     selectedRetailers?: string[]    // only used when subscriptionMode === 'retailer'
-    excludeFreeShipping?: boolean   // paid tier: strip free-shipping deals entirely
+    excludeFreeShipping?: boolean   // strip free-shipping deals entirely
   }
 ): Deal[] {
   const {

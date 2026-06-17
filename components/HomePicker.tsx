@@ -8,7 +8,8 @@
 //   - Signed-IN:  keyword search + on-page results, plus store watchlist
 //     and SEND ME DEALS NOW for brand-based sends.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { trackPixel } from '@/lib/pixel'
 import { trackEvent } from '@/lib/analytics'
 
@@ -24,14 +25,10 @@ type DealResult = {
   expiration_date: string | null
   original_link: string
   affiliate_link: string | null
+  store_website: string | null
   source_email_link: string | null
   week_of: string
-}
-
-const FREE_PICK_LIMIT = 3
-
-function normName(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  price_tier: string | null
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -49,18 +46,12 @@ export function HomePicker() {
   const [isPaid, setIsPaid] = useState(false)
   const [isComped, setIsComped] = useState(false)
   const [hasBillingAccount, setHasBillingAccount] = useState(false)
-  const [cancelsAt, setCancelsAt] = useState<string | null>(null)
-  const [stores, setStores] = useState<StoreLite[]>([])
 
   const [pickedStores, setPickedStores] = useState<StoreLite[]>([])
   const [pickIdByStoreId, setPickIdByStoreId] = useState<Map<string, string>>(new Map())
 
-  // Paid-tier filters
-  const [minDiscountPct, setMinDiscountPct] = useState<number | null>(null)
+  // Deal filters
   const [allowedTiers, setAllowedTiers] = useState<Set<string>>(new Set())
-  const [includeFreeShipping, setIncludeFreeShipping] = useState(false)
-  const [includeBogo, setIncludeBogo] = useState(false)
-  const [includeGwp, setIncludeGwp] = useState(false)
 
   // Keyword search state
   const [keywordInput, setKeywordInput] = useState('')
@@ -72,10 +63,8 @@ export function HomePicker() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
 
-  // Brand deal search state
-  const [activeBrand, setActiveBrand] = useState<string | null>(null)
-  const [brandResults, setBrandResults] = useState<DealResult[] | null>(null)
-  const [brandSearching, setBrandSearching] = useState(false)
+  // Tracks which activeKeywords entries are brand (retailer) searches
+  const brandKeywordsRef = useRef<Set<string>>(new Set())
 
   // Anon submit (email deals from search results)
   const [email, setEmail] = useState('')
@@ -86,18 +75,28 @@ export function HomePicker() {
   const [sendingDeals, setSendingDeals] = useState(false)
   const [statusMsg, setStatusMsg] = useState('')
   const [error, setError] = useState('')
+  const [tipMenuOpen, setTipMenuOpen] = useState(false)
+  const tipRef = useRef<HTMLDivElement>(null)
+
+  const [resultsPortal, setResultsPortal] = useState<Element | null>(null)
+  useEffect(() => {
+    setResultsPortal(document.getElementById('deal-results-portal'))
+  }, [])
+
+  useEffect(() => {
+    if (!tipMenuOpen) return
+    function handleOutside(e: MouseEvent) {
+      if (tipRef.current && !tipRef.current.contains(e.target as Node)) {
+        setTipMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [tipMenuOpen])
 
   const debouncedKeyword = useDebounce(keywordInput, 300)
 
   useEffect(() => {
-    fetch('/api/stores?confirmed=true')
-      .then((r) => (r.ok ? r.json() : { stores: [] }))
-      .then((d) => {
-        const arr = (d.stores ?? []) as Array<{ id: string; name: string }>
-        setStores(arr.map((s) => ({ id: s.id, name: s.name })))
-      })
-      .catch(() => {})
-
     fetch('/api/account', { cache: 'no-store' })
       .then(async (r) => {
         if (!r.ok) { setSignedIn(false); return }
@@ -105,17 +104,12 @@ export function HomePicker() {
         if (d?.email) {
           setSignedIn(true)
           setAccountEmail(d.email)
-          setIsPaid(d.tier === 'paid')
+          setIsPaid(true)
           setIsComped(d.subscription_status === 'comped')
           setHasBillingAccount(!!d.has_billing_account)
-          setCancelsAt(d.cancels_at ?? null)
-          if (typeof d.min_discount_pct === 'number') setMinDiscountPct(d.min_discount_pct)
           if (Array.isArray(d.allowed_price_tiers) && d.allowed_price_tiers.length > 0) {
             setAllowedTiers(new Set(d.allowed_price_tiers))
           }
-          setIncludeFreeShipping(!!d.include_free_shipping)
-          setIncludeBogo(!!d.include_bogo)
-          setIncludeGwp(!!d.include_gwp)
           const picksRes = await fetch('/api/store-picks')
             .then((r) => (r.ok ? r.json() : { store_picks: [] }))
             .catch(() => ({ store_picks: [] }))
@@ -162,17 +156,43 @@ export function HomePicker() {
   }, [])
 
   const runSearch = useCallback(async (terms: string[]) => {
-    const clean = terms.map((t) => t.trim().toLowerCase()).filter(Boolean)
-    if (!clean.length) return
+    if (!terms.length) return
     setShowSuggestions(false)
     setSearchResults(null)
     setSearching(true)
     setError('')
     try {
-      const res = await fetch(`/api/deals/search?keywords=${encodeURIComponent(clean.join(','))}`)
-      const d = res.ok ? await res.json() : { deals: [] }
-      setSearchResults(d.deals ?? [])
-      trackEvent('keyword_search', { keywords: clean.join(','), results: (d.deals ?? []).length })
+      const brands = brandKeywordsRef.current
+      const brandTerms = terms.filter((t) => brands.has(t))
+      const kwTerms = terms.filter((t) => !brands.has(t)).map((t) => t.toLowerCase())
+
+      const fetches: Promise<DealResult[]>[] = []
+      if (kwTerms.length > 0) {
+        fetches.push(
+          fetch(`/api/deals/search?keywords=${encodeURIComponent(kwTerms.join(','))}`)
+            .then((r) => (r.ok ? r.json() : { deals: [] }))
+            .then((d) => d.deals ?? [])
+            .catch(() => [])
+        )
+      }
+      for (const brand of brandTerms) {
+        fetches.push(
+          fetch(`/api/deals/search?retailer=${encodeURIComponent(brand)}`)
+            .then((r) => (r.ok ? r.json() : { deals: [] }))
+            .then((d) => d.deals ?? [])
+            .catch(() => [])
+        )
+      }
+
+      const results = await Promise.all(fetches)
+      const seen = new Set<string>()
+      const deduped = results.flat().filter((d) => {
+        if (seen.has(d.id)) return false
+        seen.add(d.id)
+        return true
+      })
+      setSearchResults(deduped)
+      trackEvent('keyword_search', { keywords: terms.join(','), results: deduped.length })
     } catch {
       setSearchResults([])
     } finally {
@@ -181,6 +201,7 @@ export function HomePicker() {
   }, [])
 
   const removeKeyword = useCallback((kw: string) => {
+    brandKeywordsRef.current.delete(kw)
     setActiveKeywords((prev) => {
       const next = prev.filter((k) => k !== kw)
       if (next.length === 0) { setSearchResults(null) } else { runSearch(next) }
@@ -193,8 +214,6 @@ export function HomePicker() {
     const term = keywordInput.trim().toLowerCase()
     if (!term) return
     setKeywordInput('')
-    setActiveBrand(null)
-    setBrandResults(null)
     setActiveKeywords((prev) => {
       if (prev.includes(term)) return prev
       const next = [...prev, term]
@@ -203,74 +222,17 @@ export function HomePicker() {
     })
   }
 
-  const selectBrand = useCallback(async (name: string) => {
-    if (activeBrand === name) {
-      setActiveBrand(null)
-      setBrandResults(null)
-      return
-    }
-    setActiveKeywords([])
-    setSearchResults(null)
-    setActiveBrand(name)
-    setBrandResults(null)
-    setBrandSearching(true)
-    try {
-      const res = await fetch(`/api/deals/search?retailer=${encodeURIComponent(name)}`)
-      const d = res.ok ? await res.json() : { deals: [] }
-      setBrandResults(d.deals ?? [])
-    } catch {
-      setBrandResults([])
-    } finally {
-      setBrandSearching(false)
-    }
-  }, [activeBrand])
+  const searchBrand = useCallback((name: string) => {
+    if (activeKeywords.includes(name)) return
+    brandKeywordsRef.current.add(name)
+    setActiveKeywords((prev) => {
+      const next = [...prev, name]
+      runSearch(next)
+      return next
+    })
+  }, [activeKeywords, runSearch])
 
   const storeCount = pickedStores.length
-  const pickedStoreIds = useMemo(() => new Set(pickedStores.map((s) => s.id)), [pickedStores])
-
-  const cancelsAtLabel = cancelsAt
-    ? (() => {
-        const d = new Date(cancelsAt)
-        const now = new Date()
-        return d.toLocaleDateString('en-US', {
-          month: 'short', day: 'numeric',
-          ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
-        })
-      })()
-    : null
-
-  const addStore = useCallback(async (s: StoreLite) => {
-    setActiveKeywords([])
-    setSearchResults(null)
-    setActiveBrand(s.name)
-    setBrandResults(null)
-    setBrandSearching(true)
-    fetch(`/api/deals/search?retailer=${encodeURIComponent(s.name)}`)
-      .then((res) => (res.ok ? res.json() : { deals: [] }))
-      .then((d) => setBrandResults(d.deals ?? []))
-      .catch(() => setBrandResults([]))
-      .finally(() => setBrandSearching(false))
-    if (pickedStoreIds.has(s.id)) return
-    setPickedStores((prev) => [...prev, s])
-    if (!signedIn) return
-    try {
-      const res = await fetch('/api/store-picks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: s.id }),
-      })
-      if (res.ok) {
-        const d = await res.json()
-        const pickId = d.store_pick?.id
-        if (pickId) setPickIdByStoreId((prev) => new Map(prev).set(s.id, pickId))
-      } else {
-        setPickedStores((prev) => prev.filter((x) => x.id !== s.id))
-      }
-    } catch {
-      setPickedStores((prev) => prev.filter((x) => x.id !== s.id))
-    }
-  }, [signedIn, pickedStoreIds])
-
   const removeStore = useCallback(async (id: string) => {
     const pickId = pickIdByStoreId.get(id)
     setPickedStores((prev) => prev.filter((s) => s.id !== id))
@@ -279,38 +241,21 @@ export function HomePicker() {
     try { await fetch(`/api/store-picks/${pickId}`, { method: 'DELETE' }) } catch {}
   }, [signedIn, pickIdByStoreId])
 
-  // Unified suggestion handler — routes to keyword or brand search
+  // Unified suggestion handler — both brands and keywords become activeKeyword chips
   const handleSuggestionSelect = useCallback((s: KeywordSuggestion) => {
     setShowSuggestions(false)
     setKeywordInput('')
+    const term = s.type === 'brand' ? s.keyword : s.keyword.trim().toLowerCase()
     if (s.type === 'brand') {
-      const store = stores.find((st) => normName(st.name) === normName(s.keyword))
-      if (store) {
-        addStore(store)
-      } else {
-        setActiveKeywords([])
-        setSearchResults(null)
-        setActiveBrand(s.keyword)
-        setBrandResults(null)
-        setBrandSearching(true)
-        fetch(`/api/deals/search?retailer=${encodeURIComponent(s.keyword)}`)
-          .then((res) => (res.ok ? res.json() : { deals: [] }))
-          .then((d) => setBrandResults(d.deals ?? []))
-          .catch(() => setBrandResults([]))
-          .finally(() => setBrandSearching(false))
-      }
-    } else {
-      const term = s.keyword.trim().toLowerCase()
-      setActiveBrand(null)
-      setBrandResults(null)
-      setActiveKeywords((prev) => {
-        if (prev.includes(term)) return prev
-        const next = [...prev, term]
-        runSearch(next)
-        return next
-      })
+      brandKeywordsRef.current.add(term)
     }
-  }, [stores, addStore, runSearch])
+    setActiveKeywords((prev) => {
+      if (prev.includes(term)) return prev
+      const next = [...prev, term]
+      runSearch(next)
+      return next
+    })
+  }, [runSearch])
 
   // Anonymous: email search results to yourself
   const handleAnonEmailResults = async (e: React.FormEvent) => {
@@ -365,41 +310,19 @@ export function HomePicker() {
     } catch { setError('Send failed.') } finally { setSendingDeals(false) }
   }
 
-  const saveMinDiscount = useCallback(async (next: number | null) => {
-    setMinDiscountPct(next)
-    try {
-      await fetch('/api/account', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ min_discount_pct: next }),
-      })
-    } catch {}
-  }, [])
-
-  const updateInclude = useCallback(
-    async (key: 'include_free_shipping' | 'include_bogo' | 'include_gwp', value: boolean) => {
-      if (key === 'include_free_shipping') setIncludeFreeShipping(value)
-      else if (key === 'include_bogo') setIncludeBogo(value)
-      else setIncludeGwp(value)
-      try {
-        await fetch('/api/account', {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ [key]: value }),
-        })
-      } catch {}
-    }, [])
-
   const toggleTier = useCallback(async (tier: string) => {
     const next = new Set(allowedTiers)
     if (next.has(tier)) next.delete(tier)
     else next.add(tier)
     setAllowedTiers(next)
+    if (!signedIn) return
     try {
       await fetch('/api/account', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ allowed_price_tiers: Array.from(next) }),
       })
     } catch {}
-  }, [allowedTiers])
+  }, [allowedTiers, signedIn])
 
   const handleLogout = async () => {
     try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
@@ -437,6 +360,13 @@ export function HomePicker() {
     } catch { setError('Delete failed.') }
   }
 
+  const tierFilterActive = allowedTiers.size > 0 && allowedTiers.size < PRICE_TIERS.length
+  const visibleSearchResults = searchResults?.filter((deal) => {
+    if (!tierFilterActive) return true
+    return !!deal.price_tier && allowedTiers.has(deal.price_tier)
+  }) ?? null
+  const displayedSearchResults = visibleSearchResults ?? []
+
   if (submitted) {
     return (
       <section className="form-section">
@@ -462,6 +392,7 @@ export function HomePicker() {
   }
 
   return (
+    <>
     <section className="form-section">
       <div className="form-wrap-narrow">
         <div className="form-card">
@@ -475,54 +406,48 @@ export function HomePicker() {
           </h2>
 
           <div className="dl-field">
-            {/* Watched brand chips */}
+            {/* Watched brand chips (watchlist — click to search, × to remove from watchlist) */}
             {pickedStores.length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {pickedStores.map((p) => {
-                    const isActive = activeBrand === p.name
-                    return (
-                      <span
-                        key={p.id}
+                  {pickedStores.map((p) => (
+                    <span
+                      key={p.id}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 0,
+                        border: '1.5px solid var(--ink)',
+                        background: 'var(--ink)',
+                        color: 'var(--paper, #f6ecd2)',
+                        fontFamily: 'var(--font-mono, monospace)', fontSize: 13,
+                        minHeight: 36,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => searchBrand(p.name)}
                         style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 0,
-                          border: '1.5px solid var(--ink)',
-                          background: isActive ? 'var(--red-deep)' : 'var(--ink)',
-                          color: 'var(--paper, #f6ecd2)',
-                          fontFamily: 'var(--font-mono, monospace)', fontSize: 13,
-                          minHeight: 36,
+                          background: 'none', border: 'none', padding: '0 0 0 12px',
+                          color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit',
+                          cursor: 'pointer', minHeight: 36, display: 'inline-flex',
+                          alignItems: 'center',
                         }}
                       >
-                        <button
-                          type="button"
-                          onClick={() => selectBrand(p.name)}
-                          style={{
-                            background: 'none', border: 'none', padding: '0 0 0 12px',
-                            color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit',
-                            cursor: 'pointer', minHeight: 36, display: 'inline-flex',
-                            alignItems: 'center',
-                          }}
-                        >
-                          {p.name}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            removeStore(p.id)
-                            if (activeBrand === p.name) { setActiveBrand(null); setBrandResults(null) }
-                          }}
-                          aria-label={`Remove ${p.name}`}
-                          style={{
-                            minWidth: 36, minHeight: 36, display: 'inline-flex',
-                            alignItems: 'center', justifyContent: 'center',
-                            border: 'none', background: 'transparent',
-                            color: 'var(--paper, #f6ecd2)', cursor: 'pointer',
-                            fontSize: 20, lineHeight: 1, padding: 0,
-                          }}
-                        >×</button>
-                      </span>
-                    )
-                  })}
+                        {p.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeStore(p.id)}
+                        aria-label={`Remove ${p.name}`}
+                        style={{
+                          minWidth: 36, minHeight: 36, display: 'inline-flex',
+                          alignItems: 'center', justifyContent: 'center',
+                          border: 'none', background: 'transparent',
+                          color: 'var(--paper, #f6ecd2)', cursor: 'pointer',
+                          fontSize: 20, lineHeight: 1, padding: 0,
+                        }}
+                      >×</button>
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
@@ -582,49 +507,35 @@ export function HomePicker() {
               )}
             </form>
 
-            {/* Price tier + include filters — inline below search */}
-            {signedIn === true && (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    fontFamily: "'Stardos Stamp', monospace", fontSize: 9,
-                    letterSpacing: '.18em', textTransform: 'uppercase',
-                    color: 'var(--ink-soft)', marginRight: 2,
-                  }}>Price:</span>
-                  {PRICE_TIERS.map((tier) => (
-                    <button
-                      key={tier}
-                      type="button"
-                      disabled={!isPaid}
-                      onClick={() => toggleTier(tier)}
-                      aria-pressed={allowedTiers.has(tier)}
-                      style={{
-                        fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
-                        letterSpacing: '.12em', textTransform: 'uppercase',
-                        padding: '5px 10px', minHeight: 30,
-                        background: allowedTiers.has(tier) ? 'var(--ink)' : '#fffbe6',
-                        color: allowedTiers.has(tier) ? 'var(--paper, #f6ecd2)' : 'var(--ink)',
-                        border: '1.5px solid var(--ink)',
-                        cursor: !isPaid ? 'not-allowed' : 'pointer',
-                        opacity: !isPaid ? 0.55 : 1,
-                      }}
-                    >{tier}</button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px', marginTop: 10, fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink)' }}>
-                  {([
-                    { key: 'include_free_shipping' as const, label: 'Free shipping', value: includeFreeShipping },
-                    { key: 'include_bogo' as const, label: 'BOGO', value: includeBogo },
-                    { key: 'include_gwp' as const, label: 'Gift w/purchase', value: includeGwp },
-                  ]).map(({ key, label, value }) => (
-                    <label key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: !isPaid ? 'not-allowed' : 'pointer', opacity: !isPaid ? 0.55 : 1 }}>
-                      <input type="checkbox" checked={value} disabled={!isPaid} onChange={(e) => updateInclude(key, e.target.checked)} />
-                      {label}
-                    </label>
-                  ))}
-                </div>
+            {/* Price tier filter — applies to the live results rail. */}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  fontFamily: "'Stardos Stamp', monospace", fontSize: 9,
+                  letterSpacing: '.18em', textTransform: 'uppercase',
+                  color: 'var(--ink-soft)', marginRight: 2,
+                }}>Price:</span>
+                {PRICE_TIERS.map((tier) => (
+                  <button
+                    key={tier}
+                    type="button"
+                    onClick={() => toggleTier(tier)}
+                    aria-pressed={allowedTiers.has(tier)}
+                    title={`Show ${tier} stores`}
+                    style={{
+                      fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
+                      letterSpacing: '.12em', textTransform: 'uppercase',
+                      padding: '5px 10px', minHeight: 30,
+                      background: allowedTiers.has(tier) ? 'var(--ink)' : '#fffbe6',
+                      color: allowedTiers.has(tier) ? 'var(--paper, #f6ecd2)' : 'var(--ink)',
+                      border: '1.5px solid var(--ink)',
+                      cursor: 'pointer',
+                      opacity: 1,
+                    }}
+                  >{tier}</button>
+                ))}
               </div>
-            )}
+            </div>
 
             {/* Active keyword chips */}
             {activeKeywords.length > 0 && (
@@ -658,106 +569,6 @@ export function HomePicker() {
               </div>
             )}
 
-            {/* Keyword search results */}
-            {searchResults !== null && (
-              <div style={{ marginTop: 16 }}>
-                {searching ? (
-                  <p style={{ textAlign: 'center', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink-soft)', padding: '20px 0' }}>
-                    Searching…
-                  </p>
-                ) : searchResults.length === 0 ? (
-                  <div style={{ padding: '20px 0', textAlign: 'center' }}>
-                    <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 17, color: 'var(--ink-soft)', margin: 0 }}>
-                      No live deals for <strong style={{ fontStyle: 'normal' }}>&ldquo;{activeKeywords.join(', ')}&rdquo;</strong> right now.
-                    </p>
-                    <p style={{ fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', marginTop: 8 }}>
-                      New deals land daily — try again tomorrow or search something else.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <p style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--red-deep)', marginBottom: 14 }}>
-                      — {searchResults.length} {searchResults.length === 1 ? 'deal' : 'deals'} for &ldquo;{activeKeywords.join(', ')}&rdquo; —
-                    </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {searchResults.map((deal) => (
-                        <DealCard key={deal.id} deal={deal} />
-                      ))}
-                    </div>
-
-                    <div style={{ marginTop: 24, padding: '18px 20px', background: '#fff8e2', border: '2px dashed var(--ink)' }}>
-                      {signedIn === true ? (
-                        <>
-                          <p style={{ margin: '0 0 12px', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink)' }}>
-                            Want these emailed to you? Hit send below.
-                          </p>
-                          <button type="button" onClick={sendDealsNow} disabled={sendingDeals} className="submit-btn" style={{ width: '100%' }}>
-                            {sendingDeals ? 'SENDING…' : 'EMAIL THESE DEALS →'}
-                          </button>
-                          {statusMsg && <p style={{ margin: '10px 0 0', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink-soft)', textAlign: 'center' }}>{statusMsg}</p>}
-                          {error && <p style={{ margin: '10px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--red-deep)', textAlign: 'center' }}>{error}</p>}
-                        </>
-                      ) : (
-                        <>
-                          <p style={{ margin: '0 0 12px', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink)' }}>
-                            Drop your email and we&rsquo;ll send you these — plus flag new ones as they land.
-                          </p>
-                          <form onSubmit={handleAnonEmailResults} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                            <input
-                              type="email"
-                              value={email}
-                              onChange={(e) => setEmail(e.target.value)}
-                              placeholder="you@inbox.com"
-                              required
-                              disabled={submitting}
-                              style={{ flex: '1 1 200px', padding: '12px 14px', fontFamily: "'Special Elite', monospace", fontSize: 15, background: 'white', border: '2px solid var(--ink)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
-                            />
-                            <button type="submit" disabled={submitting || !email} className="submit-btn" style={{ flex: '0 0 auto' }}>
-                              {submitting ? 'SENDING…' : 'EMAIL ME THESE →'}
-                            </button>
-                          </form>
-                          {error && <p style={{ margin: '10px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--red-deep)' }}>{error}</p>}
-                          <p style={{ margin: '10px 0 0', fontFamily: "'Stardos Stamp', monospace", fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-soft)' }}>
-                            No card · No password · Unsubscribe anytime
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Brand results */}
-            {brandResults !== null && (
-              <div style={{ marginTop: 24 }}>
-                {brandSearching ? (
-                  <p style={{ textAlign: 'center', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink-soft)', padding: '20px 0' }}>
-                    Searching…
-                  </p>
-                ) : brandResults.length === 0 ? (
-                  <div style={{ padding: '20px 0', textAlign: 'center' }}>
-                    <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 17, color: 'var(--ink-soft)', margin: 0 }}>
-                      No live deals for <strong style={{ fontStyle: 'normal' }}>{activeBrand}</strong> right now.
-                    </p>
-                    <p style={{ fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', marginTop: 8 }}>
-                      New deals land daily — check back tomorrow.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <p style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--red-deep)', marginBottom: 14 }}>
-                      — {brandResults.length} {brandResults.length === 1 ? 'deal' : 'deals'} for {activeBrand} —
-                    </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {brandResults.map((deal) => (
-                        <DealCard key={deal.id} deal={deal} />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
           </div>
 
           {signedIn === null && (
@@ -786,23 +597,7 @@ export function HomePicker() {
                 </div>
               )}
 
-              {!isPaid && (
-                <div style={{ marginTop: 28, padding: '20px 22px', background: '#fff8e2', border: '2.5px solid var(--ink)', boxShadow: '4px 4px 0 var(--ink)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, justifyContent: 'space-between' }}>
-                  <div style={{ flex: '1 1 220px' }}>
-                    <div style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.3em', textTransform: 'uppercase', color: 'var(--red-deep)', marginBottom: 6 }}>
-                      — Want more? —
-                    </div>
-                    <p style={{ margin: 0, fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 16, color: 'var(--ink)', lineHeight: 1.45 }}>
-                      Upgrade for unlimited brand picks and deal filters.
-                    </p>
-                  </div>
-                  <a href="/pricing" style={{ fontFamily: "'Alfa Slab One', serif", fontSize: 14, letterSpacing: '.08em', textTransform: 'uppercase', background: 'var(--red)', color: 'var(--paper, #f6ecd2)', padding: '14px 24px 12px', border: '2px solid var(--ink)', boxShadow: '4px 4px 0 var(--ink)', textDecoration: 'none', flexShrink: 0, minHeight: 48, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    Upgrade →
-                  </a>
-                </div>
-              )}
-
-              <p style={{ margin: '28px 0 8px', fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', textAlign: 'center' }}>
+              <p style={{ margin: '28px 0 8px', fontFamily: "'Stardos Stamp', monospace", fontSize: 12, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--ink-soft)' }}>
                 <a href="/suggest" style={{ color: 'var(--ink-soft)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>Suggest a store →</a>
               </p>
 
@@ -816,7 +611,7 @@ export function HomePicker() {
                     <em>Need to step away?</em>{' '}
                     <strong>Log out</strong> ends this session — sign back in any time via magic link.{' '}
                     {isPaid && !isComped && hasBillingAccount && (
-                      <><strong>Manage billing</strong> opens Stripe&rsquo;s portal — update card, view invoices, or cancel (keeps paid access through your current billing period).{' '}</>
+                      <><strong>Manage billing</strong> opens Stripe&rsquo;s portal — update card, view invoices, or cancel legacy billing.{' '}</>
                     )}
                     <strong>Unsubscribe</strong> stops deal emails
                     {isPaid && !isComped && hasBillingAccount ? ' and cancels your subscription at the end of your current billing period. ' : '. '}
@@ -834,11 +629,125 @@ export function HomePicker() {
                   </div>
                 </div>
               </details>
+
+              <div ref={tipRef} style={{ position: 'relative', display: 'inline-block', marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setTipMenuOpen(o => !o)}
+                  style={{ background: 'none', border: 'none', padding: '8px 0', cursor: 'pointer', fontFamily: "'Stardos Stamp', monospace", fontSize: 12, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--ink-soft)', userSelect: 'none' }}
+                >
+                  Thank the Builder
+                </button>
+                {tipMenuOpen && (
+                  <div style={{ position: 'absolute', bottom: '100%', left: 0, background: 'var(--ink)', border: '1px solid var(--ink)', zIndex: 200, minWidth: 220 }}>
+                    {[
+                      { label: '☕ Buy Me a Coffee', url: 'https://buymeacoffee.com/breroz' },
+                      { label: '· Venmo',            url: 'https://venmo.com/u/breroz' },
+                      { label: '· PayPal',           url: 'https://paypal.me/breroz' },
+                    ].map(({ label, url }) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setTipMenuOpen(false)}
+                        style={{ display: 'block', padding: '10px 14px', fontFamily: "'Stardos Stamp', monospace", fontSize: 12, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--cream)', textDecoration: 'none', borderBottom: '1px solid rgba(255,255,255,.1)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,.08)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        {label}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
       </div>
     </section>
+
+    {/* Keyword + brand results rendered in the homepage results rail. */}
+    {resultsPortal && createPortal(
+      <div className="deal-results-shell">
+
+        {searchResults === null ? (
+          <div className="deal-results-empty">
+            <p>Deals will appear here as you search.</p>
+          </div>
+        ) : (
+          <div>
+            {searching ? (
+              <p style={{ textAlign: 'center', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink-soft)', padding: '20px 0' }}>
+                Searching…
+              </p>
+            ) : displayedSearchResults.length === 0 ? (
+              <div style={{ padding: '20px 0', textAlign: 'center' }}>
+                <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 17, color: 'var(--ink-soft)', margin: 0 }}>
+                  No live deals for <strong style={{ fontStyle: 'normal' }}>&ldquo;{activeKeywords.join(', ')}&rdquo;</strong>{tierFilterActive ? ` in ${Array.from(allowedTiers).join(', ')} stores` : ''} right now.
+                </p>
+                <p style={{ fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', marginTop: 8 }}>
+                  {tierFilterActive ? 'Clear a price filter or search something else.' : 'New deals land daily — try again tomorrow or search something else.'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <p style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--red-deep)', marginBottom: 14 }}>
+                  — {displayedSearchResults.length} {displayedSearchResults.length === 1 ? 'deal' : 'deals'} for &ldquo;{activeKeywords.join(', ')}&rdquo;{tierFilterActive ? ` · ${Array.from(allowedTiers).join(', ')}` : ''} —
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {displayedSearchResults.map((deal) => (
+                    <DealCard key={deal.id} deal={deal} />
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 24, padding: '18px 20px', background: '#fff8e2', border: '2px dashed var(--ink)' }}>
+                  {signedIn === true ? (
+                    <>
+                      <p style={{ margin: '0 0 12px', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink)' }}>
+                        Want these emailed to you? Hit send below.
+                      </p>
+                      <button type="button" onClick={sendDealsNow} disabled={sendingDeals} className="submit-btn" style={{ width: '100%' }}>
+                        {sendingDeals ? 'SENDING…' : 'EMAIL THESE DEALS →'}
+                      </button>
+                      {statusMsg && <p style={{ margin: '10px 0 0', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink-soft)', textAlign: 'center' }}>{statusMsg}</p>}
+                      {error && <p style={{ margin: '10px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--red-deep)', textAlign: 'center' }}>{error}</p>}
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ margin: '0 0 12px', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink)' }}>
+                        Drop your email and we&rsquo;ll send you these — plus flag new ones as they land.
+                      </p>
+                      <form onSubmit={handleAnonEmailResults} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="you@inbox.com"
+                          required
+                          disabled={submitting}
+                          style={{ flex: '1 1 200px', padding: '12px 14px', fontFamily: "'Special Elite', monospace", fontSize: 15, background: 'white', border: '2px solid var(--ink)', color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' }}
+                        />
+                        <button type="submit" disabled={submitting || !email} className="submit-btn" style={{ flex: '0 0 auto' }}>
+                          {submitting ? 'SENDING…' : 'EMAIL ME THESE →'}
+                        </button>
+                      </form>
+                      {error && <p style={{ margin: '10px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--red-deep)' }}>{error}</p>}
+                      <p style={{ margin: '10px 0 0', fontFamily: "'Stardos Stamp', monospace", fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-soft)' }}>
+                        No card · No password · Unsubscribe anytime
+                      </p>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+      </div>,
+      resultsPortal
+    )}
+  </>
   )
 }
 
@@ -858,7 +767,8 @@ function formatDealType(type: string, pct: number | null): string {
 
 function DealCard({ deal }: { deal: DealResult }) {
   const badge = formatDealType(deal.deal_type, deal.percent_off)
-  const link = deal.affiliate_link || deal.original_link
+  const fallbackLink = deal.original_link.includes('google.com/search') ? null : deal.original_link
+  const link = deal.store_website || deal.affiliate_link || fallbackLink || '#'
 
   return (
     <div style={{
@@ -934,11 +844,3 @@ function DealCard({ deal }: { deal: DealResult }) {
 }
 
 const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
-const DISCOUNT_STEPS: Array<{ label: string; value: number | null }> = [
-  { label: 'Any', value: null },
-  { label: '20%', value: 20 },
-  { label: '30%', value: 30 },
-  { label: '40%', value: 40 },
-  { label: '50%+', value: 50 },
-]
-

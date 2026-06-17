@@ -13,6 +13,7 @@ import { StoresAdmin } from '@/components/StoresAdmin'
 import { AdminTabs } from '@/components/AdminTabs'
 import { isAdminEmail } from '@/lib/admin'
 import { DossierNav } from '@/components/DossierNav'
+import { DlFooter } from '@/components/DlFooter'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,8 +99,6 @@ export default async function AdminPage() {
     { count: activeSubscribers },
     { data: tierData },
     { count: newThisWeek },
-    { count: totalEmailsSent },
-    { count: sentThisWeek },
     { data: topRetailers },
     { count: totalEmailsScannedCount },
     { count: totalDealsFoundCount },
@@ -110,8 +109,6 @@ export default async function AdminPage() {
     db.from('subscribers').select('*', { count: 'exact', head: true }).eq('is_active', true),
     db.from('subscribers').select('tier, subscription_status').eq('is_active', true),
     db.from('subscribers').select('*', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
-    db.from('sent_emails').select('*', { count: 'exact', head: true }),
-    db.from('sent_emails').select('*', { count: 'exact', head: true }).gte('created_at', sevenDaysAgo),
     db.from('deals').select('retailer').gte('created_at', thirtyDaysAgo),
     db.from('processed_emails').select('*', { count: 'exact', head: true }),
     db.from('deals').select('*', { count: 'exact', head: true }),
@@ -185,12 +182,10 @@ export default async function AdminPage() {
         <div className="admin-section-label">
           <SectionLabel n="01">Pipeline Totals</SectionLabel>
         </div>
-        <div className="admin-stat-row admin-stat-row-4">
+        <div className="admin-stat-row admin-stat-row-2">
           {[
             { n: totalEmailsScanned, l: 'Emails Scanned' },
             { n: totalDealsFound, l: 'Deals Extracted' },
-            { n: totalEmailsSent ?? 0, l: 'Emails Delivered' },
-            { n: sentThisWeek ?? 0, l: 'Delivered This Week' },
           ].map(({ n, l }) => (
             <div key={l} className="admin-stat">
               <div className="admin-stat-num">
@@ -556,15 +551,7 @@ export default async function AdminPage() {
         </div>
       </section>
 
-      <footer className="dl-footer">
-        <div className="footer-wordmark" aria-label="Deal Dossier">
-          DEAL&nbsp;D<span className="o">O</span>SSIER
-        </div>
-        <div className="footer-meta">
-          <a href="/faq">FAQ</a> · <a href="/stores">All Brands</a> · <a href="/suggest">Suggest a Store</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="mailto:hello@dealdossier.io">Contact</a><br /><br />
-          An Hours &amp; Co. publication · © 2026
-        </div>
-      </footer>
+      <DlFooter />
     </div>
   )
 }
