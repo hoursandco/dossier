@@ -614,8 +614,8 @@ export function HomePicker() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 18px', marginTop: 10, fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink)' }}>
                   {([
                     { key: 'include_free_shipping' as const, label: 'Free shipping', value: includeFreeShipping },
-                    { key: 'include_bogo' as const, label: 'BOGO offers', value: includeBogo },
-                    { key: 'include_gwp' as const, label: 'Gift with purchase', value: includeGwp },
+                    { key: 'include_bogo' as const, label: 'BOGO', value: includeBogo },
+                    { key: 'include_gwp' as const, label: 'Gift w/purchase', value: includeGwp },
                   ]).map(({ key, label, value }) => (
                     <label key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: !isPaid ? 'not-allowed' : 'pointer', opacity: !isPaid ? 0.55 : 1 }}>
                       <input type="checkbox" checked={value} disabled={!isPaid} onChange={(e) => updateInclude(key, e.target.checked)} />
