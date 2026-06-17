@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchPromotionalEmails } from '@/lib/gmail'
-import { extractDealsFromEmail, getRetailerCategories, type CategoryRow } from '@/lib/openai'
+import {
+  extractDealsFromEmail,
+  extractDealsFromEmailImages,
+  getRetailerCategories,
+  type CategoryRow,
+} from '@/lib/openai'
 import { getCurrentWeekOf, makeDealKey, isJunkDeal } from '@/lib/deals'
 import { fixRetailerCase } from '@/lib/stores'
 import { sendAdminAlert } from '@/lib/resend'
@@ -86,6 +91,84 @@ function isBodySparse(html: string): boolean {
     .replace(/\s+/g, ' ')
     .trim()
   return text.length < 500
+}
+
+function decodeHtmlAttr(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+}
+
+function parseDimension(value: string | undefined): number | null {
+  if (!value) return null
+  const match = value.match(/\d+/)
+  return match ? Number(match[0]) : null
+}
+
+function looksLikePromoImage(url: string, width: number | null, height: number | null): boolean {
+  const lower = url.toLowerCase()
+  if (!/^https?:\/\//i.test(url)) return false
+  if (lower.startsWith('data:') || lower.startsWith('cid:')) return false
+  if (/\.(svg|ico)(?:[?#]|$)/i.test(lower)) return false
+  if (/(pixel|tracking|beacon|openrate|spacer|blank|transparent|clear\.gif|1x1)/i.test(lower)) {
+    return false
+  }
+  if (width !== null && height !== null) {
+    if (width <= 2 || height <= 2) return false
+    if (width < 120 && height < 120) return false
+  }
+  return true
+}
+
+function extractEmailImageUrls(html: string): string[] {
+  const urls: string[] = []
+
+  const imgRegex = /<img\b[^>]*>/gi
+  const attrRegex = /\s(src|data-src|data-original|background|width|height|srcset)=["']([^"']+)["']/gi
+  let imgMatch
+  while ((imgMatch = imgRegex.exec(html)) !== null) {
+    const attrs = new Map<string, string>()
+    let attrMatch
+    while ((attrMatch = attrRegex.exec(imgMatch[0])) !== null) {
+      attrs.set(attrMatch[1].toLowerCase(), decodeHtmlAttr(attrMatch[2]))
+    }
+
+    const width = parseDimension(attrs.get('width'))
+    const height = parseDimension(attrs.get('height'))
+    const candidates = [
+      attrs.get('src'),
+      attrs.get('data-src'),
+      attrs.get('data-original'),
+      attrs.get('background'),
+    ]
+
+    const srcset = attrs.get('srcset')
+    if (srcset) {
+      candidates.push(
+        ...srcset
+          .split(',')
+          .map((entry) => entry.trim().split(/\s+/)[0])
+      )
+    }
+
+    for (const candidate of candidates) {
+      if (candidate && looksLikePromoImage(candidate, width, height)) {
+        urls.push(candidate)
+      }
+    }
+  }
+
+  const cssUrlRegex = /url\(["']?(https?:\/\/[^"')\s]+)["']?\)/gi
+  let cssMatch
+  while ((cssMatch = cssUrlRegex.exec(html)) !== null) {
+    const url = decodeHtmlAttr(cssMatch[1])
+    if (looksLikePromoImage(url, null, null)) urls.push(url)
+  }
+
+  return Array.from(new Set(urls)).slice(0, 8)
 }
 
 // Fetch the hosted "view in browser" version of an email. Retailers like
@@ -398,7 +481,8 @@ export async function GET(request: NextRequest) {
       }
 
       let emailBody = email.body
-      if (isBodySparse(email.body) && email.viewInBrowserUrl) {
+      const sparseOriginalBody = isBodySparse(email.body)
+      if (sparseOriginalBody && email.viewInBrowserUrl) {
         console.log(`[ingest] sparse body, fetching web version: ${email.viewInBrowserUrl}`)
         const webHtml = await fetchWebVersion(email.viewInBrowserUrl)
         if (webHtml) {
@@ -409,7 +493,32 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const extracted = await extractDealsFromEmail(email.from, email.subject, emailBody, allCategories)
+      let extracted = await extractDealsFromEmail(email.from, email.subject, emailBody, allCategories)
+      console.log(`[ingest] ${email.from} | subject: ${email.subject} | text extracted: ${extracted.length}`)
+
+      if (sparseOriginalBody || extracted.length === 0) {
+        const imageUrls = extractEmailImageUrls(`${email.body}\n${emailBody}`)
+        if (imageUrls.length > 0) {
+          console.log(
+            `[ingest] vision fallback (${sparseOriginalBody ? 'sparse body' : 'no text deals'}): ${imageUrls.length} images`
+          )
+          const imageExtracted = await extractDealsFromEmailImages(
+            email.from,
+            email.subject,
+            imageUrls,
+            allCategories,
+          )
+          if (imageExtracted.length > 0) {
+            extracted = imageExtracted
+            console.log(`[ingest] ${email.from} | subject: ${email.subject} | image extracted: ${extracted.length}`)
+          } else {
+            console.log(`[ingest] vision fallback found no deals`)
+          }
+        } else {
+          console.log(`[ingest] vision fallback skipped: no usable image URLs`)
+        }
+      }
+
       console.log(`[ingest] ${email.from} | subject: ${email.subject} | extracted: ${extracted.length}`)
       if (extracted.length > 0) emailsWithDeals++
       else emailsWithNoDeals++

@@ -40,6 +40,12 @@ const ExtractionSchema = z.object({
 })
 
 type ExtractedDeal = z.infer<typeof DealSchema>
+type UserContent =
+  | string
+  | Array<
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string } }
+    >
 
 export interface CategoryRow {
   slug: string
@@ -147,7 +153,7 @@ Use null for any field that doesn't apply. percent_off must be a number or null.
 
 async function callOpenAIWithRetry(
   systemPrompt: string,
-  userPrompt: string,
+  userContent: UserContent,
 ): Promise<string | null> {
   const client = getClient()
 
@@ -166,7 +172,7 @@ async function callOpenAIWithRetry(
         model: 'gemini-2.5-flash-lite',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          { role: 'user', content: userContent },
         ],
         response_format: { type: 'json_object' },
         temperature: 0,
@@ -184,6 +190,24 @@ async function callOpenAIWithRetry(
     }
   }
   return null
+}
+
+function parseExtractionResponse(content: string, logPrefix: string): ExtractedDeal[] {
+  const parsed = JSON.parse(content)
+  console.log(`${logPrefix} raw response:`, JSON.stringify(parsed).slice(0, 500))
+
+  const validated = ExtractionSchema.safeParse(parsed)
+  if (!validated.success) {
+    console.error(`${logPrefix} Zod validation failed:`, JSON.stringify(validated.error.issues))
+    return []
+  }
+
+  // Apply pattern-based category overrides (e.g. eyewear → accessories,
+  // not fashion). Source of truth for category routing lives in lib/deals.
+  return validated.data.deals.map((d) => ({
+    ...d,
+    categories: overrideCategoriesForRetailer(d.retailer, d.categories as Category[]),
+  }))
 }
 
 export async function extractDealsFromEmail(
@@ -211,23 +235,45 @@ BODY: ${cleanBody}`
     const content = await callOpenAIWithRetry(buildSystemPrompt(newCategories), userPrompt)
     if (!content) return []
 
-    const parsed = JSON.parse(content)
-    console.log('OpenAI raw response:', JSON.stringify(parsed).slice(0, 500))
-
-    const validated = ExtractionSchema.safeParse(parsed)
-    if (!validated.success) {
-      console.error('Zod validation failed:', JSON.stringify(validated.error.issues))
-      return []
-    }
-
-    // Apply pattern-based category overrides (e.g. eyewear → accessories,
-    // not fashion). Source of truth for category routing lives in lib/deals.
-    return validated.data.deals.map((d) => ({
-      ...d,
-      categories: overrideCategoriesForRetailer(d.retailer, d.categories as Category[]),
-    }))
+    return parseExtractionResponse(content, 'OpenAI')
   } catch (err) {
     console.error('OpenAI extraction error:', err)
+    return []
+  }
+}
+
+export async function extractDealsFromEmailImages(
+  from: string,
+  subject: string,
+  imageUrls: string[],
+  newCategories: CategoryRow[] = [],
+): Promise<ExtractedDeal[]> {
+  const usableImageUrls = Array.from(new Set(imageUrls))
+    .filter((url) => /^https?:\/\//i.test(url))
+    .slice(0, 8)
+
+  if (usableImageUrls.length === 0) return []
+
+  const userContent: UserContent = [
+    {
+      type: 'text',
+      text: `FROM: ${from}
+SUBJECT: ${subject}
+
+This promotional email has little or no useful HTML text. Read the sale copy, promo codes, expiration dates, product/category text, and offer details directly from these email images. Ignore logos, social icons, app badges, decorative photography with no sale copy, and tracking pixels. Return only the deal JSON requested by the system prompt.`,
+    },
+    ...usableImageUrls.map((url) => ({
+      type: 'image_url' as const,
+      image_url: { url },
+    })),
+  ]
+
+  try {
+    const content = await callOpenAIWithRetry(buildSystemPrompt(newCategories), userContent)
+    if (!content) return []
+    return parseExtractionResponse(content, 'Gemini vision')
+  } catch (err) {
+    console.error('Gemini vision extraction error:', err)
     return []
   }
 }
