@@ -66,10 +66,12 @@ export async function GET(request: NextRequest) {
     type: 'keyword' as const,
   }))
 
+  type Suggestion = { keyword: string; deal_count: number; type: 'brand' | 'keyword' }
+
   // Deduplicate by lowercased keyword — prefer brands over keywords, then
   // higher deal_count. This prevents the same word appearing twice when the
   // keywords table has both a capitalized and a lowercase variant.
-  const seen = new Map<string, typeof brands[number]>()
+  const seen = new Map<string, Suggestion>()
   for (const item of [...brands, ...keywords]) {
     const key = item.keyword.toLowerCase()
     const existing = seen.get(key)
