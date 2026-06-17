@@ -198,7 +198,7 @@
 /* Side-by-side hero + search layout */
 .dl-shell .hero-search-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0;
 }
 .dl-shell .hero-search-row > * { flex: 1 1 0; min-width: 0; }
