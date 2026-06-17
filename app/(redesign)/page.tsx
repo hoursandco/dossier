@@ -55,12 +55,8 @@ export default function Home() {
 
   return (
     <div ref={rootRef}>
-      {/* Shared top bar — brand badge + tagline, plus Admin (admin
-          only) and Sign In (signed-out only) buttons. Same component
-          used by every other page in the redesign so headers don't
-          drift apart. */}
-      <DossierNav />
-
+      {/* ============ HERO + SEARCH (side-by-side) ============ */}
+      <div className="hero-search-row">
       {/* ============ HERO ============ */}
       <section className="hero">
         {/* Decorative price-tag stickers — kept slimmer than before. */}
@@ -133,8 +129,12 @@ export default function Home() {
       {/* (Hero counters retired. The .hero-counters-band CSS rule
           remains in redesign.css in case we bring them back.) */}
 
-      {/* ============ PICKER ============ */}
-      <HomePicker />
+      {/* ============ RIGHT COLUMN: nav + picker ============ */}
+      <div>
+        <DossierNav />
+        <HomePicker />
+      </div>
+      </div>
 
       {/* ============ FOOTER (the new nav) ============ */}
       <footer className="dl-footer">

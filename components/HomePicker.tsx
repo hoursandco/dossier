@@ -24,6 +24,7 @@ type DealResult = {
   expiration_date: string | null
   original_link: string
   affiliate_link: string | null
+  source_email_link: string | null
   week_of: string
 }
 
@@ -70,10 +71,15 @@ export function HomePicker() {
   const [suggestions, setSuggestions] = useState<KeywordSuggestion[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [searchResults, setSearchResults] = useState<DealResult[] | null>(null)
-  const [activeKeyword, setActiveKeyword] = useState('')
+  const [activeKeywords, setActiveKeywords] = useState<string[]>([])
   const [searching, setSearching] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
+
+  // Brand deal search state
+  const [activeBrand, setActiveBrand] = useState<string | null>(null)
+  const [brandResults, setBrandResults] = useState<DealResult[] | null>(null)
+  const [brandSearching, setBrandSearching] = useState(false)
 
   // Store picker search
   const [storeQuery, setStoreQuery] = useState('')
@@ -163,19 +169,18 @@ export function HomePicker() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const runSearch = useCallback(async (kw: string) => {
-    const term = kw.trim().toLowerCase()
-    if (!term) return
-    setActiveKeyword(term)
+  const runSearch = useCallback(async (terms: string[]) => {
+    const clean = terms.map((t) => t.trim().toLowerCase()).filter(Boolean)
+    if (!clean.length) return
     setShowSuggestions(false)
     setSearchResults(null)
     setSearching(true)
     setError('')
     try {
-      const res = await fetch(`/api/deals/search?keyword=${encodeURIComponent(term)}`)
+      const res = await fetch(`/api/deals/search?keywords=${encodeURIComponent(clean.join(','))}`)
       const d = res.ok ? await res.json() : { deals: [] }
       setSearchResults(d.deals ?? [])
-      trackEvent('keyword_search', { keyword: term, results: (d.deals ?? []).length })
+      trackEvent('keyword_search', { keywords: clean.join(','), results: (d.deals ?? []).length })
     } catch {
       setSearchResults([])
     } finally {
@@ -184,14 +189,56 @@ export function HomePicker() {
   }, [])
 
   const selectSuggestion = useCallback((kw: string) => {
-    setKeywordInput(kw)
-    runSearch(kw)
+    const term = kw.trim().toLowerCase()
+    setKeywordInput('')
+    setActiveKeywords((prev) => {
+      if (prev.includes(term)) return prev
+      const next = [...prev, term]
+      runSearch(next)
+      return next
+    })
+  }, [runSearch])
+
+  const removeKeyword = useCallback((kw: string) => {
+    setActiveKeywords((prev) => {
+      const next = prev.filter((k) => k !== kw)
+      if (next.length === 0) { setSearchResults(null) } else { runSearch(next) }
+      return next
+    })
   }, [runSearch])
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    runSearch(keywordInput)
+    const term = keywordInput.trim().toLowerCase()
+    if (!term) return
+    setKeywordInput('')
+    setActiveKeywords((prev) => {
+      if (prev.includes(term)) return prev
+      const next = [...prev, term]
+      runSearch(next)
+      return next
+    })
   }
+
+  const selectBrand = useCallback(async (name: string) => {
+    if (activeBrand === name) {
+      setActiveBrand(null)
+      setBrandResults(null)
+      return
+    }
+    setActiveBrand(name)
+    setBrandResults(null)
+    setBrandSearching(true)
+    try {
+      const res = await fetch(`/api/deals/search?retailer=${encodeURIComponent(name)}`)
+      const d = res.ok ? await res.json() : { deals: [] }
+      setBrandResults(d.deals ?? [])
+    } catch {
+      setBrandResults([])
+    } finally {
+      setBrandSearching(false)
+    }
+  }, [activeBrand])
 
   const storeCount = pickedStores.length
   const pickedStoreIds = useMemo(() => new Set(pickedStores.map((s) => s.id)), [pickedStores])
@@ -199,10 +246,12 @@ export function HomePicker() {
   const storeResults = useMemo(() => {
     const q = normName(storeQuery.trim())
     if (!q) return [] as StoreLite[]
+    // Include already-watched brands so the user can search for their deals
+    // by typing the brand name — same UX as By Item keyword search.
     return stores
-      .filter((s) => !pickedStoreIds.has(s.id) && normName(s.name).includes(q))
+      .filter((s) => normName(s.name).includes(q))
       .slice(0, 8)
-  }, [storeQuery, stores, pickedStoreIds])
+  }, [storeQuery, stores])
 
   const cancelsAtLabel = cancelsAt
     ? (() => {
@@ -218,8 +267,19 @@ export function HomePicker() {
   const tierLabel = isPaid ? 'Personal Shopper' : 'Inbox Cleaner'
 
   const addStore = useCallback(async (s: StoreLite) => {
-    setPickedStores((prev) => [...prev, s])
     setStoreQuery('')
+    // Always search for this brand's deals immediately
+    setActiveBrand(s.name)
+    setBrandResults(null)
+    setBrandSearching(true)
+    fetch(`/api/deals/search?retailer=${encodeURIComponent(s.name)}`)
+      .then((res) => (res.ok ? res.json() : { deals: [] }))
+      .then((d) => setBrandResults(d.deals ?? []))
+      .catch(() => setBrandResults([]))
+      .finally(() => setBrandSearching(false))
+    // Only add to watchlist if not already there
+    if (pickedStoreIds.has(s.id)) return
+    setPickedStores((prev) => [...prev, s])
     if (!signedIn) return
     try {
       const res = await fetch('/api/store-picks', {
@@ -237,7 +297,7 @@ export function HomePicker() {
     } catch {
       setPickedStores((prev) => prev.filter((x) => x.id !== s.id))
     }
-  }, [signedIn])
+  }, [signedIn, pickedStoreIds])
 
   const removeStore = useCallback(async (id: string) => {
     const pickId = pickIdByStoreId.get(id)
@@ -250,7 +310,7 @@ export function HomePicker() {
   // Anonymous: email search results to yourself
   const handleAnonEmailResults = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!email || !activeKeyword) return
+    if (!email || !activeKeywords.length) return
     setSubmitting(true)
     setError('')
     try {
@@ -273,7 +333,7 @@ export function HomePicker() {
       if (mlRes.ok) {
         setSubmitted(true)
         trackPixel('Lead')
-        trackEvent('sign_up', { method: 'magic_link', location: 'keyword_search_results', keyword: activeKeyword })
+        trackEvent('sign_up', { method: 'magic_link', location: 'keyword_search_results', keyword: activeKeywords })
       } else {
         const d = await mlRes.json().catch(() => ({}))
         setError(d.error || 'Could not send the sign-in link.')
@@ -399,7 +459,7 @@ export function HomePicker() {
   return (
     <section className="form-section">
       <div className="form-wrap-narrow">
-        <div className="form-card" style={{ marginTop: 'clamp(-140px, -14vw, -80px)' }}>
+        <div className="form-card">
 
           {/* Signed-in banner */}
           {signedIn === true && accountEmail && (
@@ -487,7 +547,6 @@ export function HomePicker() {
           {searchMode === 'item' && (
             <div className="dl-field">
               <form onSubmit={handleSearchSubmit} style={{ position: 'relative', marginBottom: 0 }}>
-                <div style={{ display: 'flex', gap: 0 }}>
                   <input
                     ref={searchInputRef}
                     type="search"
@@ -496,21 +555,12 @@ export function HomePicker() {
                     onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
                     placeholder="sneakers, couch, moisturizer, headphones…"
                     style={{
-                      flex: '1 1 auto', padding: '14px 16px',
+                      width: '100%', padding: '14px 16px',
                       fontFamily: "'Special Elite', monospace", fontSize: 16,
-                      background: '#fff8e2', border: '2px solid var(--ink)', borderRight: 'none',
+                      background: '#fff8e2', border: '2px solid var(--ink)',
                       color: 'var(--ink)', outline: 'none', boxSizing: 'border-box',
                     }}
                   />
-                  <button
-                    type="submit"
-                    disabled={!keywordInput.trim() || searching}
-                    className="submit-btn"
-                    style={{ flex: '0 0 auto', whiteSpace: 'nowrap' }}
-                  >
-                    {searching ? '…' : 'SEARCH →'}
-                  </button>
-                </div>
 
                 {showSuggestions && suggestions.length > 0 && (
                   <div
@@ -542,9 +592,41 @@ export function HomePicker() {
                 )}
               </form>
 
+              {/* Active keyword chips */}
+              {activeKeywords.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+                  {activeKeywords.map((kw) => (
+                    <span
+                      key={kw}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 0,
+                        border: '1.5px solid var(--ink)', background: 'var(--ink)',
+                        color: 'var(--paper, #f6ecd2)',
+                        fontFamily: 'var(--font-mono, monospace)', fontSize: 13,
+                        minHeight: 36,
+                      }}
+                    >
+                      <span style={{ padding: '0 4px 0 12px' }}>{kw}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeKeyword(kw)}
+                        aria-label={`Remove ${kw}`}
+                        style={{
+                          minWidth: 36, minHeight: 36, display: 'inline-flex',
+                          alignItems: 'center', justifyContent: 'center',
+                          border: 'none', background: 'transparent',
+                          color: 'var(--paper, #f6ecd2)', cursor: 'pointer',
+                          fontSize: 20, lineHeight: 1, padding: 0,
+                        }}
+                      >×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {/* Search results */}
               {searchResults !== null && (
-                <div style={{ marginTop: 24 }}>
+                <div style={{ marginTop: 16 }}>
                   {searching ? (
                     <p style={{ textAlign: 'center', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink-soft)', padding: '20px 0' }}>
                       Searching…
@@ -552,7 +634,7 @@ export function HomePicker() {
                   ) : searchResults.length === 0 ? (
                     <div style={{ padding: '20px 0', textAlign: 'center' }}>
                       <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 17, color: 'var(--ink-soft)', margin: 0 }}>
-                        No live deals for <strong style={{ fontStyle: 'normal' }}>&ldquo;{activeKeyword}&rdquo;</strong> right now.
+                        No live deals for <strong style={{ fontStyle: 'normal' }}>&ldquo;{activeKeywords.join(', ')}&rdquo;</strong> right now.
                       </p>
                       <p style={{ fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', marginTop: 8 }}>
                         New deals land daily — try again tomorrow or search something else.
@@ -561,7 +643,7 @@ export function HomePicker() {
                   ) : (
                     <>
                       <p style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--red-deep)', marginBottom: 14 }}>
-                        — {searchResults.length} {searchResults.length === 1 ? 'deal' : 'deals'} for &ldquo;{activeKeyword}&rdquo; —
+                        — {searchResults.length} {searchResults.length === 1 ? 'deal' : 'deals'} for &ldquo;{activeKeywords.join(', ')}&rdquo; —
                       </p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {searchResults.map((deal) => (
@@ -618,34 +700,59 @@ export function HomePicker() {
           {/* By Brand: store watchlist */}
           {searchMode === 'brand' && (
             <div className="dl-field">
+              {/* Watched brand chips — click to load deals, × to remove */}
               {pickedStores.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-                    <span style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-55)' }}>
-                      Watching {storeCount} {storeCount === 1 ? 'brand' : 'brands'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!confirm(`Clear all ${storeCount} ${storeCount === 1 ? 'brand' : 'brands'}?`)) return
-                        pickedStores.map((s) => s.id).forEach((id) => removeStore(id))
-                      }}
-                      style={{ background: 'none', border: 'none', padding: 0, color: 'var(--red-deep)', fontFamily: 'inherit', fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', textDecoration: 'underline', cursor: 'pointer' }}
-                    >
-                      Clear all
-                    </button>
-                  </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {pickedStores.map((p) => (
-                      <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, paddingLeft: 12, border: '1.5px solid var(--ink)', background: 'var(--ink)', color: 'var(--paper, #f6ecd2)', fontFamily: 'var(--font-mono, monospace)', fontSize: 13, minHeight: 36 }}>
-                        {p.name}
-                        <button type="button" onClick={() => removeStore(p.id)} aria-label={`Remove ${p.name}`} style={{ minWidth: 36, minHeight: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: 'var(--paper, #f6ecd2)', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
-                      </span>
-                    ))}
+                    {pickedStores.map((p) => {
+                      const isActive = activeBrand === p.name
+                      return (
+                        <span
+                          key={p.id}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 0,
+                            border: '1.5px solid var(--ink)',
+                            background: isActive ? 'var(--red-deep)' : 'var(--ink)',
+                            color: 'var(--paper, #f6ecd2)',
+                            fontFamily: 'var(--font-mono, monospace)', fontSize: 13,
+                            minHeight: 36,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => selectBrand(p.name)}
+                            style={{
+                              background: 'none', border: 'none', padding: '0 0 0 12px',
+                              color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit',
+                              cursor: 'pointer', minHeight: 36, display: 'inline-flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            {p.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              removeStore(p.id)
+                              if (activeBrand === p.name) { setActiveBrand(null); setBrandResults(null) }
+                            }}
+                            aria-label={`Remove ${p.name}`}
+                            style={{
+                              minWidth: 36, minHeight: 36, display: 'inline-flex',
+                              alignItems: 'center', justifyContent: 'center',
+                              border: 'none', background: 'transparent',
+                              color: 'var(--paper, #f6ecd2)', cursor: 'pointer',
+                              fontSize: 20, lineHeight: 1, padding: 0,
+                            }}
+                          >×</button>
+                        </span>
+                      )
+                    })}
                   </div>
                 </div>
               )}
 
+              {/* Brand search input */}
               <div style={{ position: 'relative' }}>
                 <input
                   type="search"
@@ -657,11 +764,14 @@ export function HomePicker() {
                 />
                 {storeResults.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff8e2', border: '2px solid var(--ink)', borderTop: 'none', zIndex: 5, maxHeight: 280, overflowY: 'auto' }}>
-                    {storeResults.map((s) => (
-                      <button key={s.id} type="button" onClick={() => addStore(s)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', fontFamily: "'Special Elite', monospace", fontSize: 15, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(24,22,18,0.2)', color: 'var(--ink)', cursor: 'pointer' }}>
-                        + {s.name}
-                      </button>
-                    ))}
+                    {storeResults.map((s) => {
+                      const already = pickedStoreIds.has(s.id)
+                      return (
+                        <button key={s.id} type="button" onClick={() => addStore(s)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', fontFamily: "'Special Elite', monospace", fontSize: 15, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(24,22,18,0.2)', color: 'var(--ink)', cursor: 'pointer' }}>
+                          {already ? `→ ${s.name}` : `+ ${s.name}`}
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -677,6 +787,37 @@ export function HomePicker() {
                 {'  ·  '}
                 <a href="/suggest" style={{ color: 'var(--ink-soft)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>Suggest a store →</a>
               </p>
+
+              {/* Brand deal results */}
+              {brandResults !== null && (
+                <div style={{ marginTop: 24 }}>
+                  {brandSearching ? (
+                    <p style={{ textAlign: 'center', fontFamily: "'Special Elite', monospace", fontSize: 14, color: 'var(--ink-soft)', padding: '20px 0' }}>
+                      Searching…
+                    </p>
+                  ) : brandResults.length === 0 ? (
+                    <div style={{ padding: '20px 0', textAlign: 'center' }}>
+                      <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 17, color: 'var(--ink-soft)', margin: 0 }}>
+                        No live deals for <strong style={{ fontStyle: 'normal' }}>{activeBrand}</strong> right now.
+                      </p>
+                      <p style={{ fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', marginTop: 8 }}>
+                        New deals land daily — check back tomorrow.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 11, letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--red-deep)', marginBottom: 14 }}>
+                        — {brandResults.length} {brandResults.length === 1 ? 'deal' : 'deals'} for {activeBrand} —
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {brandResults.map((deal) => (
+                          <DealCard key={deal.id} deal={deal} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -827,19 +968,36 @@ function DealCard({ deal }: { deal: DealResult }) {
             Expires {deal.expiration_date}
           </span>
         )}
-        <a
-          href={link}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
-            letterSpacing: '.18em', textTransform: 'uppercase',
-            color: 'var(--ink)', textDecoration: 'underline',
-            textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
-          }}
-        >
-          Shop the deal →
-        </a>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
+              letterSpacing: '.18em', textTransform: 'uppercase',
+              color: 'var(--ink)', textDecoration: 'underline',
+              textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
+            }}
+          >
+            Shop the deal →
+          </a>
+          {deal.source_email_link && (
+            <a
+              href={deal.source_email_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
+                letterSpacing: '.18em', textTransform: 'uppercase',
+                color: 'var(--ink-soft)', textDecoration: 'underline',
+                textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
+              }}
+            >
+              View email →
+            </a>
+          )}
+        </div>
       </div>
     </div>
   )

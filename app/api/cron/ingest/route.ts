@@ -126,6 +126,11 @@ export async function GET(request: NextRequest) {
   const perRunLimit = Number.isFinite(requestedLimit)
     ? Math.min(500, Math.max(1, Math.floor(requestedLimit)))
     : INGEST_MAX_PER_RUN
+  // ?dryRun=true — runs the full pipeline (IMAP fetch + LLM extraction +
+  // brand detection) but skips every DB write. Returns a JSON summary of
+  // what would have been inserted. Safe to run against the live inbox.
+  const dryRun = request.nextUrl.searchParams.get('dryRun') === 'true'
+  if (dryRun) console.log('[ingest] DRY RUN — no DB writes will occur')
 
   // Fallback date window. Only used if the IMAP UID cursor is missing
   // (very first run) or invalidated by a UIDVALIDITY change. Steady-state
@@ -220,6 +225,7 @@ export async function GET(request: NextRequest) {
     type StoreLoadRow = {
       id: string
       name: string | null
+      website: string | null
       categories: string[] | null
       is_active: boolean
       status: string | null
@@ -229,7 +235,7 @@ export async function GET(request: NextRequest) {
     for (let p = 0; p < 10; p++) {
       const { data: page, error: pageErr } = await supabase
         .from('stores')
-        .select('id, name, categories, is_active, status')
+        .select('id, name, website, categories, is_active, status')
         .order('name', { ascending: true })
         .range(p * STORE_PAGE, (p + 1) * STORE_PAGE - 1)
       if (pageErr) {
@@ -246,17 +252,31 @@ export async function GET(request: NextRequest) {
       is_active: boolean
       status: string
     }
+    // Normalize a stored website value to a bare apex domain for comparison
+    // against the output of parseSenderDomain(). Both strip www. and lowercase.
+    function normalizeStoreDomain(website: string): string {
+      return website.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').split('/')[0]
+    }
+
     const storesByName = new Map<string, StoreMatch>()
+    // Secondary index: apex domain → store. Catches cases where the LLM
+    // extracts a slightly different brand name than the stored row but the
+    // sender domain is the same (e.g. "Best Buy Electronics" vs "Best Buy"
+    // both from bestbuy.com). Without this, the name lookup fails and the
+    // auto-add branch would overwrite the active store row — the demotion bug.
+    const storesByDomain = new Map<string, StoreMatch>()
     for (const row of storeRows ?? []) {
       if (!row.name) continue
-      storesByName.set(normalizeRetailer(row.name), {
+      const match: StoreMatch = {
         id: row.id,
         categories: Array.isArray(row.categories) ? row.categories : [],
         is_active: row.is_active,
         // Older rows from before migration 019 may not have a status —
         // default to 'pending' so they still auto-activate on first deal.
         status: row.status ?? 'pending',
-      })
+      }
+      storesByName.set(normalizeRetailer(row.name), match)
+      if (row.website) storesByDomain.set(normalizeStoreDomain(row.website), match)
     }
     const activeCount = Array.from(storesByName.values()).filter((s) => s.is_active).length
     console.log(
@@ -312,6 +332,9 @@ export async function GET(request: NextRequest) {
     // we've successfully processed. If one email fails mid-run, the cursor
     // stays low enough that the next run will retry it.
     const processedUids: number[] = []
+    // Dry-run accumulators — populated when ?dryRun=true, ignored otherwise.
+    const dryRunWouldAutoAdd: Array<{ name: string; domain: string; from: string }> = []
+    const dryRunWouldInsertDeals: Array<{ retailer: string; deal_type: string; description: string }> = []
 
     async function processEmail(email: (typeof newEmails)[number]): Promise<void> {
       // Fast-path: skip obviously transactional emails without an OpenAI call
@@ -344,54 +367,73 @@ export async function GET(request: NextRequest) {
 
         const dealKey = makeDealKey(normalizedDeal)
 
-        // Look up the brand in the stores table. Three paths:
-        //   1. Match exists → use its categories for routing
-        //   2. Match exists + status='pending' → auto-activate (admin
-        //      had pre-seeded the row; first email confirms the brand
-        //      sends promos)
-        //   3. No match → auto-create with status='auto_added' so it
-        //      surfaces in the admin review panel. Inserted with
-        //      is_active=false so it doesn't appear in the public
-        //      directory until an admin approves it. Until then, deals
-        //      still flow into the deals table — only category-routing
-        //      and the public stores page wait on approval.
+        // Look up the brand in the stores table. Priority order:
+        //   1. Exact normalized-name match → known store
+        //   2. Apex-domain match (storesByDomain) → known store under a
+        //      different name. Without this check, a name mismatch would
+        //      fall through to auto-add and the upsert would overwrite the
+        //      existing active store row (the demotion bug).
+        //   3. Neither → genuinely new brand → auto-create with
+        //      status='auto_added', is_active=false for admin review.
         let storeMatch = storesByName.get(normalizeRetailer(retailer))
 
         if (!storeMatch) {
           const domain = parseSenderDomain(email.from)
+
+          // Step 2: domain pre-check — if this sender's apex domain already
+          // exists in the directory under any name, use that store record and
+          // skip the auto-add entirely. This prevents demoting active stores.
           if (domain) {
-            // upsert on website (case-insensitive unique index in
-            // migration 016) — race-safe when two concurrent workers
-            // both see the same unknown retailer at once. The losing
-            // worker gets the same row back via .select().
-            const { data: inserted, error: insertErr } = await supabase
-              .from('stores')
-              .upsert(
-                {
-                  name: retailer,
-                  website: domain,
-                  status: 'auto_added',
-                  is_active: false,
-                  categories: deal.categories ?? [],
-                },
-                { onConflict: 'website', ignoreDuplicates: false },
-              )
-              .select('id, name, categories, is_active, status')
-              .single()
-            if (insertErr) {
-              console.error(`[ingest] auto-add error for ${retailer} (${domain}):`, JSON.stringify(insertErr))
-            } else if (inserted) {
-              console.log(`[ingest] auto-added store for review: ${retailer} (${domain})`)
-              storeMatch = {
-                id: inserted.id,
-                categories: Array.isArray(inserted.categories) ? inserted.categories : [],
-                is_active: inserted.is_active,
-                status: inserted.status ?? 'auto_added',
-              }
-              storesByName.set(normalizeRetailer(retailer), storeMatch)
+            const domainMatch = storesByDomain.get(domain)
+            if (domainMatch) {
+              storeMatch = domainMatch
+              console.log(`[ingest] domain match (name drift): ${retailer} → ${domain}`)
             }
-          } else {
-            console.log(`[ingest] auto-add skipped (no parseable domain): ${retailer} from=${email.from}`)
+          }
+
+          if (!storeMatch) {
+            if (domain) {
+              if (dryRun) {
+                console.log(`[DRY RUN] would auto-add: ${retailer} (${domain}) from=${email.from}`)
+                dryRunWouldAutoAdd.push({ name: retailer, domain, from: email.from })
+              } else {
+                // ignoreDuplicates: true — if the domain already exists under
+                // any status, do nothing. Never overwrite an existing store row.
+                // Race-safe: concurrent workers hitting the same unknown domain
+                // both try to insert; the second one silently skips.
+                const { data: inserted, error: insertErr } = await supabase
+                  .from('stores')
+                  .upsert(
+                    {
+                      name: retailer,
+                      website: domain,
+                      status: 'auto_added',
+                      is_active: false,
+                      categories: deal.categories ?? [],
+                    },
+                    { onConflict: 'website', ignoreDuplicates: true },
+                  )
+                  .select('id, name, categories, is_active, status')
+                  .maybeSingle()
+                if (insertErr) {
+                  console.error(`[ingest] auto-add error for ${retailer} (${domain}):`, JSON.stringify(insertErr))
+                } else if (inserted) {
+                  console.log(`[ingest] auto-added store for review: ${retailer} (${domain})`)
+                  storeMatch = {
+                    id: inserted.id,
+                    categories: Array.isArray(inserted.categories) ? inserted.categories : [],
+                    is_active: inserted.is_active,
+                    status: inserted.status ?? 'auto_added',
+                  }
+                  storesByName.set(normalizeRetailer(retailer), storeMatch)
+                  storesByDomain.set(domain, storeMatch)
+                }
+                // inserted === null means the domain already existed and was
+                // skipped (ignoreDuplicates: true). That's correct — no action.
+              }
+            } else {
+              console.log(`[ingest] auto-add skipped (no parseable domain): ${retailer} from=${email.from}`)
+            }
           }
         }
 
@@ -503,7 +545,7 @@ export async function GET(request: NextRequest) {
         // brand sells overall (Walmart → 50+, Boll & Branch → 2). Cached
         // in-memory for the rest of the run; persisted across runs in the
         // retailer_categories table.
-        if (!retailerCategoriesCache.has(retailer)) {
+        if (!dryRun && !retailerCategoriesCache.has(retailer)) {
           retailerCategoriesCache.set(retailer, true)
           // Skip the LLM call if the retailer is already known
           const { data: existingMapping } = await supabase
@@ -530,6 +572,13 @@ export async function GET(request: NextRequest) {
               }
             }
           }
+        }
+
+        if (dryRun) {
+          console.log(`[DRY RUN] would insert deal: ${retailer} — ${deal.deal_type} — ${deal.description?.slice(0, 80)}`)
+          dryRunWouldInsertDeals.push({ retailer, deal_type: deal.deal_type, description: deal.description ?? '' })
+          newDeals++
+          continue
         }
 
         // Plain insert: the processed_emails table already prevents
@@ -561,41 +610,43 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Log to retailer_scan_log
-      const retailerName = extracted.length > 0 && extracted[0].retailer
-        ? extracted[0].retailer
-        : parseSenderName(email.from)
+      if (!dryRun) {
+        // Log to retailer_scan_log
+        const retailerName = extracted.length > 0 && extracted[0].retailer
+          ? extracted[0].retailer
+          : parseSenderName(email.from)
 
-      const { data: existingLog } = await supabase
-        .from('retailer_scan_log')
-        .select('id, emails_processed, deals_extracted')
-        .eq('week_of', weekOfStr)
-        .eq('retailer', retailerName)
-        .single()
+        const { data: existingLog } = await supabase
+          .from('retailer_scan_log')
+          .select('id, emails_processed, deals_extracted')
+          .eq('week_of', weekOfStr)
+          .eq('retailer', retailerName)
+          .single()
 
-      if (existingLog) {
-        await supabase
-          .from('retailer_scan_log')
-          .update({
-            emails_processed: existingLog.emails_processed + 1,
-            deals_extracted: existingLog.deals_extracted + extracted.length,
-          })
-          .eq('id', existingLog.id)
-      } else {
-        await supabase
-          .from('retailer_scan_log')
-          .insert({
-            week_of: weekOfStr,
-            retailer: retailerName,
-            sender_email: email.from,
-            emails_processed: 1,
-            deals_extracted: extracted.length,
-          })
+        if (existingLog) {
+          await supabase
+            .from('retailer_scan_log')
+            .update({
+              emails_processed: existingLog.emails_processed + 1,
+              deals_extracted: existingLog.deals_extracted + extracted.length,
+            })
+            .eq('id', existingLog.id)
+        } else {
+          await supabase
+            .from('retailer_scan_log')
+            .insert({
+              week_of: weekOfStr,
+              retailer: retailerName,
+              sender_email: email.from,
+              emails_processed: 1,
+              deals_extracted: extracted.length,
+            })
+        }
+
+        await supabase.from('processed_emails').upsert({ email_id: email.id, week_of: weekOfStr })
+        processedEmailIds.push(email.id)
+        processedUids.push(email.uid)
       }
-
-      await supabase.from('processed_emails').upsert({ email_id: email.id, week_of: weekOfStr })
-      processedEmailIds.push(email.id)
-      processedUids.push(email.uid)
     }
 
     // Concurrency-limited worker pool — N workers run in parallel and pick
@@ -627,8 +678,8 @@ export async function GET(request: NextRequest) {
     // (NOT fetchResult.maxUid, which would include emails that errored
     // mid-run). If processedUids is empty for any reason — every email
     // hit an exception — leave the cursor where it was so next run
-    // retries.
-    if (!forceDateWindow && processedUids.length > 0) {
+    // retries. Skipped in dry-run mode (no UIDs are pushed in that path).
+    if (!dryRun && !forceDateWindow && processedUids.length > 0) {
       const newLastUid = Math.max(...processedUids)
       const { error: cursorErr } = await supabase
         .from('ingest_state')
@@ -647,7 +698,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const response: Record<string, unknown> = {
       emails_fetched: emails.length,
       emails_processed: newEmails.length,
       emails_deferred: deferred,
@@ -662,7 +713,15 @@ export async function GET(request: NextRequest) {
         last_uid: processedUids.length > 0 ? Math.max(...processedUids) : cursor.afterUid,
         uid_validity: fetchResult.uidValidity,
       },
-    })
+    }
+
+    if (dryRun) {
+      response.dry_run = true
+      response.would_auto_add = dryRunWouldAutoAdd
+      response.would_insert_deals = dryRunWouldInsertDeals
+    }
+
+    return NextResponse.json(response)
   } catch (err) {
     console.error('Ingest error:', err)
     await sendAdminAlert({

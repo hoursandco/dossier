@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   // whole table instead of a silently-truncated, unfiltered first 1000.
   const PAGE_SIZE = 1000
   const SELECT_COLS =
-    'id, name, website, categories, sub_types, price_tier, is_active, status, age_group, affiliate_id, date_added, updated_at'
+    'id, name, website, categories, sub_types, price_tier, is_active, status, age_group, affiliate_id, date_added, created_at, updated_at'
 
   const buildQuery = (pageIndex: number) => {
     let q = service

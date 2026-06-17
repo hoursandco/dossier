@@ -195,6 +195,22 @@
   border-bottom: 4px solid var(--ink);
 }
 
+/* Side-by-side hero + search layout */
+.dl-shell .hero-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.dl-shell .hero-search-row > * { flex: 1 1 0; min-width: 0; }
+/* In the side-by-side row the form-card must not lift above its column;
+   the negative margin was sized for the old stacked layout. */
+.dl-shell .hero-search-row .form-card { margin-top: 0; }
+@media (max-width: 880px) {
+  .dl-shell .hero-search-row { flex-direction: column; }
+  /* Restore the lift effect for the stacked column view. */
+  .dl-shell .hero-search-row .form-card { margin-top: -120px; }
+}
+
 /* Counters trio that sits ON the boundary between the dark hero and
    the cream form-section. Half hangs in the hero (dark behind), half
    hangs over the lifted form-card top edge (cream behind). z-index
