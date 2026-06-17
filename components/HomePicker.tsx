@@ -468,7 +468,7 @@ export function HomePicker() {
 
           {/* ── SEARCH ── */}
           <h2 className="form-h">
-            What are you{' '}
+            Whatcha{' '}
             <em style={{ fontFamily: "'Alfa Slab One', serif", fontStyle: 'normal', color: 'var(--ink)', textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)', padding: '0 .04em' }}>
               shopping for?
             </em>

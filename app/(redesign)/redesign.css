@@ -205,6 +205,7 @@
 /* In the side-by-side row the form-card must not lift above its column;
    the negative margin was sized for the old stacked layout. */
 .dl-shell .hero-search-row .form-card { margin-top: 0; }
+.dl-shell .hero-search-row .form-section { padding-top: 20px; }
 @media (max-width: 880px) {
   .dl-shell .hero-search-row { flex-direction: column; }
   /* Restore the lift effect for the stacked column view. */

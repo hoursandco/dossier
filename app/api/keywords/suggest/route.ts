@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
       .from('stores')
       .select('name')
       .ilike('name', `%${q}%`)
-      .eq('confirmed', true)
+      .eq('status', 'active')
+      .eq('is_active', true)
       .limit(4),
   ])
 
