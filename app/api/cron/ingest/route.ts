@@ -532,7 +532,7 @@ export async function GET(request: NextRequest) {
           affiliate_link: null,
           categories: mergedCategories,
           deal_subtype: deal.deal_subtype ?? null,
-          keywords: deal.keywords ?? [],
+          keywords: (deal.keywords ?? []).map((k) => k.toLowerCase()),
           last_seen_at: new Date().toISOString(),
           week_of: weekOfStr,
           source_email_id: email.id,
