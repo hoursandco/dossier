@@ -3,6 +3,13 @@ import { z } from 'zod'
 import type { Category } from '@/types'
 import { overrideCategoriesForRetailer } from '@/lib/deals'
 
+export class ApiCreditExhaustedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ApiCreditExhaustedError'
+  }
+}
+
 // LLM client. We use the OpenAI SDK against Gemini's OpenAI-compatible
 // endpoint — Google publishes a drop-in API at this base URL that
 // accepts OpenAI-shaped chat.completions calls (including JSON mode).
@@ -151,6 +158,18 @@ Return ONLY this exact JSON structure:
 Use null for any field that doesn't apply. percent_off must be a number or null.`
 }
 
+function isCreditsExhausted(err: unknown): boolean {
+  if (!(err instanceof Error) || !('status' in err)) return false
+  const status = (err as { status?: number }).status
+  if (status === 402) return true
+  if (status === 429) {
+    const msg = err.message.toLowerCase()
+    return msg.includes('quota') || msg.includes('resource_exhausted') ||
+           msg.includes('billing') || msg.includes('credit')
+  }
+  return false
+}
+
 async function callOpenAIWithRetry(
   systemPrompt: string,
   userContent: UserContent,
@@ -179,6 +198,11 @@ async function callOpenAIWithRetry(
       })
       return response.choices[0]?.message?.content ?? null
     } catch (err) {
+      if (isCreditsExhausted(err)) {
+        throw new ApiCreditExhaustedError(
+          err instanceof Error ? err.message : String(err)
+        )
+      }
       const isRateLimit =
         err instanceof Error &&
         'status' in err &&
@@ -237,6 +261,7 @@ BODY: ${cleanBody}`
 
     return parseExtractionResponse(content, 'OpenAI')
   } catch (err) {
+    if (err instanceof ApiCreditExhaustedError) throw err
     console.error('OpenAI extraction error:', err)
     return []
   }
@@ -273,6 +298,7 @@ This promotional email has little or no useful HTML text. It may have appeared c
     if (!content) return []
     return parseExtractionResponse(content, 'Gemini vision')
   } catch (err) {
+    if (err instanceof ApiCreditExhaustedError) throw err
     console.error('Gemini vision extraction error:', err)
     return []
   }

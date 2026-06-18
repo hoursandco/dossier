@@ -5,6 +5,7 @@ import {
   extractDealsFromEmail,
   extractDealsFromEmailImages,
   getRetailerCategories,
+  ApiCreditExhaustedError,
   type CategoryRow,
 } from '@/lib/openai'
 import { getCurrentWeekOf, makeDealKey, getJunkDealReason } from '@/lib/deals'
@@ -196,11 +197,13 @@ async function fetchWebVersion(url: string): Promise<string | null> {
 async function runWithConcurrency<T>(
   items: T[],
   concurrency: number,
-  worker: (item: T) => Promise<void>
+  worker: (item: T) => Promise<void>,
+  shouldAbort?: () => boolean,
 ): Promise<void> {
   let index = 0
   const next = async (): Promise<void> => {
     while (true) {
+      if (shouldAbort?.()) return
       const i = index++
       if (i >= items.length) return
       try {
@@ -257,6 +260,7 @@ export async function GET(request: NextRequest) {
   // hourly runs never look at this — they pick up at `UID > last_uid`.
   const since = subHours(new Date(), lookbackHours)
   let auditRunId: string | null = null
+  let apiCreditExhausted = false
 
   try {
     const { data: auditRun, error: auditRunError } = await supabase
@@ -1070,7 +1074,12 @@ export async function GET(request: NextRequest) {
       try {
         await processEmail(email)
       } catch (err) {
-        console.error(`Failed to process email ${email.id}:`, err)
+        if (err instanceof ApiCreditExhaustedError) {
+          apiCreditExhausted = true
+          console.error(`[ingest] API credits exhausted — aborting remaining emails`)
+        } else {
+          console.error(`Failed to process email ${email.id}:`, err)
+        }
         failedUids.push(email.uid)
         if (auditRunId) {
           await supabase
@@ -1083,11 +1092,25 @@ export async function GET(request: NextRequest) {
             .eq('email_id', email.id)
         }
       }
-    })
+    }, () => apiCreditExhausted)
     console.log(
       `[ingest] processed ${newEmails.length} emails in ${Date.now() - tProcessStart}ms ` +
         `(${emailsWithDeals} with deals, ${emailsWithNoDeals} empty, ${newDeals} new deals)`
     )
+
+    if (apiCreditExhausted) {
+      const skipped = newEmails.length - processedEmailIds.length
+      await sendAdminAlert({
+        subject: '🚨 Deal Dossier — AI API credits exhausted',
+        body: `Gemini API credits are exhausted. Ingest stopped early at ${new Date().toISOString()}\n\n` +
+              `Emails skipped (unprocessed, will retry automatically): ~${skipped}\n\n` +
+              `Action required:\n` +
+              `1. Add credits at https://aistudio.google.com/\n` +
+              `2. Once credits are restored, the next hourly cron will retry unprocessed emails automatically.\n` +
+              `   (The cursor was NOT advanced past failed emails — no reprocess flag needed.)\n\n` +
+              `Admin: https://dealdossier.io/admin`,
+      })
+    }
 
     // Total deals this week — surfaced in the response for debugging.
     // The editions table is gone; homepage + admin stats now compute
@@ -1162,8 +1185,8 @@ export async function GET(request: NextRequest) {
           completed_at: new Date().toISOString(),
           deals_extracted: extractedCandidates,
           deals_inserted: dryRun ? 0 : newDeals,
-          status: failedUids.length > 0 ? 'completed_with_errors' : 'completed',
-          error: failedUids.length > 0 ? `${failedUids.length} email(s) failed` : null,
+          status: apiCreditExhausted ? 'credit_exhausted' : failedUids.length > 0 ? 'completed_with_errors' : 'completed',
+          error: apiCreditExhausted ? 'Gemini API credits exhausted' : failedUids.length > 0 ? `${failedUids.length} email(s) failed` : null,
         })
         .eq('id', auditRunId)
     }
