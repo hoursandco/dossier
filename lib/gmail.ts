@@ -199,21 +199,28 @@ async function transformMessage(msg: FetchMessageObject): Promise<GmailMessage |
   }
 }
 
-// Find the "view in browser" URL from a retail email's HTML body.
-// Retailers use this for subscribers to see the full email with fine print.
-function extractViewInBrowserUrl(html: string): string | null {
+// Find the hosted/full-message URL from a retail email's HTML body.
+// Gmail's own "[Message clipped] View entire message" control is not part of
+// the raw IMAP source, but retailers sometimes use the same wording for their
+// hosted email page.
+export function extractViewInBrowserUrl(html: string): string | null {
   if (!html) return null
 
-  // Strategy 1: anchor tag whose visible text mentions "view" + browser/online/email
+  // Strategy 1: anchor text describes a hosted or expanded copy of the email.
   const anchorRegex = /<a\s+(?:[^>]*?\s+)?href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
   let match
   while ((match = anchorRegex.exec(html)) !== null) {
     const href = match[1]
-    const text = match[2].replace(/<[^>]+>/g, '').trim().toLowerCase()
-    if (
-      text.includes('view') &&
-      (text.includes('browser') || text.includes('online') || text.includes('email'))
-    ) {
+    const text = match[2]
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+    const isHostedEmailLink =
+      /\b(view|see|read|open)\b.*\b(browser|online|email)\b/.test(text)
+    const isFullMessageLink =
+      /\b(view|see|read|open)\b.*\b(entire|full|complete)\b.*\b(message|email)\b/.test(text)
+    if (isHostedEmailLink || isFullMessageLink) {
       return href
     }
   }

@@ -438,13 +438,18 @@ export async function GET(request: NextRequest) {
     // the same sale twice even if 3 emails announce it
     const { data: existingDealsThisWeek } = await supabase
       .from('deals')
-      .select('id, retailer, deal_type, percent_off, promo_code, description, categories')
+      .select('id, retailer, deal_type, percent_off, promo_code, description, categories, keywords, deal_subtype')
       .eq('week_of', weekOfStr)
 
     const existingDealByKey = new Map(
       (existingDealsThisWeek || []).map((d) => [
         makeDealKey(d),
-        { id: d.id as string, categories: (d.categories ?? []) as string[] },
+        {
+          id: d.id as string,
+          categories: (d.categories ?? []) as string[],
+          keywords: (d.keywords ?? []) as string[],
+          deal_subtype: (d.deal_subtype ?? null) as string | null,
+        },
       ])
     )
     const seenDealKeys = new Set(existingDealByKey.keys())
@@ -645,12 +650,22 @@ export async function GET(request: NextRequest) {
           const nextCategories = Array.from(
             new Set([...(existingDeal.categories ?? []), ...mergedCategories])
           )
-          const changed = nextCategories.length !== existingDeal.categories.length
+          const nextKeywords = Array.from(new Set([
+            ...(existingDeal.keywords ?? []),
+            ...(deal.keywords ?? []).map((keyword) => keyword.toLowerCase()),
+          ]))
+          const nextSubtype = existingDeal.deal_subtype ?? deal.deal_subtype ?? null
+          const changed =
+            nextCategories.length !== existingDeal.categories.length ||
+            nextKeywords.length !== existingDeal.keywords.length ||
+            nextSubtype !== existingDeal.deal_subtype
           if (changed) {
             const { error: updateError } = await supabase
               .from('deals')
               .update({
                 categories: nextCategories,
+                keywords: nextKeywords,
+                deal_subtype: nextSubtype,
                 last_seen_at: new Date().toISOString(),
               })
               .eq('id', existingDeal.id)
@@ -658,7 +673,9 @@ export async function GET(request: NextRequest) {
               console.error('[ingest] duplicate category update error:', JSON.stringify(updateError))
             } else {
               existingDeal.categories = nextCategories
-              console.log(`[ingest] updated duplicate categories: ${retailer} → [${nextCategories.join(',')}]`)
+              existingDeal.keywords = nextKeywords
+              existingDeal.deal_subtype = nextSubtype
+              console.log(`[ingest] enriched duplicate deal: ${retailer} → keywords=[${nextKeywords.join(',')}]`)
             }
           } else {
             console.log(`[ingest] skipping duplicate: ${retailer} ${deal.deal_type} ${deal.percent_off}%`)

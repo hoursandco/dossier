@@ -260,7 +260,7 @@ export async function extractDealsFromEmailImages(
       text: `FROM: ${from}
 SUBJECT: ${subject}
 
-This promotional email has little or no useful HTML text. Read the sale copy, promo codes, expiration dates, product/category text, and offer details directly from these email images. Ignore logos, social icons, app badges, decorative photography with no sale copy, and tracking pixels. Return only the deal JSON requested by the system prompt.`,
+This promotional email has little or no useful HTML text. It may have appeared clipped in Gmail, with important sale copy near the bottom. Inspect every supplied image and read sale copy, promo codes, expiration dates, product/category text, and offer details directly from the pixels. Ignore logos, social icons, app badges, decorative photography with no sale copy, and tracking pixels. Return only the deal JSON requested by the system prompt.`,
     },
     ...usableImageUrls.map((url) => ({
       type: 'image_url' as const,

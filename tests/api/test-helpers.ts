@@ -38,6 +38,7 @@ export function makeQuery<T = unknown>(result: QueryResult<T>) {
     'limit',
     'contains',
     'ilike',
+    'or',
     'insert',
     'update',
     'delete',

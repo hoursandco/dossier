@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { dealMatchesAnySearchTerm } from '@/lib/dealSearch'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,15 +22,7 @@ export async function GET(request: NextRequest) {
     ? [keywordParam.toLowerCase()]
     : []
 
-  // Expand each keyword to include apostrophe variants so "fathers day"
-  // matches deals tagged "father's day" and vice versa.
-  const keywords = Array.from(new Set(
-    rawKeywords.flatMap((k) => {
-      const stripped = k.replace(/[''`]/g, '')                        // "father's day" → "fathers day"
-      const apostrophied = stripped.replace(/([^aeiou\s])s(\s|$)/g, "$1's$2") // "fathers day" → "father's day"
-      return [k, stripped, apostrophied]
-    })
-  ))
+  const keywords = Array.from(new Set(rawKeywords))
 
   if (keywords.length === 0 && !retailer) {
     return NextResponse.json({ deals: [] })
@@ -47,7 +40,10 @@ export async function GET(request: NextRequest) {
     .from('deals')
     .select(SELECT)
     .order('created_at', { ascending: false })
-    .limit(retailer ? 200 : 50)
+    // Keyword matching is intentionally finished in JS below. Postgres array
+    // overlap only supports exact values, which made normal searches such as
+    // "shoe" vs "shoes" fail and ignored product text in descriptions.
+    .limit(retailer ? 200 : 1000)
 
   if (retailer) {
     // Retailer searches must be exact after punctuation/case normalization:
@@ -61,11 +57,7 @@ export async function GET(request: NextRequest) {
       .or(`expiration_date.is.null,expiration_date.gte.${today}`)
       .gte('created_at', cutoff)
   } else {
-    // overlaps() returns deals where the deal's keywords array shares ANY
-    // element with the search terms — this is the OR logic needed for
-    // multi-keyword searches ("body care" + "soap" + "lotion").
     query = query
-      .overlaps('keywords', keywords)
       .or(`expiration_date.is.null,expiration_date.gte.${today}`)
       .gte('created_at', cutoff)
   }
@@ -79,7 +71,7 @@ export async function GET(request: NextRequest) {
 
   const deals = retailer
     ? (data ?? []).filter((d) => normalizeRetailerName(d.retailer ?? '') === normalizeRetailerName(retailer))
-    : (data ?? [])
+    : (data ?? []).filter((d) => dealMatchesAnySearchTerm(d, keywords)).slice(0, 50)
 
   console.log(`[deals/search] retailer="${retailer}" → ${deals.length} rows`)
   if (retailer && deals.length === 0) {
