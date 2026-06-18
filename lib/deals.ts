@@ -256,15 +256,15 @@ function isBlockedRetailer(retailer: string | null | undefined): boolean {
  * Used as a backstop in both the ingest route (to avoid DB pollution) and
  * the send routes (to catch anything that slipped through ingest).
  */
-export function isJunkDeal(deal: Pick<Deal, 'deal_type' | 'description'> & { retailer?: string | null; percent_off?: number | null; promo_code?: string | null }): boolean {
+export function getJunkDealReason(deal: Pick<Deal, 'deal_type' | 'description'> & { retailer?: string | null; percent_off?: number | null; promo_code?: string | null }): string | null {
   const desc = deal.description ?? ''
 
   // Blocked retailers (e.g. FTD) — never publish regardless of content
-  if (isBlockedRetailer(deal.retailer)) return true
+  if (isBlockedRetailer(deal.retailer)) return 'blocked retailer'
 
   // Welcome / first-order / new-customer offers — single-use, won't work for most readers
   if (/\b(welcome\s+(code|offer|discount|deal)|code\s+welcome\b|first[\s-]?(order|purchase|time)\s+(discount|offer|code|deal|off)|new\s+customer\s+(offer|discount|code|deal)|first\s+\d+%\s*off|valid\s+(only\s+)?once\s+per\s+(person|customer|user|account|household))\b/i.test(desc))
-    return true
+    return 'welcome or first-order offer'
 
   // Personalized / one-time-use coupons — issued to a specific recipient with
   // a per-account validity window or a unique code. Show up most often as
@@ -274,16 +274,16 @@ export function isJunkDeal(deal: Pick<Deal, 'deal_type' | 'description'> & { ret
   //   "Single-use code expires 7 days after delivery"
   //   "Your personal coupon — non-transferable"
   if (/\b(valid\s+for\s+\d+\s+days?\s+from\s+(issuance|enrollment|delivery|receipt|sign[\s-]?up|registration|when\s+issued)|expires\s+\d+\s+days?\s+(after|from)\s+(issuance|enrollment|delivery|receipt|sign[\s-]?up|registration)|one[\s-]?time[\s-]?use\s+(code|coupon|promo|offer|discount)?|single[\s-]?use\s+(code|coupon|promo|offer|discount)|personal(?:ized)?\s+(coupon|code|promo|discount)|non[\s-]?transferable|unique\s+(promo\s+)?code\s+(just\s+)?for\s+you|good\s+for\s+one\s+use\s+only)\b/i.test(desc))
-    return true
+    return 'personalized or single-use offer'
 
   // Free returns / exchanges — a return policy, not a price discount
   if (/\bfree\s+(returns?|exchanges?)\b/i.test(desc) &&
     !/\d+%\s*off|\$\d+\s*(off|savings?)|save\s+\$\d+/i.test(desc))
-    return true
+    return 'free returns or exchanges'
 
   // Loyalty / points promotions — earning points is not a price discount
   if (deal.deal_type === 'loyalty' || /earn\s+(double|triple|\d+x|bonus)\s+points|bonus\s+points\s+event|rewards?\s+(credit\s+card|members?\s+earn)/i.test(desc))
-    return true
+    return 'loyalty or points promotion'
 
   // Games / sweepstakes / play-to-win promotions — entertainment
   // mechanics, not actual discounts. Catches anything that slipped past
@@ -291,12 +291,12 @@ export function isJunkDeal(deal: Pick<Deal, 'deal_type' | 'description'> & { ret
   // "Customers can win a surprise HOME AWAY gift by playing the HOME
   // AWAY game and scoring enough points."
   if (/\b(play(?:ing)?\s+(the\s+)?[a-z]+\s+game|scoring?\s+(enough\s+)?points|enter\s+to\s+win|sweepstakes?|scratch\s*[-&\s]+\s*win|spin\s+(the\s+)?wheel|win\s+a\s+(surprise|free|chance)|prize\s+(drawing|wheel)|chance\s+to\s+win)\b/i.test(desc))
-    return true
+    return 'game, sweepstakes, or contest'
 
   // Store cash / deferred credit (e.g. LOFT Cash, Kohl's Cash)
   if (/earn\s+\$\d+\s+\w*\s*(cash|credit|reward)|get\s+\$\d+\s+\w*\s*(cash|credit)\s+when\s+you\s+spend/i.test(desc) &&
     !/\d+%\s*off|\$\d+\s*off/i.test(desc))
-    return true
+    return 'store cash or deferred credit'
 
   // Price listings with no actual discount
   if (!deal.percent_off &&
@@ -304,16 +304,20 @@ export function isJunkDeal(deal: Pick<Deal, 'deal_type' | 'description'> & { ret
     !JUNK_DEAL_TYPES.has(deal.deal_type) &&
     /(?:starting at|from|for|at)\s+\$\d+|enjoy\s+\$\d+\+?\s+on|\$\d+\+?\s+on\s+select|^[\w\s]+for\s+\$\d+\.\d{2}/i.test(desc) &&
     !/\d+%\s*off|\$\d+\s*(off|savings?)|save\s+\$\d+/i.test(desc))
-    return true
+    return 'price listing without a discount'
 
   // Vague flash sales with no concrete savings info
   if (deal.deal_type === 'flash-sale' &&
     !deal.percent_off &&
     !deal.promo_code &&
     !/\d+%|\$\d+\s*(off|savings?)|buy\s+\d+|bogo/i.test(desc))
-    return true
+    return 'vague sale without concrete savings'
 
-  return false
+  return null
+}
+
+export function isJunkDeal(deal: Pick<Deal, 'deal_type' | 'description'> & { retailer?: string | null; percent_off?: number | null; promo_code?: string | null }): boolean {
+  return getJunkDealReason(deal) !== null
 }
 
 export function formatSavings(deal: Deal): string {

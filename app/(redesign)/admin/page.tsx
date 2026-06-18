@@ -14,6 +14,7 @@ import { AdminTabs } from '@/components/AdminTabs'
 import { isAdminEmail } from '@/lib/admin'
 import { DossierNav } from '@/components/DossierNav'
 import { DlFooter } from '@/components/DlFooter'
+import { IngestAuditPanel } from '@/components/IngestAuditPanel'
 
 export const dynamic = 'force-dynamic'
 
@@ -469,6 +470,15 @@ export default async function AdminPage() {
   )
 
   const storesTab = <StoresAdmin />
+  const ingestAuditTab = (
+    <div className="admin-card">
+      <SectionLabel n="01">Raw Ingest Evidence</SectionLabel>
+      <p className="t-meta" style={{ color: 'var(--ink-40)', marginTop: 8, marginBottom: 20 }}>
+        Every fetched email and extracted candidate, including transactional skips, zero-result extractions, junk-filter rejections, duplicates, insert failures, and published deals. Rejected candidates remain private here and never enter public search.
+      </p>
+      <IngestAuditPanel />
+    </div>
+  )
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
@@ -539,6 +549,7 @@ export default async function AdminPage() {
               { id: 'data', label: 'Data', content: dataTab },
               { id: 'subscriptions', label: 'Subscriptions', content: subscriptionsTab },
               { id: 'coupons', label: 'Coupons', content: couponsTab },
+              { id: 'ingest-audit', label: 'Ingest Audit', content: ingestAuditTab },
               {
                 id: 'review',
                 label: 'Review Queue',

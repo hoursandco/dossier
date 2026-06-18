@@ -7,11 +7,12 @@ import {
   getRetailerCategories,
   type CategoryRow,
 } from '@/lib/openai'
-import { getCurrentWeekOf, makeDealKey, isJunkDeal } from '@/lib/deals'
+import { getCurrentWeekOf, makeDealKey, getJunkDealReason } from '@/lib/deals'
 import { fixRetailerCase } from '@/lib/stores'
 import { sendAdminAlert } from '@/lib/resend'
 import { format, subHours } from 'date-fns'
 import type { Category } from '@/types'
+import { selectEmailsForIngest } from '@/lib/ingestSelection'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,9 +73,9 @@ const INGEST_CONCURRENCY = Math.max(
 // 5 minutes; a fresh inbox with weeks of accumulated subs can have hundreds of
 // promo emails in the 24-hour IMAP window. Capping per-run lets each invocation
 // finish reliably — the hourly cron clears the backlog in a handful of runs.
-// Tunable via INGEST_MAX_PER_RUN env var. 60 with concurrency 5 finishes
-// well under the 300s maxDuration; combined with newest-first ordering
-// it keeps up with steady-state inbox volume between hourly runs.
+// Tunable via INGEST_MAX_PER_RUN env var. Cursor runs drain oldest-first:
+// only a contiguous processed UID range may be committed, otherwise older
+// deferred messages are silently lost.
 const INGEST_MAX_PER_RUN = Math.max(
   1,
   Number(process.env.INGEST_MAX_PER_RUN) || 60
@@ -240,6 +241,11 @@ export async function GET(request: NextRequest) {
   const perRunLimit = Number.isFinite(requestedLimit)
     ? Math.min(500, Math.max(1, Math.floor(requestedLimit)))
     : INGEST_MAX_PER_RUN
+  const reprocess = request.nextUrl.searchParams.get('reprocess') === '1'
+  const offsetParam = Number(request.nextUrl.searchParams.get('offset') ?? 0)
+  const backfillOffset = Number.isFinite(offsetParam)
+    ? Math.max(0, Math.floor(offsetParam))
+    : 0
   // ?dryRun=true — runs the full pipeline (IMAP fetch + LLM extraction +
   // brand detection) but skips every DB write. Returns a JSON summary of
   // what would have been inserted. Safe to run against the live inbox.
@@ -250,8 +256,25 @@ export async function GET(request: NextRequest) {
   // (very first run) or invalidated by a UIDVALIDITY change. Steady-state
   // hourly runs never look at this — they pick up at `UID > last_uid`.
   const since = subHours(new Date(), lookbackHours)
+  let auditRunId: string | null = null
 
   try {
+    const { data: auditRun, error: auditRunError } = await supabase
+      .from('ingest_runs')
+      .insert({
+        mode: forceDateWindow ? 'backfill' : 'cursor',
+        lookback_hours: lookbackHours,
+        requested_limit: perRunLimit,
+        reprocess,
+      })
+      .select('id')
+      .single()
+    if (auditRunError) {
+      console.warn('[ingest] audit unavailable:', auditRunError.message)
+    } else {
+      auditRunId = auditRun?.id ?? null
+    }
+
     // Read the IMAP cursor. {uid_validity, last_uid} from ingest_state.
     // First-ever run: last_uid=0 (the table default), uidValidity unknown
     // → falls back to date window, which is fine.
@@ -274,6 +297,12 @@ export async function GET(request: NextRequest) {
       forceDateWindow ? { forceDateWindow: true } : cursor,
     )
     const emails = fetchResult.messages
+    if (auditRunId) {
+      await supabase
+        .from('ingest_runs')
+        .update({ emails_fetched: emails.length })
+        .eq('id', auditRunId)
+    }
     console.log(
       `[ingest] IMAP fetch: ${emails.length} new messages in ${Date.now() - tFetchStart}ms ` +
         `(mode=${forceDateWindow ? `${lookbackHours}h backfill` : 'cursor'}, cursor: afterUid=${cursor.afterUid}, uidValidity=${cursor.uidValidity ?? 'none'} → maxUid=${fetchResult.maxUid}, uidValidity=${fetchResult.uidValidity})`
@@ -287,7 +316,13 @@ export async function GET(request: NextRequest) {
           .update({ uid_validity: fetchResult.uidValidity, updated_at: new Date().toISOString() })
           .eq('id', 'singleton')
       }
-      return NextResponse.json({ emails: 0, new_deals: 0 })
+      if (auditRunId) {
+        await supabase
+          .from('ingest_runs')
+          .update({ status: 'completed', completed_at: new Date().toISOString() })
+          .eq('id', auditRunId)
+      }
+      return NextResponse.json({ emails: 0, new_deals: 0, audit_run_id: auditRunId })
     }
 
     // Fetch the active category list once per run so the LLM prompt can be
@@ -402,27 +437,6 @@ export async function GET(request: NextRequest) {
     // emails come from the same retailer.
     const retailerCategoriesCache = new Map<string, boolean>()
 
-    // Per-run cap: process NEWEST-UID-first.
-    //
-    // The mailbox accumulates faster than any single capped run can
-    // drain it. Oldest-first meant the cursor crawled through weeks-old
-    // expired promos while *today's* deals sat at the back of a
-    // 2000-deep queue — so the watchlist emails always showed stale or
-    // missing sales. Newest-first processes the freshest emails every
-    // run; the cursor then advances to the newest processed UID, which
-    // intentionally skips the older backlog. That's correct: those
-    // promos are long expired and worthless to ingest.
-    const newEmails = emails
-      .slice()
-      .sort((a, b) => b.uid - a.uid)
-      .slice(0, perRunLimit)
-
-    const deferred = emails.length - newEmails.length
-    console.log(
-      `[ingest] cap: ${emails.length} new → ${newEmails.length} processing this run` +
-        (deferred > 0 ? ` (${deferred} deferred to next run)` : '')
-    )
-
     // Pre-load processed email IDs for this week so backfill re-runs skip
     // emails the LLM already saw. Without this, re-running a backfill on the
     // same inbox window re-calls the LLM on the same email and can produce a
@@ -433,6 +447,36 @@ export async function GET(request: NextRequest) {
       .select('email_id')
       .eq('week_of', weekOfStr)
     const alreadyProcessedIds = new Set((processedEmailRows ?? []).map((r) => r.email_id))
+
+    // Cursor runs MUST drain UIDs oldest-first. Advancing a cursor after
+    // processing newest-first permanently jumped over every older deferred
+    // message. Backfills may skip already-processed messages, or deliberately
+    // reprocess them for auditing with ?reprocess=1. Offset allows a large
+    // date-window audit to be run in deterministic batches.
+    const selection = selectEmailsForIngest(emails, {
+      limit: perRunLimit,
+      forceDateWindow,
+      reprocess,
+      offset: backfillOffset,
+      alreadyProcessedIds,
+    })
+    const newEmails = selection.selected
+    const selectedOffset = selection.selectedOffset
+    const deferred = selection.deferred
+    console.log(
+      `[ingest] cap: ${emails.length} fetched → ${selection.eligibleCount} eligible → ${newEmails.length} processing` +
+        (selectedOffset > 0 ? ` (offset ${selectedOffset})` : '') +
+        (deferred > 0 ? ` (${deferred} genuinely deferred to next batch)` : '')
+    )
+    if (auditRunId) {
+      await supabase
+        .from('ingest_runs')
+        .update({
+          emails_selected: newEmails.length,
+          emails_deferred: deferred,
+        })
+        .eq('id', auditRunId)
+    }
 
     // Build a set of already-seen deal keys this week so we never insert
     // the same sale twice even if 3 emails announce it
@@ -455,6 +499,7 @@ export async function GET(request: NextRequest) {
     const seenDealKeys = new Set(existingDealByKey.keys())
 
     let newDeals = 0
+    let extractedCandidates = 0
     let emailsWithDeals = 0
     let emailsWithNoDeals = 0
     const processedEmailIds: string[] = []
@@ -462,16 +507,95 @@ export async function GET(request: NextRequest) {
     // we've successfully processed. If one email fails mid-run, the cursor
     // stays low enough that the next run will retry it.
     const processedUids: number[] = []
+    const failedUids: number[] = []
     // Dry-run accumulators — populated when ?dryRun=true, ignored otherwise.
     const dryRunWouldAutoAdd: Array<{ name: string; domain: string; from: string }> = []
     const dryRunWouldInsertDeals: Array<{ retailer: string; deal_type: string; description: string }> = []
 
+    async function startEmailAudit(email: (typeof newEmails)[number]): Promise<string | null> {
+      if (!auditRunId) return null
+      const receivedAt = email.date ? new Date(email.date) : null
+      const { data, error } = await supabase
+        .from('ingest_email_audit')
+        .insert({
+          run_id: auditRunId,
+          email_id: email.id,
+          uid: email.uid,
+          sender: email.from,
+          subject: email.subject,
+          received_at: receivedAt && !Number.isNaN(receivedAt.getTime())
+            ? receivedAt.toISOString()
+            : null,
+          body_sparse: isBodySparse(email.body),
+          outcome: 'processing',
+        })
+        .select('id')
+        .single()
+      if (error) {
+        console.error('[ingest] email audit insert error:', JSON.stringify(error))
+        return null
+      }
+      return data?.id ?? null
+    }
+
+    async function finishEmailAudit(
+      emailAuditId: string | null,
+      values: Record<string, unknown>,
+    ): Promise<void> {
+      if (!emailAuditId) return
+      const { error } = await supabase
+        .from('ingest_email_audit')
+        .update(values)
+        .eq('id', emailAuditId)
+      if (error) console.error('[ingest] email audit update error:', JSON.stringify(error))
+    }
+
+    async function auditCandidate(
+      emailAuditId: string | null,
+      emailId: string,
+      deal: Record<string, unknown>,
+      decision: string,
+      reason: string | null = null,
+      dealId: string | null = null,
+    ): Promise<void> {
+      if (!auditRunId) return
+      const { error } = await supabase
+        .from('ingest_deal_candidates')
+        .insert({
+          run_id: auditRunId,
+          email_audit_id: emailAuditId,
+          email_id: emailId,
+          retailer: deal.retailer ?? null,
+          description: deal.description ?? null,
+          percent_off: deal.percent_off ?? null,
+          deal_type: deal.deal_type ?? null,
+          promo_code: deal.promo_code ?? null,
+          expiration_date: deal.expiration_date ?? null,
+          categories: deal.categories ?? [],
+          keywords: deal.keywords ?? [],
+          deal_subtype: deal.deal_subtype ?? null,
+          decision,
+          reason,
+          deal_id: dealId,
+          raw_candidate: deal,
+        })
+      if (error) console.error('[ingest] candidate audit error:', JSON.stringify(error))
+    }
+
     async function processEmail(email: (typeof newEmails)[number]): Promise<void> {
+      const emailStartedAt = Date.now()
+      const emailAuditId = await startEmailAudit(email)
+
       // Skip emails already processed this week — prevents duplicate deals when
       // a backfill re-run hits the same inbox window and the LLM returns a
       // slightly different description, bypassing the deal-key dedup.
-      if (alreadyProcessedIds.has(email.id)) {
+      if (!reprocess && alreadyProcessedIds.has(email.id)) {
         console.log(`[ingest] skip already-processed: ${email.id}`)
+        await finishEmailAudit(emailAuditId, {
+          outcome: 'already_processed',
+          outcome_detail: 'Previously recorded in processed_emails for this week',
+          processing_ms: Date.now() - emailStartedAt,
+        })
         processedUids.push(email.uid)
         return
       }
@@ -479,6 +603,11 @@ export async function GET(request: NextRequest) {
       // Fast-path: skip obviously transactional emails without an OpenAI call
       if (isTransactionalEmail(email.subject)) {
         console.log(`[ingest] skip transactional: "${email.subject}"`)
+        await finishEmailAudit(emailAuditId, {
+          outcome: 'transactional_skipped',
+          outcome_detail: 'Subject matched transactional-email filter',
+          processing_ms: Date.now() - emailStartedAt,
+        })
         await supabase.from('processed_emails').upsert({ email_id: email.id, week_of: weekOfStr })
         processedEmailIds.push(email.id)
         processedUids.push(email.uid)
@@ -487,11 +616,18 @@ export async function GET(request: NextRequest) {
 
       let emailBody = email.body
       const sparseOriginalBody = isBodySparse(email.body)
+      let webVersionUsed = false
+      let imageCount = 0
+      let extractionMethod = 'text'
+      let insertedForEmail = 0
+      let rejectedForEmail = 0
+      let duplicatesForEmail = 0
       if (sparseOriginalBody && email.viewInBrowserUrl) {
         console.log(`[ingest] sparse body, fetching web version: ${email.viewInBrowserUrl}`)
         const webHtml = await fetchWebVersion(email.viewInBrowserUrl)
         if (webHtml) {
           emailBody = webHtml
+          webVersionUsed = true
           console.log(`[ingest] web version fetched (${webHtml.length} chars)`)
         } else {
           console.log(`[ingest] web version fetch failed, using original body`)
@@ -503,6 +639,7 @@ export async function GET(request: NextRequest) {
 
       if (sparseOriginalBody || extracted.length === 0) {
         const imageUrls = extractEmailImageUrls(`${email.body}\n${emailBody}`)
+        imageCount = imageUrls.length
         if (imageUrls.length > 0) {
           console.log(
             `[ingest] vision fallback (${sparseOriginalBody ? 'sparse body' : 'no text deals'}): ${imageUrls.length} images`
@@ -515,6 +652,7 @@ export async function GET(request: NextRequest) {
           )
           if (imageExtracted.length > 0) {
             extracted = imageExtracted
+            extractionMethod = 'vision'
             console.log(`[ingest] ${email.from} | subject: ${email.subject} | image extracted: ${extracted.length}`)
           } else {
             console.log(`[ingest] vision fallback found no deals`)
@@ -525,20 +663,40 @@ export async function GET(request: NextRequest) {
       }
 
       console.log(`[ingest] ${email.from} | subject: ${email.subject} | extracted: ${extracted.length}`)
+      extractedCandidates += extracted.length
       if (extracted.length > 0) emailsWithDeals++
       else emailsWithNoDeals++
 
       for (const deal of extracted) {
         // Skip deals with no real value
-        if (!deal.description || !deal.retailer) continue
+        if (!deal.description || !deal.retailer) {
+          rejectedForEmail++
+          await auditCandidate(
+            emailAuditId,
+            email.id,
+            deal as Record<string, unknown>,
+            'rejected_invalid',
+            'Missing retailer or description',
+          )
+          continue
+        }
 
         // Title-case all-lowercase LLM output ("carter's" → "Carter's")
         // without overriding mixed-case extractions
         const retailer = fixRetailerCase(deal.retailer)
         const normalizedDeal = { ...deal, retailer }
 
-        if (isJunkDeal(normalizedDeal)) {
+        const junkReason = getJunkDealReason(normalizedDeal)
+        if (junkReason) {
           console.log(`[ingest] skipping junk deal: ${retailer} — "${deal.description.slice(0, 80)}"`)
+          rejectedForEmail++
+          await auditCandidate(
+            emailAuditId,
+            email.id,
+            normalizedDeal as Record<string, unknown>,
+            'rejected_junk',
+            junkReason,
+          )
           continue
         }
 
@@ -680,10 +838,27 @@ export async function GET(request: NextRequest) {
           } else {
             console.log(`[ingest] skipping duplicate: ${retailer} ${deal.deal_type} ${deal.percent_off}%`)
           }
+          duplicatesForEmail++
+          await auditCandidate(
+            emailAuditId,
+            email.id,
+            { ...normalizedDeal, categories: mergedCategories } as Record<string, unknown>,
+            changed ? 'duplicate_enriched' : 'duplicate_existing',
+            changed ? 'Existing weekly deal enriched with new metadata' : 'Existing weekly deal matched dedup key',
+            existingDeal.id,
+          )
           continue
         }
         if (seenDealKeys.has(dealKey)) {
           console.log(`[ingest] skipping in-run duplicate: ${retailer} ${deal.deal_type} ${deal.percent_off}%`)
+          duplicatesForEmail++
+          await auditCandidate(
+            emailAuditId,
+            email.id,
+            { ...normalizedDeal, categories: mergedCategories } as Record<string, unknown>,
+            'duplicate_in_run',
+            'Another email in this ingest run produced the same deal key',
+          )
           continue
         }
         seenDealKeys.add(dealKey)
@@ -767,6 +942,13 @@ export async function GET(request: NextRequest) {
           console.log(`[DRY RUN] would insert deal: ${retailer} — ${deal.deal_type} — ${deal.description?.slice(0, 80)}`)
           dryRunWouldInsertDeals.push({ retailer, deal_type: deal.deal_type, description: deal.description ?? '' })
           newDeals++
+          insertedForEmail++
+          await auditCandidate(
+            emailAuditId,
+            email.id,
+            dealRow as Record<string, unknown>,
+            'dry_run_would_insert',
+          )
           continue
         }
 
@@ -777,14 +959,33 @@ export async function GET(request: NextRequest) {
         // so an upsert with that onConflict spec fails with Postgres
         // 42P10 — which silently dropped every deal extracted between
         // 2026-04-30 and 2026-05-07.
-        const { error: insertError } = await supabase
+        const { data: insertedDeal, error: insertError } = await supabase
           .from('deals')
           .insert(dealRow)
+          .select('id')
+          .single()
         if (insertError) {
           console.error('Deal insert error:', JSON.stringify(insertError))
+          rejectedForEmail++
+          await auditCandidate(
+            emailAuditId,
+            email.id,
+            dealRow as Record<string, unknown>,
+            'insert_failed',
+            insertError.message,
+          )
           continue
         }
         newDeals++
+        insertedForEmail++
+        await auditCandidate(
+          emailAuditId,
+          email.id,
+          dealRow as Record<string, unknown>,
+          'inserted',
+          null,
+          insertedDeal?.id ?? null,
+        )
 
         // Upsert keywords into the global vocabulary table via a Postgres
         // function that properly increments deal_count on conflict (a plain
@@ -836,6 +1037,29 @@ export async function GET(request: NextRequest) {
         processedEmailIds.push(email.id)
         processedUids.push(email.uid)
       }
+
+      await finishEmailAudit(emailAuditId, {
+        web_version_used: webVersionUsed,
+        image_count: imageCount,
+        extraction_method: extractionMethod,
+        extracted_count: extracted.length,
+        inserted_count: insertedForEmail,
+        rejected_count: rejectedForEmail,
+        duplicate_count: duplicatesForEmail,
+        outcome: extracted.length === 0
+          ? 'no_deals_extracted'
+          : insertedForEmail > 0
+            ? 'deals_inserted'
+            : rejectedForEmail > 0
+              ? 'all_candidates_rejected'
+              : duplicatesForEmail > 0
+                ? 'duplicates_only'
+                : 'extracted_no_insert',
+        outcome_detail: extracted.length === 0
+          ? 'LLM text and vision extraction returned no deal candidates'
+          : null,
+        processing_ms: Date.now() - emailStartedAt,
+      })
     }
 
     // Concurrency-limited worker pool — N workers run in parallel and pick
@@ -847,6 +1071,17 @@ export async function GET(request: NextRequest) {
         await processEmail(email)
       } catch (err) {
         console.error(`Failed to process email ${email.id}:`, err)
+        failedUids.push(email.uid)
+        if (auditRunId) {
+          await supabase
+            .from('ingest_email_audit')
+            .update({
+              outcome: 'failed',
+              outcome_detail: err instanceof Error ? err.message : String(err),
+            })
+            .eq('run_id', auditRunId)
+            .eq('email_id', email.id)
+        }
       }
     })
     console.log(
@@ -869,7 +1104,11 @@ export async function GET(request: NextRequest) {
     // hit an exception — leave the cursor where it was so next run
     // retries. Skipped in dry-run mode (no UIDs are pushed in that path).
     if (!dryRun && !forceDateWindow && processedUids.length > 0) {
-      const newLastUid = Math.max(...processedUids)
+      const firstFailedUid = failedUids.length > 0 ? Math.min(...failedUids) : Infinity
+      const safeProcessedUids = processedUids.filter((uid) => uid < firstFailedUid)
+      const newLastUid = safeProcessedUids.length > 0
+        ? Math.max(...safeProcessedUids)
+        : cursor.afterUid
       const { error: cursorErr } = await supabase
         .from('ingest_state')
         .update({
@@ -898,8 +1137,14 @@ export async function GET(request: NextRequest) {
       mode: forceDateWindow ? 'backfill' : 'cursor',
       lookback_hours: lookbackHours,
       per_run_limit: perRunLimit,
+      reprocess,
+      offset: selectedOffset,
+      next_offset: deferred > 0 ? selectedOffset + newEmails.length : null,
+      audit_run_id: auditRunId,
       cursor: {
-        last_uid: processedUids.length > 0 ? Math.max(...processedUids) : cursor.afterUid,
+        last_uid: !forceDateWindow && processedUids.length > 0
+          ? Math.max(...processedUids.filter((uid) => uid < (failedUids.length > 0 ? Math.min(...failedUids) : Infinity)), cursor.afterUid)
+          : cursor.afterUid,
         uid_validity: fetchResult.uidValidity,
       },
     }
@@ -910,9 +1155,32 @@ export async function GET(request: NextRequest) {
       response.would_insert_deals = dryRunWouldInsertDeals
     }
 
+    if (auditRunId) {
+      await supabase
+        .from('ingest_runs')
+        .update({
+          completed_at: new Date().toISOString(),
+          deals_extracted: extractedCandidates,
+          deals_inserted: dryRun ? 0 : newDeals,
+          status: failedUids.length > 0 ? 'completed_with_errors' : 'completed',
+          error: failedUids.length > 0 ? `${failedUids.length} email(s) failed` : null,
+        })
+        .eq('id', auditRunId)
+    }
+
     return NextResponse.json(response)
   } catch (err) {
     console.error('Ingest error:', err)
+    if (auditRunId) {
+      await supabase
+        .from('ingest_runs')
+        .update({
+          completed_at: new Date().toISOString(),
+          status: 'failed',
+          error: err instanceof Error ? err.message : String(err),
+        })
+        .eq('id', auditRunId)
+    }
     await sendAdminAlert({
       subject: '🚨 Deal Dossier — ingest failed',
       body: `Ingest failed at ${new Date().toISOString()}\n\nError: ${err instanceof Error ? err.message : String(err)}\n\nFix it at: https://dealdossier.io/admin`,
