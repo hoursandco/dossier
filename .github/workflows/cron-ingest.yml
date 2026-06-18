@@ -70,6 +70,12 @@ jobs:
             exit 1
           fi
 
+          # Strip whitespace/newlines that GitHub Actions can inject when
+          # substituting ${{ inputs.* }} values into the env block.
+          INPUT_HOURS="${INPUT_HOURS//[$'\t\r\n ']}"
+          INPUT_LIMIT="${INPUT_LIMIT//[$'\t\r\n ']}"
+          INPUT_OFFSET="${INPUT_OFFSET//[$'\t\r\n ']}"
+
           body_file=$(mktemp)
           trap 'rm -f "$body_file"' EXIT
 
