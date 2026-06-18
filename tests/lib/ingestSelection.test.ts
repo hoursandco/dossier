@@ -32,7 +32,7 @@ describe('selectEmailsForIngest', () => {
       alreadyProcessedIds: new Set(['oldest', 'middle']),
     })
 
-    expect(result.selected.map((email) => email.uid)).toEqual([102, 103])
+    expect(result.selected.map((email) => email.uid)).toEqual([103, 102])
   })
 
   it('supports deterministic reprocessing batches with offsets', () => {
@@ -44,7 +44,7 @@ describe('selectEmailsForIngest', () => {
       alreadyProcessedIds: new Set(['oldest']),
     })
 
-    expect(result.selected.map((email) => email.uid)).toEqual([102, 103])
+    expect(result.selected.map((email) => email.uid)).toEqual([101, 100])
     expect(result.deferred).toBe(0)
   })
 })

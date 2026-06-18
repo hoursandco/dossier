@@ -18,7 +18,13 @@ export function selectEmailsForIngest<T extends IngestEmailRef>(
   selectedOffset: number
   deferred: number
 } {
-  const ordered = emails.slice().sort((a, b) => a.uid - b.uid)
+  // Cursor mode must be oldest-first so the saved UID advances only across
+  // a contiguous processed range. Date-window audits are independent of the
+  // cursor and should be newest-first so the admin sees today's evidence
+  // before spending hours walking older mail.
+  const ordered = emails.slice().sort((a, b) =>
+    options.forceDateWindow ? b.uid - a.uid : a.uid - b.uid
+  )
   const eligible = options.forceDateWindow && !options.reprocess
     ? ordered.filter((email) => !options.alreadyProcessedIds.has(email.id))
     : ordered
