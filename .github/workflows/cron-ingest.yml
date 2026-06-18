@@ -28,7 +28,7 @@ on:
         required: false
         type: string
       limit:
-        description: 'Maximum emails to process'
+        description: 'Emails per batch'
         required: false
         default: '20'
         type: string
@@ -38,23 +38,26 @@ on:
         default: false
         type: boolean
       offset:
-        description: 'Backfill batch offset'
+        description: 'Starting offset for first batch'
         required: false
         default: '0'
+        type: string
+      batches:
+        description: 'Number of sequential batches to run (e.g. 50 batches × 20 emails = 1000 emails)'
+        required: false
+        default: '1'
         type: string
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    # One request may consume Vercel's full 5-minute function window. Leave
-    # enough room for one retry, which quickly skips any emails the first
-    # invocation already committed before timing out.
-    timeout-minutes: 12
+    # For scheduled runs, one request consumes Vercel's full 5-minute window.
+    # For backfill runs with many batches, allow up to 6 hours.
+    timeout-minutes: 360
     concurrency:
-      # Skip overlapping runs — if a previous hour's job is still going,
-      # don't start a new one on top of it. The next hourly tick will
-      # pick up where we left off (processed_emails table dedupes).
-      group: hourly-ingest
+      # Scheduled runs share a group to prevent overlap. Manual dispatch runs
+      # each get their own group so they are never skipped by the queue limit.
+      group: ${{ github.event_name == 'schedule' && 'hourly-ingest' || format('hourly-ingest-manual-{0}', github.run_id) }}
       cancel-in-progress: false
     steps:
       - name: Trigger ingest on dealdossier.io
@@ -64,6 +67,7 @@ jobs:
           INPUT_LIMIT: ${{ inputs.limit }}
           INPUT_REPROCESS: ${{ inputs.reprocess }}
           INPUT_OFFSET: ${{ inputs.offset }}
+          INPUT_BATCHES: ${{ inputs.batches }}
         run: |
           if [ -z "$CRON_SECRET" ]; then
             echo "::error::CRON_SECRET secret is not set in this repository."
@@ -75,51 +79,70 @@ jobs:
           INPUT_HOURS="${INPUT_HOURS//[$'\t\r\n ']}"
           INPUT_LIMIT="${INPUT_LIMIT//[$'\t\r\n ']}"
           INPUT_OFFSET="${INPUT_OFFSET//[$'\t\r\n ']}"
+          INPUT_BATCHES="${INPUT_BATCHES//[$'\t\r\n ']}"
+
+          limit="${INPUT_LIMIT:-20}"
+          start_offset="${INPUT_OFFSET:-0}"
+          batches="${INPUT_BATCHES:-1}"
 
           body_file=$(mktemp)
           trap 'rm -f "$body_file"' EXIT
 
-          limit="${INPUT_LIMIT:-20}"
-          ingest_url="https://dealdossier.io/api/cron/ingest?limit=${limit}"
-          if [ -n "$INPUT_HOURS" ]; then
-            ingest_url="${ingest_url}&hours=${INPUT_HOURS}"
-          fi
-          if [ "$INPUT_REPROCESS" = "true" ]; then
-            ingest_url="${ingest_url}&reprocess=1"
-          fi
-          if [ -n "$INPUT_OFFSET" ] && [ "$INPUT_OFFSET" != "0" ]; then
-            ingest_url="${ingest_url}&offset=${INPUT_OFFSET}"
-          fi
+          for batch in $(seq 0 $((batches - 1))); do
+            current_offset=$((start_offset + batch * limit))
 
-          for attempt in 1 2; do
-            # The default 60-email batch has crossed Vercel's 300-second
-            # function limit. Twenty keeps the hourly run comfortably below
-            # that ceiling while still prioritizing the newest messages.
-            if ! status=$(curl -sS --max-time 320 \
-              -o "$body_file" \
-              -w "%{http_code}" \
-              -H "Authorization: Bearer $CRON_SECRET" \
-              "$ingest_url"); then
-              status="000"
+            ingest_url="https://dealdossier.io/api/cron/ingest?limit=${limit}&offset=${current_offset}"
+            if [ -n "$INPUT_HOURS" ]; then
+              ingest_url="${ingest_url}&hours=${INPUT_HOURS}"
+            fi
+            if [ "$INPUT_REPROCESS" = "true" ]; then
+              ingest_url="${ingest_url}&reprocess=1"
             fi
 
-            echo "Attempt $attempt: HTTP $status"
-            echo "Body: $(cat "$body_file")"
+            echo "--- Batch $((batch + 1))/${batches} (offset=${current_offset}) ---"
 
-            if [ "$status" = "200" ]; then
-              exit 0
+            for attempt in 1 2; do
+              if ! status=$(curl -sS --max-time 320 \
+                -o "$body_file" \
+                -w "%{http_code}" \
+                -H "Authorization: Bearer $CRON_SECRET" \
+                "$ingest_url"); then
+                status="000"
+              fi
+
+              echo "Attempt $attempt: HTTP $status"
+              body=$(cat "$body_file")
+              echo "Body: $body"
+
+              if [ "$status" = "200" ]; then
+                # If the endpoint returned 0 processed emails, the backlog is
+                # cleared — no point running further batches.
+                processed=$(echo "$body" | grep -o '"emails_processed":[0-9]*' | grep -o '[0-9]*' || echo "")
+                if [ "$processed" = "0" ]; then
+                  echo "No emails processed — backlog cleared, stopping early."
+                  exit 0
+                fi
+                break
+              fi
+
+              # Only retry on 502/503 (gateway errors where the function never
+              # started). Do NOT retry 504 — the function already ran its full
+              # 5-minute budget and may still be holding DB connections; a
+              # fast retry hits an exhausted pool and fails with 500.
+              if [ "$attempt" = "1" ] && { [ "$status" = "502" ] || [ "$status" = "503" ]; }; then
+                echo "::warning::Transient ingest failure; retrying once in 10 seconds."
+                sleep 10
+                continue
+              fi
+
+              echo "::error::Ingest endpoint returned $status on batch $((batch + 1))"
+              exit 1
+            done
+
+            # Brief pause between batches to let Supabase connections settle.
+            if [ "$batch" -lt "$((batches - 1))" ]; then
+              sleep 5
             fi
-
-            # Only retry on 502/503 (gateway errors where the function never
-            # started). Do NOT retry 504 — the function already ran its full
-            # 5-minute budget and may still be holding DB connections; a
-            # fast retry hits an exhausted pool and fails with 500.
-            if [ "$attempt" = "1" ] && { [ "$status" = "502" ] || [ "$status" = "503" ]; }; then
-              echo "::warning::Transient ingest failure; retrying once in 10 seconds."
-              sleep 10
-              continue
-            fi
-
-            echo "::error::Ingest endpoint returned $status"
-            exit 1
           done
+
+          echo "All ${batches} batches completed."
