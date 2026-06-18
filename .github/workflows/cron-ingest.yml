@@ -26,7 +26,10 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # One request may consume Vercel's full 5-minute function window. Leave
+    # enough room for one retry, which quickly skips any emails the first
+    # invocation already committed before timing out.
+    timeout-minutes: 12
     concurrency:
       # Skip overlapping runs — if a previous hour's job is still going,
       # don't start a new one on top of it. The next hourly tick will
@@ -43,18 +46,34 @@ jobs:
             exit 1
           fi
 
-          response=$(curl -sS --max-time 320 \
-            -w "\n---STATUS---\n%{http_code}\n" \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "https://dealdossier.io/api/cron/ingest")
+          body_file=$(mktemp)
+          trap 'rm -f "$body_file"' EXIT
 
-          body=$(echo "$response" | sed -n '/^---STATUS---$/q;p')
-          status=$(echo "$response" | sed -n '/^---STATUS---$/,$p' | tail -n 1)
+          for attempt in 1 2; do
+            # The default 60-email batch has crossed Vercel's 300-second
+            # function limit. Twenty keeps the hourly run comfortably below
+            # that ceiling while still prioritizing the newest messages.
+            if ! status=$(curl -sS --max-time 320 \
+              -o "$body_file" \
+              -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "https://dealdossier.io/api/cron/ingest?limit=20"); then
+              status="000"
+            fi
 
-          echo "HTTP $status"
-          echo "Body: $body"
+            echo "Attempt $attempt: HTTP $status"
+            echo "Body: $(cat "$body_file")"
 
-          if [ "$status" != "200" ]; then
+            if [ "$status" = "200" ]; then
+              exit 0
+            fi
+
+            if [ "$attempt" = "1" ] && { [ "$status" = "502" ] || [ "$status" = "503" ] || [ "$status" = "504" ]; }; then
+              echo "::warning::Transient ingest failure; retrying once in 10 seconds."
+              sleep 10
+              continue
+            fi
+
             echo "::error::Ingest endpoint returned $status"
             exit 1
-          fi
+          done
