@@ -1185,6 +1185,9 @@ export async function GET(request: NextRequest) {
       subject: '🚨 Deal Dossier — ingest failed',
       body: `Ingest failed at ${new Date().toISOString()}\n\nError: ${err instanceof Error ? err.message : String(err)}\n\nFix it at: https://dealdossier.io/admin`,
     })
-    return NextResponse.json({ error: 'Ingestion failed' }, { status: 500 })
+    return NextResponse.json({
+      error: 'Ingestion failed',
+      detail: err instanceof Error ? err.message : String(err),
+    }, { status: 500 })
   }
 }
