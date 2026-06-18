@@ -110,7 +110,11 @@ jobs:
               exit 0
             fi
 
-            if [ "$attempt" = "1" ] && { [ "$status" = "502" ] || [ "$status" = "503" ] || [ "$status" = "504" ]; }; then
+            # Only retry on 502/503 (gateway errors where the function never
+            # started). Do NOT retry 504 — the function already ran its full
+            # 5-minute budget and may still be holding DB connections; a
+            # fast retry hits an exhausted pool and fails with 500.
+            if [ "$attempt" = "1" ] && { [ "$status" = "502" ] || [ "$status" = "503" ]; }; then
               echo "::warning::Transient ingest failure; retrying once in 10 seconds."
               sleep 10
               continue
