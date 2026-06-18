@@ -22,6 +22,26 @@ on:
     # more reliable firings.
     - cron: '17 * * * *'  # every hour at :17 past (UTC)
   workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Date-window lookback hours (blank = cursor mode)'
+        required: false
+        type: string
+      limit:
+        description: 'Maximum emails to process'
+        required: false
+        default: '20'
+        type: string
+      reprocess:
+        description: 'Reprocess emails already seen this week for auditing'
+        required: false
+        default: false
+        type: boolean
+      offset:
+        description: 'Backfill batch offset'
+        required: false
+        default: '0'
+        type: string
 
 jobs:
   ingest:
@@ -40,6 +60,10 @@ jobs:
       - name: Trigger ingest on dealdossier.io
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          INPUT_HOURS: ${{ inputs.hours }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+          INPUT_REPROCESS: ${{ inputs.reprocess }}
+          INPUT_OFFSET: ${{ inputs.offset }}
         run: |
           if [ -z "$CRON_SECRET" ]; then
             echo "::error::CRON_SECRET secret is not set in this repository."
@@ -49,6 +73,18 @@ jobs:
           body_file=$(mktemp)
           trap 'rm -f "$body_file"' EXIT
 
+          limit="${INPUT_LIMIT:-20}"
+          ingest_url="https://dealdossier.io/api/cron/ingest?limit=${limit}"
+          if [ -n "$INPUT_HOURS" ]; then
+            ingest_url="${ingest_url}&hours=${INPUT_HOURS}"
+          fi
+          if [ "$INPUT_REPROCESS" = "true" ]; then
+            ingest_url="${ingest_url}&reprocess=1"
+          fi
+          if [ -n "$INPUT_OFFSET" ] && [ "$INPUT_OFFSET" != "0" ]; then
+            ingest_url="${ingest_url}&offset=${INPUT_OFFSET}"
+          fi
+
           for attempt in 1 2; do
             # The default 60-email batch has crossed Vercel's 300-second
             # function limit. Twenty keeps the hourly run comfortably below
@@ -57,7 +93,7 @@ jobs:
               -o "$body_file" \
               -w "%{http_code}" \
               -H "Authorization: Bearer $CRON_SECRET" \
-              "https://dealdossier.io/api/cron/ingest?limit=20"); then
+              "$ingest_url"); then
               status="000"
             fi
 
