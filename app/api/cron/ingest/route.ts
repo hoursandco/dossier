@@ -6,6 +6,7 @@ import {
   extractDealsFromEmailImages,
   getRetailerCategories,
   ApiCreditExhaustedError,
+  ApiRateLimitError,
   type CategoryRow,
 } from '@/lib/openai'
 import { getCurrentWeekOf, makeDealKey, getJunkDealReason } from '@/lib/deals'
@@ -198,12 +199,23 @@ async function runWithConcurrency<T>(
   items: T[],
   concurrency: number,
   worker: (item: T) => Promise<void>,
-  shouldAbort?: () => boolean,
+  options?: {
+    shouldAbort?: () => boolean
+    // Returns the unix-ms timestamp that all workers should wait until
+    // before picking up their next item (used to throttle after rate limits).
+    getPauseUntil?: () => number
+  },
 ): Promise<void> {
   let index = 0
   const next = async (): Promise<void> => {
     while (true) {
-      if (shouldAbort?.()) return
+      if (options?.shouldAbort?.()) return
+      const pauseUntil = options?.getPauseUntil?.() ?? 0
+      if (pauseUntil > Date.now()) {
+        const waitMs = pauseUntil - Date.now()
+        console.log(`[ingest] rate-limit pause: waiting ${Math.round(waitMs / 1000)}s`)
+        await new Promise((r) => setTimeout(r, waitMs))
+      }
       const i = index++
       if (i >= items.length) return
       try {
@@ -261,6 +273,7 @@ export async function GET(request: NextRequest) {
   const since = subHours(new Date(), lookbackHours)
   let auditRunId: string | null = null
   let apiCreditExhausted = false
+  let rateLimitPauseUntil = 0
 
   try {
     const { data: auditRun, error: auditRunError } = await supabase
@@ -1077,6 +1090,11 @@ export async function GET(request: NextRequest) {
         if (err instanceof ApiCreditExhaustedError) {
           apiCreditExhausted = true
           console.error(`[ingest] API credits exhausted — aborting remaining emails`)
+        } else if (err instanceof ApiRateLimitError) {
+          rateLimitPauseUntil = Date.now() + err.retryAfterMs
+          console.warn(
+            `[ingest] rate limited — pausing all workers for ${Math.round(err.retryAfterMs / 1000)}s`
+          )
         } else {
           console.error(`Failed to process email ${email.id}:`, err)
         }
@@ -1092,7 +1110,10 @@ export async function GET(request: NextRequest) {
             .eq('email_id', email.id)
         }
       }
-    }, () => apiCreditExhausted)
+    }, {
+      shouldAbort: () => apiCreditExhausted,
+      getPauseUntil: () => rateLimitPauseUntil,
+    })
     console.log(
       `[ingest] processed ${newEmails.length} emails in ${Date.now() - tProcessStart}ms ` +
         `(${emailsWithDeals} with deals, ${emailsWithNoDeals} empty, ${newDeals} new deals)`

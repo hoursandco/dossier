@@ -10,6 +10,15 @@ export class ApiCreditExhaustedError extends Error {
   }
 }
 
+export class ApiRateLimitError extends Error {
+  readonly retryAfterMs: number
+  constructor(message: string, retryAfterMs = 60_000) {
+    super(message)
+    this.name = 'ApiRateLimitError'
+    this.retryAfterMs = retryAfterMs
+  }
+}
+
 // LLM client. We use the OpenAI SDK against Gemini's OpenAI-compatible
 // endpoint — Google publishes a drop-in API at this base URL that
 // accepts OpenAI-shaped chat.completions calls (including JSON mode).
@@ -207,7 +216,18 @@ async function callOpenAIWithRetry(
         err instanceof Error &&
         'status' in err &&
         (err as { status?: number }).status === 429
-      if (!isRateLimit || attempt === 2) throw err
+      if (!isRateLimit) throw err
+      if (attempt === 2) {
+        // All retries exhausted — surface as a typed error so callers can
+        // pause the worker pool rather than silently swallowing the failure.
+        const retryAfterSec = err instanceof Error && 'headers' in err
+          ? Number((err as { headers?: { get?: (k: string) => string | null } }).headers?.get?.('retry-after') ?? NaN)
+          : NaN
+        const retryAfterMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+          ? retryAfterSec * 1000
+          : 60_000
+        throw new ApiRateLimitError(err.message, retryAfterMs)
+      }
       const waitMs = 1000 * Math.pow(2, attempt) + Math.random() * 250
       console.warn(`[openai] 429 rate limit, retry ${attempt + 1}/3 in ${Math.round(waitMs)}ms`)
       await new Promise((r) => setTimeout(r, waitMs))
@@ -261,7 +281,7 @@ BODY: ${cleanBody}`
 
     return parseExtractionResponse(content, 'OpenAI')
   } catch (err) {
-    if (err instanceof ApiCreditExhaustedError) throw err
+    if (err instanceof ApiCreditExhaustedError || err instanceof ApiRateLimitError) throw err
     console.error('OpenAI extraction error:', err)
     return []
   }
@@ -298,7 +318,7 @@ This promotional email has little or no useful HTML text. It may have appeared c
     if (!content) return []
     return parseExtractionResponse(content, 'Gemini vision')
   } catch (err) {
-    if (err instanceof ApiCreditExhaustedError) throw err
+    if (err instanceof ApiCreditExhaustedError || err instanceof ApiRateLimitError) throw err
     console.error('Gemini vision extraction error:', err)
     return []
   }
