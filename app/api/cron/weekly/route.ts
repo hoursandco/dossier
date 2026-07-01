@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
     .select('id, email, last_weekly_email_at')
     .eq('is_active', true)
     .eq('weekly_email_enabled', true)
+    .eq('admin_emails_paused', false)
     .or(`last_weekly_email_at.is.null,last_weekly_email_at.lt.${cutoffIso}`)
 
   if (error) {

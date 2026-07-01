@@ -116,6 +116,8 @@ export function SubscriptionsPanel() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [offset, setOffset] = useState(0)
+  const [emailsPaused, setEmailsPaused] = useState<boolean | null>(null)
+  const [pauseBusy, setPauseBusy] = useState(false)
 
   // Debounce the search input so we don't fire a request per keystroke.
   // 250ms is short enough to feel instant but long enough to coalesce
@@ -157,6 +159,41 @@ export function SubscriptionsPanel() {
     void load()
   }, [load])
 
+  const loadPauseState = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/subscribers/pause-emails', { cache: 'no-store' })
+      if (!res.ok) return
+      const d = await res.json()
+      setEmailsPaused(d.paused ?? false)
+    } catch {
+      // non-fatal
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadPauseState()
+  }, [loadPauseState])
+
+  const togglePause = async () => {
+    const next = !emailsPaused
+    const confirmed = next
+      ? confirm('Pause all outbound emails for every active subscriber?')
+      : confirm('Resume emails for all active subscribers?')
+    if (!confirmed) return
+    setPauseBusy(true)
+    try {
+      const res = await fetch('/api/admin/subscribers/pause-emails', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused: next }),
+      })
+      if (res.ok) setEmailsPaused(next)
+      else alert('Action failed — check console')
+    } finally {
+      setPauseBusy(false)
+    }
+  }
+
   const cols = '2fr 0.9fr 1fr 1fr 0.6fr'
   const page = Math.floor(offset / PAGE_SIZE) + 1
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -195,6 +232,20 @@ export function SubscriptionsPanel() {
           </button>
         )}
         <div style={{ flex: 1 }} />
+        {emailsPaused !== null && (
+          <button
+            type="button"
+            className="admin-link-btn"
+            disabled={pauseBusy}
+            onClick={togglePause}
+            style={{
+              color: emailsPaused ? 'var(--olive-deep)' : 'var(--red, #d4322a)',
+              fontWeight: 600,
+            }}
+          >
+            {pauseBusy ? '…' : emailsPaused ? 'Resume all emails' : 'Pause all emails'}
+          </button>
+        )}
         <span className="t-meta" style={{ fontSize: 12, color: 'var(--ink-40)' }}>
           {total === 0
             ? debouncedSearch
