@@ -51,3 +51,14 @@ export function computeSafeCursorAfterProduction(
     ? Math.max(...safeProcessedUids)
     : currentCursorUid
 }
+
+export function isEmailOlderThanDays(
+  emailDate: string | Date | null | undefined,
+  maxAgeDays: number,
+  now: Date = new Date(),
+): boolean {
+  if (maxAgeDays <= 0 || !emailDate) return false
+  const receivedAt = emailDate instanceof Date ? emailDate : new Date(emailDate)
+  if (Number.isNaN(receivedAt.getTime())) return false
+  return receivedAt.getTime() < now.getTime() - maxAgeDays * 24 * 60 * 60 * 1000
+}

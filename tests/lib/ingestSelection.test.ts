@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { computeSafeCursorAfterProduction, selectEmailsForIngest } from '@/lib/ingestSelection'
+import {
+  computeSafeCursorAfterProduction,
+  isEmailOlderThanDays,
+  selectEmailsForIngest,
+} from '@/lib/ingestSelection'
 
 const emails = [
   { id: 'newest', uid: 103 },
@@ -66,5 +70,13 @@ describe('selectEmailsForIngest', () => {
     )
 
     expect(cursor).toBe(99)
+  })
+
+  it('flags emails older than the configured useful search window', () => {
+    const now = new Date('2026-07-02T17:00:00Z')
+
+    expect(isEmailOlderThanDays('2026-06-28T16:59:59Z', 4, now)).toBe(true)
+    expect(isEmailOlderThanDays('2026-06-28T17:00:00Z', 4, now)).toBe(false)
+    expect(isEmailOlderThanDays('not-a-date', 4, now)).toBe(false)
   })
 })

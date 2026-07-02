@@ -30,7 +30,11 @@ import { fixRetailerCase } from '@/lib/stores'
 import { sendAdminAlert } from '@/lib/resend'
 import { format, subHours } from 'date-fns'
 import type { Category } from '@/types'
-import { computeSafeCursorAfterProduction, selectEmailsForIngest } from '@/lib/ingestSelection'
+import {
+  computeSafeCursorAfterProduction,
+  isEmailOlderThanDays,
+  selectEmailsForIngest,
+} from '@/lib/ingestSelection'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,6 +106,11 @@ const INGEST_MAX_PER_RUN = Math.max(
 const INGEST_STALE_RUN_MS = Math.max(
   5 * 60 * 1000,
   Number(process.env.INGEST_STALE_RUN_MS) || 12 * 60 * 1000,
+)
+
+const INGEST_MAX_EMAIL_AGE_DAYS = Math.max(
+  1,
+  Number(process.env.INGEST_MAX_EMAIL_AGE_DAYS) || 4,
 )
 
 // Returns true when an email body is mostly images — stripping tags leaves
@@ -630,6 +639,7 @@ export async function GET(request: NextRequest) {
     let extractedCandidates = 0
     let emailsWithDeals = 0
     let emailsWithNoDeals = 0
+    let emailsSkippedStale = 0
     const processedEmailIds: string[] = []
     // Track per-email UIDs so we can advance the IMAP cursor only as far as
     // we've successfully processed. If one email fails mid-run, the cursor
@@ -831,6 +841,20 @@ export async function GET(request: NextRequest) {
           outcome_detail: 'Previously recorded in processed_emails for this week',
           processing_ms: Date.now() - emailStartedAt,
         })
+        processedUids.push(email.uid)
+        return
+      }
+
+      if (!reprocess && isEmailOlderThanDays(email.date, INGEST_MAX_EMAIL_AGE_DAYS)) {
+        console.log(`[ingest] skip stale email (${INGEST_MAX_EMAIL_AGE_DAYS}d cutoff): ${email.id}`)
+        await finishEmailAudit(emailAuditId, {
+          outcome: 'stale_skipped',
+          outcome_detail: `Email received more than ${INGEST_MAX_EMAIL_AGE_DAYS} days ago`,
+          processing_ms: Date.now() - emailStartedAt,
+        })
+        await supabase.from('processed_emails').upsert({ email_id: email.id, week_of: weekOfStr })
+        emailsSkippedStale++
+        processedEmailIds.push(email.id)
         processedUids.push(email.uid)
         return
       }
@@ -1332,6 +1356,7 @@ export async function GET(request: NextRequest) {
       emails_deferred: deferred,
       emails_with_deals: emailsWithDeals,
       emails_with_no_deals: emailsWithNoDeals,
+      emails_skipped_stale: emailsSkippedStale,
       new_deals: newDeals,
       total_deals_this_week: totalDeals ?? 0,
       mode: forceDateWindow ? 'backfill' : 'cursor',
