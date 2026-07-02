@@ -10,7 +10,8 @@ A weekly curated deals newsletter for fashion, grocery, restaurants, home, tech,
 - A [Supabase](https://supabase.com) project with Auth enabled
 - A [Resend](https://resend.com) account for outbound email
 - A Gmail account with OAuth2 credentials for deal ingestion
-- An [OpenAI](https://platform.openai.com) API key (GPT-4o-mini)
+- A [Gemini](https://ai.google.dev) API key for primary deal extraction
+- Optional: an [OpenRouter](https://openrouter.ai) API key for shadow extraction tests
 
 ---
 
@@ -36,7 +37,14 @@ The app runs at `http://localhost:3000`.
 | `NEXT_PUBLIC_SUPABASE_URL` | — | Supabase project URL — **required** |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | — | Supabase anon key — **required** |
 | `SUPABASE_SERVICE_ROLE_KEY` | — | Supabase service role key (server-side only) — **required** |
-| `OPENAI_API_KEY` | — | OpenAI API key for GPT-4o-mini deal extraction — **required** |
+| `GEMINI_API_KEY` | — | Gemini API key for primary deal extraction — **required** |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key for OpenAI-compatible shadow extraction |
+| `OPENROUTER_MODEL` | `google/gemini-2.5-flash-lite` | OpenRouter model used for shadow extraction |
+| `OPENROUTER_SHADOW_ENABLED` | `false` | Enables sampled OpenRouter shadow calls while Gemini remains primary |
+| `OPENROUTER_SHADOW_DAILY_LIMIT` | `0` | Max OpenRouter shadow calls per process per UTC day |
+| `OPENROUTER_SHADOW_SAMPLE_RATE` | `0` | Fraction of extraction calls to shadow, from `0` to `1` |
+| `EXTRACTION_JOBS_BATCH_LIMIT` | `20` | Max queued extraction jobs claimed by the worker per run |
+| `EXTRACTION_JOBS_CONCURRENCY` | `3` | Max queued extraction jobs processed in parallel |
 | `RESEND_API_KEY` | — | Resend API key for outbound email — **required** |
 | `RESEND_FROM_EMAIL` | `hello@dossier.email` | From address for all outbound emails |
 | `GMAIL_SCRAP_EMAIL` | — | Gmail address to scan for promotional emails — **required** |
@@ -67,6 +75,7 @@ To test the cron jobs locally, call the endpoints directly with your `CRON_SECRE
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/ingest
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/process-extraction-jobs
 curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/send
 ```
 
@@ -148,6 +157,7 @@ Vercel calls each cron path with a signed `Authorization: Bearer <token>` header
 | POST | `/api/billing/portal` | Session | Open a Stripe Customer Portal session for the logged-in subscriber |
 | POST | `/api/billing/webhook` | Stripe signature | Sync subscription state from Stripe events |
 | GET | `/api/cron/ingest` | Cron secret | Scan Gmail, extract deals, store edition |
+| GET | `/api/cron/process-extraction-jobs` | Cron secret | Process queued OpenRouter shadow extraction jobs |
 | GET | `/api/cron/send` | Cron secret | Send personalized newsletters for today's send day |
 
 ---
@@ -156,7 +166,8 @@ Vercel calls each cron path with a signed `Authorization: Bearer <token>` header
 
 | Endpoint | Schedule | Purpose | Requires |
 |----------|----------|---------|----------|
-| `/api/cron/ingest` | Daily 07:00 UTC | Fetch promotional emails from Gmail, extract deals with GPT-4o-mini, upsert deals and edition metadata | Gmail OAuth2, OpenAI |
+| `/api/cron/ingest` | Daily 07:00 UTC | Fetch promotional emails from Gmail, extract deals with Gemini, upsert deals and edition metadata | Gmail OAuth2, Gemini |
+| `/api/cron/process-extraction-jobs` | Every 5-15 minutes | Claim due OpenRouter shadow jobs, process snapshots, and retry transient failures | Supabase, OpenRouter |
 | `/api/cron/send` | Daily 09:00 UTC | Find subscribers whose send day matches today, filter and rank deals per preferences, send personalized HTML email | Resend, Supabase |
 
 ---

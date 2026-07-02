@@ -21,7 +21,7 @@ export function PurgeBrokenLinksButton() {
   const handleRun = async () => {
     if (
       !confirm(
-        `Delete every deal with a broken google.com/search link whose brand isn't in the stores table?\n\nThese are historical rows from before auto-store-creation existed. Not customer-visible (older than the 14-day email window). Irreversible.`
+        `Delete every deal with a broken google.com/search link whose brand isn't in the stores table?\n\nThese are historical rows from before auto-store-creation existed. Not customer-visible (older than the 7-day email window). Irreversible.`
       )
     ) {
       return

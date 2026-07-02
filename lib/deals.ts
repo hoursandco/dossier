@@ -1,5 +1,5 @@
 import { addDays, startOfDay, getDay, format, parseISO, isBefore } from 'date-fns'
-import type { Category, Deal } from '@/types'
+import type { Category, Deal, DealRedemptionChannel } from '@/types'
 
 // Anchor week_of to the most recent past Thursday. Used by ingest (so all
 // deals scanned in a given Sun–Wed window share a week_of) and by the
@@ -45,6 +45,7 @@ const DEAL_RANK_SCORE = (deal: Deal): number => {
   if (pct >= 30) return 70
   if (type === 'bogo-half') return 65
   if (type === 'free-shipping') return 40
+  if (type === 'price-point') return 20
   return 30
 }
 
@@ -67,6 +68,55 @@ export function makeDealKey(deal: { retailer: string; deal_type: string; percent
     return `${deal.retailer}||${deal.deal_type}||desc:${snippet}`
   }
   return `${deal.retailer}||${deal.deal_type}||${deal.percent_off ?? 'null'}`
+}
+
+export interface DuplicateDealMetadata {
+  categories?: string[] | null
+  keywords?: string[] | null
+  deal_subtype?: string | null
+  redemption_channel?: string | null
+}
+
+export function buildDuplicateDealRefresh(
+  existingDeal: DuplicateDealMetadata,
+  incomingDeal: DuplicateDealMetadata,
+  seenAt: string,
+): {
+  update: {
+    categories: string[]
+    keywords: string[]
+    deal_subtype: string | null
+    redemption_channel: string | null
+    last_seen_at: string
+  }
+  metadataChanged: boolean
+} {
+  const nextCategories = Array.from(
+    new Set([...(existingDeal.categories ?? []), ...(incomingDeal.categories ?? [])])
+  )
+  const nextKeywords = Array.from(new Set([
+    ...(existingDeal.keywords ?? []),
+    ...(incomingDeal.keywords ?? []).map((keyword) => keyword.toLowerCase()),
+  ]))
+  const nextSubtype = existingDeal.deal_subtype ?? incomingDeal.deal_subtype ?? null
+  const nextRedemptionChannel =
+    existingDeal.redemption_channel ?? incomingDeal.redemption_channel ?? null
+  const metadataChanged =
+    nextCategories.length !== (existingDeal.categories ?? []).length ||
+    nextKeywords.length !== (existingDeal.keywords ?? []).length ||
+    nextSubtype !== (existingDeal.deal_subtype ?? null) ||
+    nextRedemptionChannel !== (existingDeal.redemption_channel ?? null)
+
+  return {
+    update: {
+      categories: nextCategories,
+      keywords: nextKeywords,
+      deal_subtype: nextSubtype,
+      redemption_channel: nextRedemptionChannel,
+      last_seen_at: seenAt,
+    },
+    metadataChanged,
+  }
 }
 
 // Remove duplicate sales: if the same retailer has the same deal_type + percent_off,
@@ -136,7 +186,7 @@ export function filterDealsForSubscriber(
     // — Gender filter —
     // A deal passes if it shares at least one gender tag with the subscriber's filter.
     // Deals without a gender field (legacy) are treated as all-gender.
-    const dealGenders: string[] = (deal as Deal & { gender?: string[] }).gender ?? ['men', 'women', 'unisex']
+    const dealGenders = deal.gender ?? ['men', 'women', 'unisex']
     const genderMatch = dealGenders.some((g) => genderFilter.includes(g))
     if (!genderMatch) return false
 
@@ -154,6 +204,8 @@ export function filterDealsForSubscriber(
 
     if (!enabledDealTypes.includes(deal.deal_type)) return false
 
+    if (deal.deal_type === 'price-point' && minDiscount > 0) return false
+
     if (deal.percent_off !== null && deal.percent_off < minDiscount) {
       if (!['free-item', 'bogo-free', 'bogo-half', 'free-shipping'].includes(deal.deal_type)) {
         return false
@@ -166,6 +218,22 @@ export function filterDealsForSubscriber(
 
 export function getDealLink(deal: Deal): string {
   return deal.affiliate_link || deal.original_link
+}
+
+export function normalizeRedemptionChannel(
+  value: string | null | undefined,
+): DealRedemptionChannel {
+  if (value === 'in-store' || value === 'online-and-in-store') return value
+  return 'online'
+}
+
+export function formatRedemptionChannel(
+  value: string | null | undefined,
+): string {
+  const channel = normalizeRedemptionChannel(value)
+  if (channel === 'in-store') return 'In store'
+  if (channel === 'online-and-in-store') return 'Online + in store'
+  return 'Online'
 }
 
 export function formatExpiryDate(dateStr: string | null): string | null {
@@ -234,6 +302,11 @@ function applyCategoryExclusions(categories: Category[]): Category[] {
 
 const JUNK_DEAL_TYPES = new Set(['free-shipping', 'bogo-free', 'bogo-half', 'free-item'])
 
+export function isPricePointDescription(description: string | null | undefined): boolean {
+  const desc = description ?? ''
+  return /(?:starting at|from|for|at|sale for)\s+\$\d+|enjoy\s+\$\d+\+?\s+on|\$\d+\+?\s+on\s+select|^[\w\s'’.-]+for\s+\$\d+\.\d{2}/i.test(desc)
+}
+
 // Retailers we never want to publish under any circumstance. The LLM
 // occasionally extracts these as the retailer when promotional content is
 // embedded inside another brand's email (e.g. an FTD bouquet promotion in
@@ -301,8 +374,9 @@ export function getJunkDealReason(deal: Pick<Deal, 'deal_type' | 'description'> 
   // Price listings with no actual discount
   if (!deal.percent_off &&
     !deal.promo_code &&
+    deal.deal_type !== 'price-point' &&
     !JUNK_DEAL_TYPES.has(deal.deal_type) &&
-    /(?:starting at|from|for|at)\s+\$\d+|enjoy\s+\$\d+\+?\s+on|\$\d+\+?\s+on\s+select|^[\w\s]+for\s+\$\d+\.\d{2}/i.test(desc) &&
+    isPricePointDescription(desc) &&
     !/\d+%\s*off|\$\d+\s*(off|savings?)|save\s+\$\d+/i.test(desc))
     return 'price listing without a discount'
 
@@ -325,6 +399,9 @@ export function formatSavings(deal: Deal): string {
   if (deal.deal_type === 'bogo-half') return 'BOGO 50%'
   if (deal.deal_type === 'free-item') return 'Free'
   if (deal.deal_type === 'free-shipping') return 'Free Shipping'
+  if (deal.deal_type === 'price-point') {
+    return /\bstarting at\b/i.test(deal.description) ? 'Starting At' : 'Sale Price'
+  }
   if (deal.percent_off) return `${deal.percent_off}%`
   return deal.deal_type.replace('-', ' ')
 }

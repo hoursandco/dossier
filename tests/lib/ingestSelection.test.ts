@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { selectEmailsForIngest } from '@/lib/ingestSelection'
+import { computeSafeCursorAfterProduction, selectEmailsForIngest } from '@/lib/ingestSelection'
 
 const emails = [
   { id: 'newest', uid: 103 },
@@ -46,5 +46,25 @@ describe('selectEmailsForIngest', () => {
 
     expect(result.selected.map((email) => email.uid)).toEqual([101, 100])
     expect(result.deferred).toBe(0)
+  })
+
+  it('does not advance the Gmail cursor past unprocessed production emails when shadow jobs are queued', () => {
+    const cursor = computeSafeCursorAfterProduction(
+      99,
+      [100, 101, 103],
+      [102],
+    )
+
+    expect(cursor).toBe(101)
+  })
+
+  it('leaves the Gmail cursor unchanged when the first production email fails', () => {
+    const cursor = computeSafeCursorAfterProduction(
+      99,
+      [101, 102],
+      [100],
+    )
+
+    expect(cursor).toBe(99)
   })
 })

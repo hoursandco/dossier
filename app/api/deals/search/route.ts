@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { dealMatchesAnySearchTerm } from '@/lib/dealSearch'
+import {
+  brandNamesIncludingAliases,
+  relatedBrandNamesForTarget,
+  type BrandRelationshipRow,
+} from '@/lib/brandRelationships'
+import {
+  expandItemSearchTerms,
+  type ItemKeywordReview,
+} from '@/lib/itemCuration'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +31,7 @@ export async function GET(request: NextRequest) {
     ? [keywordParam.toLowerCase()]
     : []
 
-  const keywords = Array.from(new Set(rawKeywords))
+  let keywords = Array.from(new Set(rawKeywords))
 
   if (keywords.length === 0 && !retailer) {
     return NextResponse.json({ deals: [] })
@@ -30,36 +39,72 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServiceClient()
 
+  if (keywords.length > 0) {
+    const { data: itemReviews, error: itemReviewsError } = await supabase
+      .from('item_keyword_reviews')
+      .select('keyword, canonical_keyword, parent_keyword, is_hidden')
+      .limit(5000)
+    if (!itemReviewsError) {
+      keywords = expandItemSearchTerms(
+        keywords,
+        (itemReviews ?? []) as ItemKeywordReview[],
+      )
+    }
+  }
+
   const today = new Date().toISOString().slice(0, 10)
-  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  let retailerNames = retailer ? brandNamesIncludingAliases([retailer]) : []
+
+  if (retailer) {
+    const [{ data: directoryRows }, { data: relationshipRows, error: relationshipError }] = await Promise.all([
+      supabase
+        .from('stores')
+        .select('id, name')
+        .eq('status', 'active')
+        .eq('is_active', true)
+        .limit(5000),
+      supabase
+        .from('brand_relationship_reviews')
+        .select('store_a_id, store_b_id, decision, parent_store_id, child_store_id')
+        .limit(5000),
+    ])
+    const targetStore = (directoryRows ?? []).find(
+      (store) => normalizeRetailerName(store.name) === normalizeRetailerName(retailer),
+    )
+    if (targetStore && !relationshipError) {
+      retailerNames = relatedBrandNamesForTarget(
+        targetStore.id,
+        directoryRows ?? [],
+        (relationshipRows ?? []) as BrandRelationshipRow[],
+      )
+    }
+  }
 
   const SELECT =
-    'id, retailer, description, percent_off, deal_type, promo_code, expiration_date, original_link, affiliate_link, categories, keywords, deal_subtype, week_of, created_at, source_email_link'
+    'id, retailer, description, percent_off, deal_type, promo_code, expiration_date, original_link, affiliate_link, categories, keywords, deal_subtype, redemption_channel, week_of, created_at, last_seen_at, source_email_link'
 
   let query = supabase
     .from('deals')
     .select(SELECT)
+    .order('last_seen_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     // Keyword matching is intentionally finished in JS below. Postgres array
     // overlap only supports exact values, which made normal searches such as
     // "shoe" vs "shoes" fail and ignored product text in descriptions.
-    .limit(retailer ? 200 : 1000)
+    .limit(retailer ? 1000 : 1000)
 
   if (retailer) {
-    // Retailer searches must be exact after punctuation/case normalization:
-    // "Gap" is not "Gap Factory", and "J.Crew" is not "J.Crew Factory".
-    // We fetch recent, unexpired rows with a broad prefix-ish pattern for
-    // punctuation tolerance, then enforce the exact normalized match in JS.
-    const pattern = `%${retailer.replace(/[''`]/g, '').replace(/\s+/g, '%')}%`
-    console.log('[deals/search] retailer query — exact:', retailer, 'pattern:', pattern)
+    // Fetch the recent pool and finish matching in JS. Parent-brand reviews
+    // can expand one selected store to multiple retailer names, which cannot
+    // be represented safely by the old single ilike pattern.
     query = query
-      .ilike('retailer', pattern)
       .or(`expiration_date.is.null,expiration_date.gte.${today}`)
-      .gte('created_at', cutoff)
+      .gte('last_seen_at', cutoff)
   } else {
     query = query
       .or(`expiration_date.is.null,expiration_date.gte.${today}`)
-      .gte('created_at', cutoff)
+      .gte('last_seen_at', cutoff)
   }
 
   const { data, error } = await query
@@ -70,7 +115,10 @@ export async function GET(request: NextRequest) {
   }
 
   const deals = retailer
-    ? (data ?? []).filter((d) => normalizeRetailerName(d.retailer ?? '') === normalizeRetailerName(retailer))
+    ? (data ?? []).filter((d) => {
+        const normalized = normalizeRetailerName(d.retailer ?? '')
+        return retailerNames.some((name) => normalizeRetailerName(name) === normalized)
+      })
     : (data ?? []).filter((d) => dealMatchesAnySearchTerm(d, keywords)).slice(0, 50)
 
   console.log(`[deals/search] retailer="${retailer}" → ${deals.length} rows`)

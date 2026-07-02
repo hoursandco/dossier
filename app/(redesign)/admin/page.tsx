@@ -8,13 +8,14 @@ import { RunIngestButton } from '@/components/RunIngestButton'
 import { SubscriptionsPanel } from '@/components/SubscriptionsPanel'
 import { DiscountCodesPanel } from '@/components/DiscountCodesPanel'
 import { AutoAddedStoresPanel } from '@/components/AutoAddedStoresPanel'
-import { DuplicateStoresPanel } from '@/components/DuplicateStoresPanel'
 import { StoresAdmin } from '@/components/StoresAdmin'
 import { AdminTabs } from '@/components/AdminTabs'
 import { isAdminEmail } from '@/lib/admin'
 import { DossierNav } from '@/components/DossierNav'
 import { DlFooter } from '@/components/DlFooter'
 import { IngestAuditPanel } from '@/components/IngestAuditPanel'
+import { BrandAliasAuditPanel } from '@/components/BrandAliasAuditPanel'
+import { ItemAuditPanel } from '@/components/ItemAuditPanel'
 
 export const dynamic = 'force-dynamic'
 
@@ -456,16 +457,6 @@ export default async function AdminPage() {
         </div>
       </Reveal>
 
-      {/* 03 — Duplicate Stores */}
-      <Reveal delay={160}>
-        <div className="admin-card" style={{ marginTop: 32 }}>
-          <SectionLabel n="03">Duplicate Stores</SectionLabel>
-          <p className="t-meta" style={{ color: 'var(--ink-40)', marginTop: 8, marginBottom: 20 }}>
-            Two or more rows pointing at the same brand domain. Pick the row to keep — the others get hard-deleted to free up the unique-website index.
-          </p>
-          <DuplicateStoresPanel />
-        </div>
-      </Reveal>
     </>
   )
 
@@ -477,6 +468,24 @@ export default async function AdminPage() {
         Every fetched email and extracted candidate, including transactional skips, zero-result extractions, junk-filter rejections, duplicates, insert failures, and published deals. Rejected candidates remain private here and never enter public search.
       </p>
       <IngestAuditPanel />
+    </div>
+  )
+  const aliasAuditTab = (
+    <div className="admin-card">
+      <SectionLabel n="01">Brand Alias Candidates</SectionLabel>
+      <p className="t-meta" style={{ color: 'var(--ink-40)', marginTop: 8, marginBottom: 20 }}>
+        Review possible brand-family relationships. Mark pairs as different brands, choose a directional parent brand, or identify two records as the same brand. Saved parent and equivalent relationships expand customer brand searches and store-watch emails.
+      </p>
+      <BrandAliasAuditPanel />
+    </div>
+  )
+  const itemAuditTab = (
+    <div className="admin-card">
+      <SectionLabel n="01">Item Vocabulary</SectionLabel>
+      <p className="t-meta" style={{ color: 'var(--ink-40)', marginTop: 8, marginBottom: 20 }}>
+        Merge duplicate or overly specific item terms into one customer-facing choice, or hide noisy suggestions. Merged aliases still match their deals, so choosing “food” can include deals tagged “food discounts,” “foods,” or “groceries.”
+      </p>
+      <ItemAuditPanel />
     </div>
   )
 
@@ -550,6 +559,8 @@ export default async function AdminPage() {
               { id: 'subscriptions', label: 'Subscriptions', content: subscriptionsTab },
               { id: 'coupons', label: 'Coupons', content: couponsTab },
               { id: 'ingest-audit', label: 'Ingest Audit', content: ingestAuditTab },
+              { id: 'alias-audit', label: 'Alias Audit', content: aliasAuditTab },
+              { id: 'item-audit', label: 'Item Audit', content: itemAuditTab },
               {
                 id: 'review',
                 label: 'Review Queue',

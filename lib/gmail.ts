@@ -53,6 +53,10 @@ export interface FetchOptions {
    *  one-time taxonomy backfills where recent already-processed emails need
    *  to be reclassified without moving the steady-state cursor. */
   forceDateWindow?: boolean
+  /** Stop after parsing this many messages. Cursor-mode ingest uses this so a
+   *  large UID backlog drains in durable serverless-sized batches instead of
+   *  reparsing thousands of emails on every run. */
+  maxMessages?: number
 }
 
 function getCreds(): { user: string; pass: string } {
@@ -136,6 +140,9 @@ export async function fetchPromotionalEmails(
         try {
           const transformed = await transformMessage(msg)
           if (transformed) messages.push(transformed)
+          if (options.maxMessages && messages.length >= options.maxMessages) {
+            break
+          }
         } catch (err) {
           // One bad email shouldn't tank the whole ingest run.
           console.error(`[gmail] failed to parse UID ${msg.uid}:`, err)

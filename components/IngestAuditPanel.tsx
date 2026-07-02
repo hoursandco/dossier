@@ -49,6 +49,59 @@ type Candidate = {
   keywords: string[]
 }
 
+type NormalizedDeal = {
+  retailer?: string | null
+  description?: string | null
+  percent_off?: number | null
+  deal_type?: string | null
+  promo_code?: string | null
+  expiration_date?: string | null
+  categories?: string[] | null
+  deal_subtype?: string | null
+  keywords?: string[] | null
+  redemption_channel?: string | null
+}
+
+type ExtractionOutput = {
+  provider?: string
+  model?: string
+  method?: string
+  schema_valid?: boolean
+  deals?: NormalizedDeal[]
+} | null
+
+type ExtractionComparison = {
+  id: string
+  source_email_audit_id: string
+  email_id: string
+  production_provider: string
+  production_model: string
+  shadow_provider: string
+  shadow_model: string
+  status: 'match' | 'needs_review' | 'schema_failed' | 'provider_failed'
+  production_schema_valid: boolean
+  shadow_schema_valid: boolean
+  deal_count_match: boolean
+  retailer_agreement: boolean
+  deal_type_agreement: boolean
+  percent_agreement: boolean
+  promo_code_agreement: boolean
+  category_agreement: boolean
+  description_differences: Array<{
+    index: number
+    production: string | null
+    shadow: string | null
+  }>
+  details: {
+    production_deal_count?: number
+    shadow_deal_count?: number
+    provider_error?: string
+  } | null
+  error: string | null
+  production_output: ExtractionOutput
+  shadow_output: ExtractionOutput
+}
+
 const OUTCOME_LABELS: Record<string, string> = {
   deals_inserted: 'Inserted',
   no_deals_extracted: 'No candidates',
@@ -60,17 +113,77 @@ const OUTCOME_LABELS: Record<string, string> = {
   extracted_no_insert: 'No insert',
 }
 
+const COMPARISON_LABELS: Record<ExtractionComparison['status'], string> = {
+  match: 'Shadow match',
+  needs_review: 'Needs review',
+  schema_failed: 'Schema failed',
+  provider_failed: 'Provider failed',
+}
+
+const COMPARISON_COLORS: Record<ExtractionComparison['status'], string> = {
+  match: 'var(--olive-deep)',
+  needs_review: '#8a6418',
+  schema_failed: 'var(--red-deep)',
+  provider_failed: 'var(--red-deep)',
+}
+
+function formatDealMeta(deal: NormalizedDeal): string {
+  const parts = [
+    deal.deal_type,
+    deal.percent_off != null ? `${deal.percent_off}%` : null,
+    deal.promo_code ? `code ${deal.promo_code}` : null,
+    deal.redemption_channel,
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
+
+function DealOutputCard({
+  title,
+  output,
+}: {
+  title: string
+  output: ExtractionOutput
+}) {
+  const deals = output?.deals ?? []
+  return (
+    <div style={{ background: 'var(--ink-06)', padding: '12px 14px' }}>
+      <div className="t-meta" style={{ marginBottom: 8 }}>
+        {title} · {output?.model ?? 'no model'} · schema {String(output?.schema_valid ?? false)}
+      </div>
+      {deals.length === 0 ? (
+        <p className="t-meta">No deals returned.</p>
+      ) : deals.map((deal, index) => (
+        <div key={`${deal.retailer ?? 'deal'}-${index}`} style={{ paddingTop: index === 0 ? 0 : 12, marginTop: index === 0 ? 0 : 12, borderTop: index === 0 ? 0 : '1px solid var(--ink-15)' }}>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: 16 }}>{deal.retailer ?? 'Unknown retailer'}</div>
+          <div className="t-mono" style={{ marginTop: 4, fontSize: 11, color: 'var(--ink-60)' }}>
+            {formatDealMeta(deal) || 'no structured deal metadata'}
+          </div>
+          <div style={{ marginTop: 6, fontSize: 13 }}>{deal.description ?? 'No description'}</div>
+          {deal.categories && deal.categories.length > 0 && (
+            <div className="t-mono" style={{ marginTop: 7, fontSize: 11, color: 'var(--ink-55)' }}>
+              {deal.categories.join(' · ')}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function IngestAuditPanel() {
   const [runs, setRuns] = useState<AuditRun[]>([])
   const [runId, setRunId] = useState('')
   const [emails, setEmails] = useState<EmailAudit[]>([])
   const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [comparisons, setComparisons] = useState<ExtractionComparison[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [backfillOffset, setBackfillOffset] = useState(0)
   const [backfillRunning, setBackfillRunning] = useState(false)
   const [backfillMessage, setBackfillMessage] = useState('')
+  const [shadowRunning, setShadowRunning] = useState(false)
+  const [shadowMessage, setShadowMessage] = useState('')
 
   const load = useCallback(async (selectedRunId?: string) => {
     setLoading(true)
@@ -85,6 +198,7 @@ export function IngestAuditPanel() {
       setRunId(data.run_id ?? '')
       setEmails(data.emails ?? [])
       setCandidates(data.candidates ?? [])
+      setComparisons(data.comparisons ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load ingest audit.')
     } finally {
@@ -104,12 +218,24 @@ export function IngestAuditPanel() {
     return map
   }, [candidates])
 
+  const comparisonsByEmailAudit = useMemo(() => {
+    const map = new Map<string, ExtractionComparison[]>()
+    for (const comparison of comparisons) {
+      const rows = map.get(comparison.source_email_audit_id) ?? []
+      rows.push(comparison)
+      map.set(comparison.source_email_audit_id, rows)
+    }
+    return map
+  }, [comparisons])
+
   const selectedRun = runs.find((run) => run.id === runId)
-  const counts = useMemo(() => {
+  const comparisonCounts = useMemo(() => {
     const result: Record<string, number> = {}
-    for (const email of emails) result[email.outcome] = (result[email.outcome] ?? 0) + 1
+    for (const comparison of comparisons) {
+      result[comparison.status] = (result[comparison.status] ?? 0) + 1
+    }
     return result
-  }, [emails])
+  }, [comparisons])
 
   const runAuditBackfill = async (restart = false) => {
     const offset = restart ? 0 : backfillOffset
@@ -133,6 +259,26 @@ export function IngestAuditPanel() {
       setBackfillMessage(err instanceof Error ? err.message : 'Backfill failed.')
     } finally {
       setBackfillRunning(false)
+    }
+  }
+
+  const runShadowQueue = async () => {
+    setShadowRunning(true)
+    setShadowMessage('Processing queued OpenRouter comparisons...')
+    try {
+      const res = await fetch('/api/admin/process-extraction-jobs?limit=50&concurrency=3', {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'OpenRouter comparison run failed.')
+      setShadowMessage(
+        `OpenRouter queue: ${data.claimed ?? 0} claimed, ${data.completed ?? 0} completed, ${data.pending ?? 0} pending, ${data.failed ?? 0} failed.`,
+      )
+      await load(runId)
+    } catch (err) {
+      setShadowMessage(err instanceof Error ? err.message : 'OpenRouter comparison run failed.')
+    } finally {
+      setShadowRunning(false)
     }
   }
 
@@ -161,8 +307,12 @@ export function IngestAuditPanel() {
             Restart at first batch
           </button>
         )}
+        <button className="admin-btn admin-btn-sm admin-btn-ghost" disabled={shadowRunning} onClick={runShadowQueue}>
+          {shadowRunning ? 'Comparing...' : 'Process OpenRouter Queue'}
+        </button>
       </div>
       {backfillMessage && <p className="t-meta" style={{ marginBottom: 18 }}>{backfillMessage}</p>}
+      {shadowMessage && <p className="t-meta" style={{ marginBottom: 18 }}>{shadowMessage}</p>}
 
       {selectedRun && (
         <div className="admin-stat-row admin-stat-row-5" style={{ marginBottom: 24 }}>
@@ -170,8 +320,8 @@ export function IngestAuditPanel() {
             ['Fetched', selectedRun.emails_fetched],
             ['Selected', selectedRun.emails_selected],
             ['Inserted', selectedRun.deals_inserted],
-            ['Rejected emails', counts.all_candidates_rejected ?? 0],
-            ['No candidates', counts.no_deals_extracted ?? 0],
+            ['Gemini/OpenRouter', comparisons.length],
+            ['Needs review', comparisonCounts.needs_review ?? 0],
           ].map(([label, value]) => (
             <div className="admin-stat" key={String(label)}>
               <div className="admin-stat-num">{value}</div>
@@ -187,6 +337,8 @@ export function IngestAuditPanel() {
         <div className="admin-table">
           {emails.map((email) => {
             const emailCandidates = candidatesByEmail.get(email.email_id) ?? []
+            const emailComparisons = comparisonsByEmailAudit.get(email.id) ?? []
+            const latestComparison = emailComparisons[0]
             const isExpanded = expanded.has(email.id)
             return (
               <div key={email.id} style={{ borderBottom: '1px solid var(--ink-15)' }}>
@@ -200,12 +352,20 @@ export function IngestAuditPanel() {
                   })}
                   style={{ width: '100%', border: 0, background: 'transparent', textAlign: 'left', padding: '15px 10px', cursor: 'pointer' }}
                 >
-                  <div style={{ display: 'grid', gridTemplateColumns: '110px minmax(160px, .8fr) minmax(260px, 1.7fr) 130px 90px', gap: 14, alignItems: 'center' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '110px minmax(160px, .8fr) minmax(260px, 1.7fr) 130px 120px 90px', gap: 14, alignItems: 'center' }}>
                     <span className="t-meta">{OUTCOME_LABELS[email.outcome] ?? email.outcome}</span>
                     <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' }}>{email.sender}</span>
                     <span style={{ fontSize: 14 }}>{email.subject || '(no subject)'}</span>
                     <span className="t-mono" style={{ fontSize: 11 }}>
                       {email.extracted_count} extracted · {email.inserted_count} added
+                    </span>
+                    <span
+                      className="t-meta"
+                      style={{
+                        color: latestComparison ? COMPARISON_COLORS[latestComparison.status] : 'var(--ink-45)',
+                      }}
+                    >
+                      {latestComparison ? COMPARISON_LABELS[latestComparison.status] : 'No shadow'}
                     </span>
                     <span className="t-meta">{isExpanded ? 'Close −' : 'Inspect +'}</span>
                   </div>
@@ -216,6 +376,46 @@ export function IngestAuditPanel() {
                       UID {email.uid} · {email.extraction_method ?? 'none'} · sparse={String(email.body_sparse)} · web={String(email.web_version_used)} · images={email.image_count} · {email.processing_ms ?? 0}ms
                     </p>
                     {email.outcome_detail && <p style={{ fontSize: 13, marginBottom: 12 }}>{email.outcome_detail}</p>}
+                    {emailComparisons.length > 0 && (
+                      <div style={{ padding: '12px 14px', marginBottom: 12, background: 'var(--cream)' }}>
+                        {emailComparisons.map((comparison) => (
+                          <div key={comparison.id} style={{ marginBottom: 10 }}>
+                            <div className="t-meta" style={{ color: COMPARISON_COLORS[comparison.status] }}>
+                              {COMPARISON_LABELS[comparison.status]} · {comparison.production_provider} vs {comparison.shadow_provider}
+                            </div>
+                            <div className="t-mono" style={{ marginTop: 6, fontSize: 11, color: 'var(--ink-65)' }}>
+                              schema {String(comparison.production_schema_valid)}/{String(comparison.shadow_schema_valid)}
+                              {' · '}count {String(comparison.deal_count_match)}
+                              {' · '}retailer {String(comparison.retailer_agreement)}
+                              {' · '}type {String(comparison.deal_type_agreement)}
+                              {' · '}percent {String(comparison.percent_agreement)}
+                              {' · '}code {String(comparison.promo_code_agreement)}
+                              {' · '}category {String(comparison.category_agreement)}
+                            </div>
+                            <div className="t-meta" style={{ marginTop: 5 }}>
+                              Gemini {comparison.details?.production_deal_count ?? '—'} deals · OpenRouter {comparison.details?.shadow_deal_count ?? '—'} deals
+                            </div>
+                            {comparison.error && (
+                              <p style={{ marginTop: 6, fontSize: 12, color: 'var(--red-deep)' }}>{comparison.error}</p>
+                            )}
+                            {comparison.description_differences?.length > 0 && (
+                              <div style={{ marginTop: 8 }}>
+                                {comparison.description_differences.slice(0, 3).map((diff) => (
+                                  <div key={diff.index} style={{ fontSize: 12, marginTop: 6 }}>
+                                    <div><strong>Gemini:</strong> {diff.production ?? '—'}</div>
+                                    <div><strong>OpenRouter:</strong> {diff.shadow ?? '—'}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginTop: 12 }}>
+                              <DealOutputCard title="Gemini" output={comparison.production_output} />
+                              <DealOutputCard title="OpenRouter" output={comparison.shadow_output} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {emailCandidates.length === 0 ? (
                       <p className="t-meta">No extracted candidates were returned.</p>
                     ) : emailCandidates.map((candidate) => (

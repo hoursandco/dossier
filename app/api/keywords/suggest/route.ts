@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import {
+  curateItemSuggestions,
+  type ItemKeywordReview,
+} from '@/lib/itemCuration'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,7 +47,7 @@ export async function GET(request: NextRequest) {
 
   const storePattern = buildStorePattern(q)
 
-  const [keywordsResult, storesResult] = await Promise.all([
+  const [keywordsResult, storesResult, reviewsResult] = await Promise.all([
     supabase
       .from('keywords')
       .select('keyword, deal_count')
@@ -57,6 +61,10 @@ export async function GET(request: NextRequest) {
       .eq('status', 'active')
       .eq('is_active', true)
       .limit(12),
+    supabase
+      .from('item_keyword_reviews')
+      .select('keyword, canonical_keyword, parent_keyword, is_hidden')
+      .limit(5000),
   ])
 
   const storeRows = storesResult.data ?? []
@@ -71,10 +79,13 @@ export async function GET(request: NextRequest) {
     type: 'brand' as const,
   }))
 
-  const keywords = (keywordsResult.data ?? []).map((k) => ({
-    ...k,
-    type: 'keyword' as const,
-  }))
+  const keywords = curateItemSuggestions(
+    (keywordsResult.data ?? []).map((k) => ({
+      ...k,
+      type: 'keyword' as const,
+    })),
+    reviewsResult.error ? [] : (reviewsResult.data ?? []) as ItemKeywordReview[],
+  )
 
   type Suggestion = { keyword: string; deal_count: number; type: 'brand' | 'keyword' }
 

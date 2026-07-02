@@ -77,7 +77,7 @@ describe('POST /api/admin/respond-suggestion', () => {
   it('sends an escaped response email and updates the suggestion status for admins', async () => {
     vi.stubEnv('ADMIN_EMAIL', 'admin@example.com')
     vi.stubEnv('RESEND_API_KEY', 'test_resend_key')
-    const sendEmail = vi.fn(async () => ({ id: 'email_1' }))
+    const sendEmail = vi.fn(async (_email: { html: string; to: string }) => ({ id: 'email_1' }))
     vi.doMock('resend', () => ({
       Resend: vi.fn(function Resend() {
         return { emails: { send: sendEmail } }

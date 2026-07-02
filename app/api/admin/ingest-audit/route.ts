@@ -63,10 +63,28 @@ export async function GET(request: NextRequest) {
     }, { status: 500 })
   }
 
+  const emailAuditIds = (emails ?? []).map((email) => email.id)
+  let comparisons: unknown[] = []
+  if (emailAuditIds.length > 0) {
+    const { data: comparisonRows, error: comparisonsError } = await db
+      .from('email_extraction_comparisons')
+      .select('id, job_id, source_email_audit_id, email_id, production_provider, production_model, shadow_provider, shadow_model, status, production_schema_valid, shadow_schema_valid, deal_count_match, retailer_agreement, deal_type_agreement, percent_agreement, promo_code_agreement, category_agreement, description_differences, details, error, production_output, shadow_output, created_at, updated_at')
+      .in('source_email_audit_id', emailAuditIds)
+      .order('created_at', { ascending: false })
+      .limit(1000)
+
+    if (comparisonsError) {
+      console.warn('[ingest-audit] comparison rows unavailable:', comparisonsError.message)
+    } else {
+      comparisons = comparisonRows ?? []
+    }
+  }
+
   return NextResponse.json({
     runs: runs ?? [],
     run_id: runId,
     emails: emails ?? [],
     candidates: candidates ?? [],
+    comparisons,
   })
 }

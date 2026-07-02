@@ -12,6 +12,7 @@ export async function middleware(request: NextRequest) {
   // Only run on protected routes
   const isProtected = PROTECTED_ROUTES.some((route) => pathname.startsWith(route))
   if (!isProtected) return NextResponse.next()
+  if (process.env.NODE_ENV === 'development') return NextResponse.next()
 
   let response = NextResponse.next({ request })
 

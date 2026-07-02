@@ -5,16 +5,32 @@ import {
   extractDealsFromEmail,
   extractDealsFromEmailImages,
   getRetailerCategories,
+  cleanEmailBodyForExtraction,
+  createNormalizedExtractionOutput,
+  getExtractionSchemaValidity,
+  shouldEnqueueOpenRouterShadow,
+  EXTRACTION_PROMPT_VERSION,
+  PRIMARY_EXTRACTION_PROVIDER,
+  SHADOW_EXTRACTION_PROVIDER,
+  getPrimaryExtractionModel,
+  getOpenRouterExtractionModel,
   ApiCreditExhaustedError,
   ApiRateLimitError,
+  ApiSchemaValidationError,
   type CategoryRow,
 } from '@/lib/openai'
-import { getCurrentWeekOf, makeDealKey, getJunkDealReason } from '@/lib/deals'
+import {
+  getCurrentWeekOf,
+  makeDealKey,
+  getJunkDealReason,
+  isPricePointDescription,
+  buildDuplicateDealRefresh,
+} from '@/lib/deals'
 import { fixRetailerCase } from '@/lib/stores'
 import { sendAdminAlert } from '@/lib/resend'
 import { format, subHours } from 'date-fns'
 import type { Category } from '@/types'
-import { selectEmailsForIngest } from '@/lib/ingestSelection'
+import { computeSafeCursorAfterProduction, selectEmailsForIngest } from '@/lib/ingestSelection'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,10 +81,10 @@ function isTransactionalEmail(subject: string): boolean {
 
 // Process emails concurrently so the cron doesn't time out on large inboxes.
 // Tunable via INGEST_CONCURRENCY env var; default 5 keeps us comfortably under
-// OpenAI's 200K tokens-per-minute cap on gpt-4o-mini.
+// the primary extraction provider's tokens-per-minute cap.
 const INGEST_CONCURRENCY = Math.max(
   1,
-  Number(process.env.INGEST_CONCURRENCY) || 5
+  Number(process.env.INGEST_CONCURRENCY) || 2
 )
 
 // Hard cap on emails processed per run. Vercel's serverless function limit is
@@ -80,7 +96,12 @@ const INGEST_CONCURRENCY = Math.max(
 // deferred messages are silently lost.
 const INGEST_MAX_PER_RUN = Math.max(
   1,
-  Number(process.env.INGEST_MAX_PER_RUN) || 60
+  Number(process.env.INGEST_MAX_PER_RUN) || 20
+)
+
+const INGEST_STALE_RUN_MS = Math.max(
+  5 * 60 * 1000,
+  Number(process.env.INGEST_STALE_RUN_MS) || 12 * 60 * 1000,
 )
 
 // Returns true when an email body is mostly images — stripping tags leaves
@@ -192,6 +213,64 @@ async function fetchWebVersion(url: string): Promise<string | null> {
   }
 }
 
+async function enqueueOpenRouterShadowJob(
+  supabase: ReturnType<typeof createServiceClient>,
+  input: {
+    auditRunId: string | null
+    emailAuditId: string | null
+    email: {
+      id: string
+      uid: number
+      from: string
+      subject: string
+      date: string
+    }
+    cleanedBody: string
+    imageUrls: string[]
+    productionOutput: ReturnType<typeof createNormalizedExtractionOutput>
+  },
+): Promise<boolean> {
+  if (!shouldEnqueueOpenRouterShadow()) return false
+
+  const receivedAt = input.email.date ? new Date(input.email.date) : null
+  const model = getOpenRouterExtractionModel()
+  const { error } = await supabase
+    .from('email_extraction_jobs')
+    .upsert({
+      source_run_id: input.auditRunId,
+      source_email_audit_id: input.emailAuditId,
+      email_id: input.email.id,
+      uid: input.email.uid,
+      sender: input.email.from,
+      subject: input.email.subject,
+      received_at: receivedAt && !Number.isNaN(receivedAt.getTime())
+        ? receivedAt.toISOString()
+        : null,
+      cleaned_body: input.cleanedBody,
+      image_urls: input.imageUrls,
+      prompt_version: EXTRACTION_PROMPT_VERSION,
+      provider: SHADOW_EXTRACTION_PROVIDER,
+      model,
+      status: 'pending',
+      next_attempt_at: new Date().toISOString(),
+      last_error: null,
+      production_output: input.productionOutput,
+      normalized_output: null,
+      completed_at: null,
+      locked_at: null,
+      locked_by: null,
+    }, {
+      onConflict: 'email_id,prompt_version,provider,model',
+      ignoreDuplicates: true,
+    })
+
+  if (error) {
+    console.error('[ingest] OpenRouter shadow enqueue error:', JSON.stringify(error))
+    return false
+  }
+  return true
+}
+
 // Queue-based worker pool. Unlike batched Promise.all, a new task starts the
 // moment any worker frees up — no head-of-line blocking when one email's
 // OpenAI call is slow.
@@ -276,6 +355,35 @@ export async function GET(request: NextRequest) {
   let rateLimitPauseUntil = 0
 
   try {
+    const staleStartedBefore = new Date(Date.now() - INGEST_STALE_RUN_MS).toISOString()
+    await supabase
+      .from('ingest_runs')
+      .update({
+        status: 'timed_out',
+        completed_at: new Date().toISOString(),
+        error: 'Marked stale before starting a newer ingest run',
+      })
+      .eq('status', 'running')
+      .lt('started_at', staleStartedBefore)
+
+    const { data: activeRun, error: activeRunError } = await supabase
+      .from('ingest_runs')
+      .select('id, started_at, mode, requested_limit')
+      .eq('status', 'running')
+      .gte('started_at', staleStartedBefore)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!activeRunError && activeRun) {
+      return NextResponse.json({
+        error: 'Ingest already running',
+        active_run_id: activeRun.id,
+        active_started_at: activeRun.started_at,
+        active_mode: activeRun.mode,
+        retry_after_seconds: Math.ceil(INGEST_STALE_RUN_MS / 1000),
+      }, { status: 409 })
+    }
+
     const { data: auditRun, error: auditRunError } = await supabase
       .from('ingest_runs')
       .insert({
@@ -311,7 +419,9 @@ export async function GET(request: NextRequest) {
     const tFetchStart = Date.now()
     const fetchResult = await fetchPromotionalEmails(
       since,
-      forceDateWindow ? { forceDateWindow: true } : cursor,
+      forceDateWindow
+        ? { forceDateWindow: true }
+        : { ...cursor, maxMessages: perRunLimit },
     )
     const emails = fetchResult.messages
     if (auditRunId) {
@@ -499,7 +609,7 @@ export async function GET(request: NextRequest) {
     // the same sale twice even if 3 emails announce it
     const { data: existingDealsThisWeek } = await supabase
       .from('deals')
-      .select('id, retailer, deal_type, percent_off, promo_code, description, categories, keywords, deal_subtype')
+      .select('id, retailer, deal_type, percent_off, promo_code, description, categories, keywords, deal_subtype, redemption_channel')
       .eq('week_of', weekOfStr)
 
     const existingDealByKey = new Map(
@@ -510,6 +620,7 @@ export async function GET(request: NextRequest) {
           categories: (d.categories ?? []) as string[],
           keywords: (d.keywords ?? []) as string[],
           deal_subtype: (d.deal_subtype ?? null) as string | null,
+          redemption_channel: (d.redemption_channel ?? null) as string | null,
         },
       ])
     )
@@ -528,6 +639,112 @@ export async function GET(request: NextRequest) {
     // Dry-run accumulators — populated when ?dryRun=true, ignored otherwise.
     const dryRunWouldAutoAdd: Array<{ name: string; domain: string; from: string }> = []
     const dryRunWouldInsertDeals: Array<{ retailer: string; deal_type: string; description: string }> = []
+
+    async function activatePendingStore(retailer: string, storeMatch: StoreMatch): Promise<void> {
+      // Pending stores came from the directory seed and are waiting for
+      // proof that the brand really sends email. Any ingested non-transactional
+      // email is enough proof; don't require a publishable deal.
+      if (storeMatch.is_active || storeMatch.status !== 'pending') return
+      storeMatch.is_active = true
+      storeMatch.status = 'active'
+      const { error: actErr } = await supabase
+        .from('stores')
+        .update({ is_active: true, status: 'active' })
+        .eq('id', storeMatch.id)
+      if (actErr) {
+        console.error(`[ingest] auto-activate error for ${retailer}:`, JSON.stringify(actErr))
+      } else {
+        console.log(`[ingest] auto-activated pending store: ${retailer}`)
+      }
+    }
+
+    async function resolveStoreForSender(
+      retailer: string,
+      email: (typeof newEmails)[number],
+      categories: string[] = [],
+      allowAutoAdd = true,
+    ): Promise<StoreMatch | undefined> {
+      const normalizedRetailer = normalizeRetailer(retailer)
+      if (!normalizedRetailer) return undefined
+
+      // Look up the brand in the stores table. Priority order:
+      //   1. Exact normalized-name match → known store
+      //   2. Apex-domain match (storesByDomain) → known store under a
+      //      different name. Without this check, a name mismatch would
+      //      fall through to auto-add and the upsert would overwrite the
+      //      existing active store row (the demotion bug).
+      //   3. Neither → genuinely new brand → auto-create with
+      //      status='auto_added', is_active=false for admin review.
+      let storeMatch = storesByName.get(normalizedRetailer)
+      if (storeMatch) {
+        await activatePendingStore(retailer, storeMatch)
+        return storeMatch
+      }
+
+      const domain = parseSenderDomain(email.from)
+
+      // Step 2: domain pre-check — if this sender's apex domain already
+      // exists in the directory under any name, use that store record and
+      // skip the auto-add entirely. This prevents demoting active stores.
+      if (domain) {
+        const domainMatch = storesByDomain.get(domain)
+        if (domainMatch) {
+          storeMatch = domainMatch
+          storesByName.set(normalizedRetailer, storeMatch)
+          console.log(`[ingest] domain match (name drift): ${retailer} → ${domain}`)
+          await activatePendingStore(retailer, storeMatch)
+          return storeMatch
+        }
+      }
+
+      if (!allowAutoAdd) return undefined
+
+      if (!domain) {
+        console.log(`[ingest] auto-add skipped (no parseable domain): ${retailer} from=${email.from}`)
+        return undefined
+      }
+
+      if (dryRun) {
+        console.log(`[DRY RUN] would auto-add: ${retailer} (${domain}) from=${email.from}`)
+        dryRunWouldAutoAdd.push({ name: retailer, domain, from: email.from })
+        return undefined
+      }
+
+      // ignoreDuplicates: true — if the domain already exists under
+      // any status, do nothing. Never overwrite an existing store row.
+      // Race-safe: concurrent workers hitting the same unknown domain
+      // both try to insert; the second one silently skips.
+      const { data: inserted, error: insertErr } = await supabase
+        .from('stores')
+        .upsert(
+          {
+            name: retailer,
+            website: domain,
+            status: 'auto_added',
+            is_active: false,
+            categories,
+          },
+          { onConflict: 'website', ignoreDuplicates: true },
+        )
+        .select('id, name, categories, is_active, status')
+        .maybeSingle()
+      if (insertErr) {
+        console.error(`[ingest] auto-add error for ${retailer} (${domain}):`, JSON.stringify(insertErr))
+        return undefined
+      }
+      if (!inserted) return undefined
+
+      console.log(`[ingest] auto-added store for review: ${retailer} (${domain})`)
+      storeMatch = {
+        id: inserted.id,
+        categories: Array.isArray(inserted.categories) ? inserted.categories : [],
+        is_active: inserted.is_active,
+        status: inserted.status ?? 'auto_added',
+      }
+      storesByName.set(normalizedRetailer, storeMatch)
+      storesByDomain.set(domain, storeMatch)
+      return storeMatch
+    }
 
     async function startEmailAudit(email: (typeof newEmails)[number]): Promise<string | null> {
       if (!auditRunId) return null
@@ -591,6 +808,7 @@ export async function GET(request: NextRequest) {
           categories: deal.categories ?? [],
           keywords: deal.keywords ?? [],
           deal_subtype: deal.deal_subtype ?? null,
+          redemption_channel: deal.redemption_channel ?? null,
           decision,
           reason,
           deal_id: dealId,
@@ -639,6 +857,7 @@ export async function GET(request: NextRequest) {
       let insertedForEmail = 0
       let rejectedForEmail = 0
       let duplicatesForEmail = 0
+      let imageUrlsForExtraction: string[] = []
       if (sparseOriginalBody && email.viewInBrowserUrl) {
         console.log(`[ingest] sparse body, fetching web version: ${email.viewInBrowserUrl}`)
         const webHtml = await fetchWebVersion(email.viewInBrowserUrl)
@@ -651,20 +870,20 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      imageUrlsForExtraction = extractEmailImageUrls(`${email.body}\n${emailBody}`)
       let extracted = await extractDealsFromEmail(email.from, email.subject, emailBody, allCategories)
       console.log(`[ingest] ${email.from} | subject: ${email.subject} | text extracted: ${extracted.length}`)
 
       if (sparseOriginalBody || extracted.length === 0) {
-        const imageUrls = extractEmailImageUrls(`${email.body}\n${emailBody}`)
-        imageCount = imageUrls.length
-        if (imageUrls.length > 0) {
+        imageCount = imageUrlsForExtraction.length
+        if (imageUrlsForExtraction.length > 0) {
           console.log(
-            `[ingest] vision fallback (${sparseOriginalBody ? 'sparse body' : 'no text deals'}): ${imageUrls.length} images`
+            `[ingest] vision fallback (${sparseOriginalBody ? 'sparse body' : 'no text deals'}): ${imageUrlsForExtraction.length} images`
           )
           const imageExtracted = await extractDealsFromEmailImages(
             email.from,
             email.subject,
-            imageUrls,
+            imageUrlsForExtraction,
             allCategories,
           )
           if (imageExtracted.length > 0) {
@@ -679,10 +898,34 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      if (!dryRun) {
+        const enqueued = await enqueueOpenRouterShadowJob(supabase, {
+          auditRunId,
+          emailAuditId,
+          email,
+          cleanedBody: cleanEmailBodyForExtraction(emailBody),
+          imageUrls: imageUrlsForExtraction,
+          productionOutput: createNormalizedExtractionOutput({
+            provider: PRIMARY_EXTRACTION_PROVIDER,
+            model: getPrimaryExtractionModel(),
+            method: extractionMethod === 'vision' ? 'vision' : 'text',
+            deals: extracted,
+            schemaValid: getExtractionSchemaValidity(extracted),
+          }),
+        })
+        if (enqueued) {
+          console.log(`[ingest] queued OpenRouter shadow extraction for ${email.id}`)
+        }
+      }
+
       console.log(`[ingest] ${email.from} | subject: ${email.subject} | extracted: ${extracted.length}`)
       extractedCandidates += extracted.length
+      await resolveStoreForSender(fixRetailerCase(parseSenderName(email.from)), email, [], false)
       if (extracted.length > 0) emailsWithDeals++
-      else emailsWithNoDeals++
+      else {
+        emailsWithNoDeals++
+        await resolveStoreForSender(fixRetailerCase(parseSenderName(email.from)), email)
+      }
 
       for (const deal of extracted) {
         // Skip deals with no real value
@@ -701,7 +944,16 @@ export async function GET(request: NextRequest) {
         // Title-case all-lowercase LLM output ("carter's" → "Carter's")
         // without overriding mixed-case extractions
         const retailer = fixRetailerCase(deal.retailer)
-        const normalizedDeal = { ...deal, retailer }
+        const normalizedDeal = {
+          ...deal,
+          retailer,
+          deal_type:
+            !deal.percent_off &&
+            !deal.promo_code &&
+            isPricePointDescription(deal.description)
+              ? 'price-point' as const
+              : deal.deal_type,
+        }
 
         const junkReason = getJunkDealReason(normalizedDeal)
         if (junkReason) {
@@ -719,75 +971,7 @@ export async function GET(request: NextRequest) {
 
         const dealKey = makeDealKey(normalizedDeal)
 
-        // Look up the brand in the stores table. Priority order:
-        //   1. Exact normalized-name match → known store
-        //   2. Apex-domain match (storesByDomain) → known store under a
-        //      different name. Without this check, a name mismatch would
-        //      fall through to auto-add and the upsert would overwrite the
-        //      existing active store row (the demotion bug).
-        //   3. Neither → genuinely new brand → auto-create with
-        //      status='auto_added', is_active=false for admin review.
-        let storeMatch = storesByName.get(normalizeRetailer(retailer))
-
-        if (!storeMatch) {
-          const domain = parseSenderDomain(email.from)
-
-          // Step 2: domain pre-check — if this sender's apex domain already
-          // exists in the directory under any name, use that store record and
-          // skip the auto-add entirely. This prevents demoting active stores.
-          if (domain) {
-            const domainMatch = storesByDomain.get(domain)
-            if (domainMatch) {
-              storeMatch = domainMatch
-              console.log(`[ingest] domain match (name drift): ${retailer} → ${domain}`)
-            }
-          }
-
-          if (!storeMatch) {
-            if (domain) {
-              if (dryRun) {
-                console.log(`[DRY RUN] would auto-add: ${retailer} (${domain}) from=${email.from}`)
-                dryRunWouldAutoAdd.push({ name: retailer, domain, from: email.from })
-              } else {
-                // ignoreDuplicates: true — if the domain already exists under
-                // any status, do nothing. Never overwrite an existing store row.
-                // Race-safe: concurrent workers hitting the same unknown domain
-                // both try to insert; the second one silently skips.
-                const { data: inserted, error: insertErr } = await supabase
-                  .from('stores')
-                  .upsert(
-                    {
-                      name: retailer,
-                      website: domain,
-                      status: 'auto_added',
-                      is_active: false,
-                      categories: deal.categories ?? [],
-                    },
-                    { onConflict: 'website', ignoreDuplicates: true },
-                  )
-                  .select('id, name, categories, is_active, status')
-                  .maybeSingle()
-                if (insertErr) {
-                  console.error(`[ingest] auto-add error for ${retailer} (${domain}):`, JSON.stringify(insertErr))
-                } else if (inserted) {
-                  console.log(`[ingest] auto-added store for review: ${retailer} (${domain})`)
-                  storeMatch = {
-                    id: inserted.id,
-                    categories: Array.isArray(inserted.categories) ? inserted.categories : [],
-                    is_active: inserted.is_active,
-                    status: inserted.status ?? 'auto_added',
-                  }
-                  storesByName.set(normalizeRetailer(retailer), storeMatch)
-                  storesByDomain.set(domain, storeMatch)
-                }
-                // inserted === null means the domain already existed and was
-                // skipped (ignoreDuplicates: true). That's correct — no action.
-              }
-            } else {
-              console.log(`[ingest] auto-add skipped (no parseable domain): ${retailer} from=${email.from}`)
-            }
-          }
-        }
+        const storeMatch = await resolveStoreForSender(retailer, email, deal.categories ?? [])
 
         // Per-deal categories = LLM tags (content) + editorial vibes
         // from the store row.
@@ -822,46 +1006,40 @@ export async function GET(request: NextRequest) {
         // cards for the same promotion.
         const existingDeal = existingDealByKey.get(dealKey)
         if (existingDeal) {
-          const nextCategories = Array.from(
-            new Set([...(existingDeal.categories ?? []), ...mergedCategories])
+          const { update, metadataChanged } = buildDuplicateDealRefresh(
+            existingDeal,
+            {
+              categories: mergedCategories,
+              keywords: deal.keywords,
+              deal_subtype: deal.deal_subtype,
+              redemption_channel: deal.redemption_channel,
+            },
+            new Date().toISOString(),
           )
-          const nextKeywords = Array.from(new Set([
-            ...(existingDeal.keywords ?? []),
-            ...(deal.keywords ?? []).map((keyword) => keyword.toLowerCase()),
-          ]))
-          const nextSubtype = existingDeal.deal_subtype ?? deal.deal_subtype ?? null
-          const changed =
-            nextCategories.length !== existingDeal.categories.length ||
-            nextKeywords.length !== existingDeal.keywords.length ||
-            nextSubtype !== existingDeal.deal_subtype
-          if (changed) {
-            const { error: updateError } = await supabase
-              .from('deals')
-              .update({
-                categories: nextCategories,
-                keywords: nextKeywords,
-                deal_subtype: nextSubtype,
-                last_seen_at: new Date().toISOString(),
-              })
-              .eq('id', existingDeal.id)
-            if (updateError) {
-              console.error('[ingest] duplicate category update error:', JSON.stringify(updateError))
-            } else {
-              existingDeal.categories = nextCategories
-              existingDeal.keywords = nextKeywords
-              existingDeal.deal_subtype = nextSubtype
-              console.log(`[ingest] enriched duplicate deal: ${retailer} → keywords=[${nextKeywords.join(',')}]`)
-            }
+          const { error: updateError } = await supabase
+            .from('deals')
+            .update(update)
+            .eq('id', existingDeal.id)
+          if (updateError) {
+            console.error('[ingest] duplicate refresh error:', JSON.stringify(updateError))
           } else {
-            console.log(`[ingest] skipping duplicate: ${retailer} ${deal.deal_type} ${deal.percent_off}%`)
+            existingDeal.categories = update.categories
+            existingDeal.keywords = update.keywords
+            existingDeal.deal_subtype = update.deal_subtype
+            existingDeal.redemption_channel = update.redemption_channel
+            if (metadataChanged) {
+              console.log(`[ingest] enriched duplicate deal: ${retailer} → keywords=[${update.keywords.join(',')}]`)
+            } else {
+              console.log(`[ingest] refreshed duplicate deal: ${retailer} ${deal.deal_type} ${deal.percent_off}%`)
+            }
           }
           duplicatesForEmail++
           await auditCandidate(
             emailAuditId,
             email.id,
             { ...normalizedDeal, categories: mergedCategories } as Record<string, unknown>,
-            changed ? 'duplicate_enriched' : 'duplicate_existing',
-            changed ? 'Existing weekly deal enriched with new metadata' : 'Existing weekly deal matched dedup key',
+            metadataChanged ? 'duplicate_enriched' : 'duplicate_existing',
+            metadataChanged ? 'Existing weekly deal enriched with new metadata' : 'Existing weekly deal matched dedup key and refreshed last_seen_at',
             existingDeal.id,
           )
           continue
@@ -880,28 +1058,6 @@ export async function GET(request: NextRequest) {
         }
         seenDealKeys.add(dealKey)
 
-        // Auto-activate pending stores. Only flip 'pending' — never
-        // touch 'no_email', 'declined', or 'auto_added' (the new
-        // auto_added rows wait for admin review). Mutate the in-memory
-        // record first so subsequent deals from the same brand this
-        // run don't re-fire the UPDATE; the DB write is fire-and-forget
-        // since it's idempotent.
-        if (storeMatch && !storeMatch.is_active && storeMatch.status === 'pending') {
-          storeMatch.is_active = true
-          storeMatch.status = 'active'
-          supabase
-            .from('stores')
-            .update({ is_active: true, status: 'active' })
-            .eq('id', storeMatch.id)
-            .then(({ error: actErr }) => {
-              if (actErr) {
-                console.error(`[ingest] auto-activate error for ${retailer}:`, JSON.stringify(actErr))
-              } else {
-                console.log(`[ingest] auto-activated pending store: ${retailer}`)
-              }
-            })
-        }
-
         const dealRow = {
           retailer,
           description: deal.description,
@@ -914,6 +1070,7 @@ export async function GET(request: NextRequest) {
           categories: mergedCategories,
           deal_subtype: deal.deal_subtype ?? null,
           keywords: (deal.keywords ?? []).map((k) => k.toLowerCase()),
+          redemption_channel: deal.redemption_channel ?? 'online',
           last_seen_at: new Date().toISOString(),
           week_of: weekOfStr,
           source_email_id: email.id,
@@ -1095,6 +1252,9 @@ export async function GET(request: NextRequest) {
           console.warn(
             `[ingest] rate limited — pausing all workers for ${Math.round(err.retryAfterMs / 1000)}s`
           )
+        } else if (err instanceof ApiSchemaValidationError) {
+          rateLimitPauseUntil = Date.now() + 60_000
+          console.warn('[ingest] extraction schema validation failed — leaving email unprocessed for retry')
         } else {
           console.error(`Failed to process email ${email.id}:`, err)
         }
@@ -1123,7 +1283,7 @@ export async function GET(request: NextRequest) {
       const skipped = newEmails.length - processedEmailIds.length
       await sendAdminAlert({
         subject: '🚨 Deal Dossier — AI API credits exhausted',
-        body: `Gemini API credits are exhausted. Ingest stopped early at ${new Date().toISOString()}\n\n` +
+        body: `Primary extraction provider API credits are exhausted. Ingest stopped early at ${new Date().toISOString()}\n\n` +
               `Emails skipped (unprocessed, will retry automatically): ~${skipped}\n\n` +
               `Action required:\n` +
               `1. Add credits at https://aistudio.google.com/\n` +
@@ -1148,11 +1308,7 @@ export async function GET(request: NextRequest) {
     // hit an exception — leave the cursor where it was so next run
     // retries. Skipped in dry-run mode (no UIDs are pushed in that path).
     if (!dryRun && !forceDateWindow && processedUids.length > 0) {
-      const firstFailedUid = failedUids.length > 0 ? Math.min(...failedUids) : Infinity
-      const safeProcessedUids = processedUids.filter((uid) => uid < firstFailedUid)
-      const newLastUid = safeProcessedUids.length > 0
-        ? Math.max(...safeProcessedUids)
-        : cursor.afterUid
+      const newLastUid = computeSafeCursorAfterProduction(cursor.afterUid, processedUids, failedUids)
       const { error: cursorErr } = await supabase
         .from('ingest_state')
         .update({
@@ -1187,7 +1343,7 @@ export async function GET(request: NextRequest) {
       audit_run_id: auditRunId,
       cursor: {
         last_uid: !forceDateWindow && processedUids.length > 0
-          ? Math.max(...processedUids.filter((uid) => uid < (failedUids.length > 0 ? Math.min(...failedUids) : Infinity)), cursor.afterUid)
+          ? computeSafeCursorAfterProduction(cursor.afterUid, processedUids, failedUids)
           : cursor.afterUid,
         uid_validity: fetchResult.uidValidity,
       },
@@ -1207,7 +1363,7 @@ export async function GET(request: NextRequest) {
           deals_extracted: extractedCandidates,
           deals_inserted: dryRun ? 0 : newDeals,
           status: apiCreditExhausted ? 'credit_exhausted' : failedUids.length > 0 ? 'completed_with_errors' : 'completed',
-          error: apiCreditExhausted ? 'Gemini API credits exhausted' : failedUids.length > 0 ? `${failedUids.length} email(s) failed` : null,
+          error: apiCreditExhausted ? 'Primary extraction provider API credits exhausted' : failedUids.length > 0 ? `${failedUids.length} email(s) failed` : null,
         })
         .eq('id', auditRunId)
     }

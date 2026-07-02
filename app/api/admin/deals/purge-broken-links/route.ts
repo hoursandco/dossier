@@ -8,7 +8,7 @@
 // Scope: rows with original_link LIKE 'https://google.com/search?q=%'
 // whose normalized retailer name has no match in stores.name.
 //
-// These deals are not customer-visible (the watchlist email's 14-day
+// These deals are not customer-visible (the watchlist email's 7-day
 // lookback excludes anything this old) so deletion is a pure DB-hygiene
 // pass. Stores table is untouched.
 //

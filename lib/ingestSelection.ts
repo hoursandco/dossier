@@ -38,3 +38,16 @@ export function selectEmailsForIngest<T extends IngestEmailRef>(
     deferred: Math.max(0, eligible.length - selectedOffset - selected.length),
   }
 }
+
+export function computeSafeCursorAfterProduction(
+  currentCursorUid: number,
+  processedUids: number[],
+  failedUids: number[],
+): number {
+  if (processedUids.length === 0) return currentCursorUid
+  const firstFailedUid = failedUids.length > 0 ? Math.min(...failedUids) : Infinity
+  const safeProcessedUids = processedUids.filter((uid) => uid < firstFailedUid)
+  return safeProcessedUids.length > 0
+    ? Math.max(...safeProcessedUids)
+    : currentCursorUid
+}

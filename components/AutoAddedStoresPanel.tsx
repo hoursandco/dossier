@@ -3,9 +3,9 @@
 // Quick-review panel for stores the ingest cron auto-created.
 //
 // When the ingest sees a promo email from a sender NOT in the stores
-// table, it inserts a row with status='auto_added' and is_active=true
-// — deals start flowing immediately. This panel surfaces those rows so
-// the admin can:
+// table, it inserts a row with status='auto_added' and is_active=false
+// so the admin can approve it before it appears publicly. This panel
+// surfaces those rows so the admin can:
 //
 //   - Approve     → status='active'  (graduates to a regular store)
 //   - Decline     → status='declined' (hide from future ingest matching,

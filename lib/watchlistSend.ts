@@ -24,8 +24,13 @@ import {
 } from '@/lib/watchlistEmailGenerator'
 import { rankDeals, isJunkDeal } from '@/lib/deals'
 import { fetchStoreData } from '@/lib/stores'
+import {
+  brandNamesIncludingAliases,
+  relatedStoreIdsForTarget,
+  type BrandRelationshipRow,
+} from '@/lib/brandRelationships'
 
-const LOOKBACK_DAYS = 14
+const LOOKBACK_DAYS = 7
 const MAX_DEALS_PER_WATCH = 15
 
 export interface WatchlistSendResult {
@@ -201,6 +206,40 @@ export async function sendWatchlistEmailForSubscriber(
     })
     .filter((s): s is PickedStore => !!s && !!s.name)
 
+  // Expand parent-brand picks to their reviewed child brands, and expand
+  // equivalent-name records both ways. Missing migration 044 degrades to
+  // the original exact-name behavior.
+  const relatedNamesByPickedStore = new Map<string, Set<string>>()
+  for (const store of storePicks) relatedNamesByPickedStore.set(store.id, new Set([store.name]))
+  if (storePicks.length > 0) {
+    const { data: relationshipRows, error: relationshipError } = await service
+      .from('brand_relationship_reviews')
+      .select('store_a_id, store_b_id, decision, parent_store_id, child_store_id')
+      .limit(5000)
+    if (!relationshipError) {
+      const relationships = (relationshipRows ?? []) as BrandRelationshipRow[]
+      const relatedIds = new Set<string>()
+      for (const store of storePicks) {
+        for (const id of relatedStoreIdsForTarget(store.id, relationships)) relatedIds.add(id)
+      }
+      const additionalIds = [...relatedIds].filter((id) => !storePicks.some((store) => store.id === id))
+      if (additionalIds.length > 0) {
+        const { data: relatedStores } = await service
+          .from('stores')
+          .select('id, name')
+          .in('id', additionalIds)
+        const nameById = new Map((relatedStores ?? []).map((store) => [store.id, store.name]))
+        for (const store of storePicks) {
+          const names = relatedNamesByPickedStore.get(store.id)!
+          for (const id of relatedStoreIdsForTarget(store.id, relationships)) {
+            const name = nameById.get(id)
+            if (name) names.add(name)
+          }
+        }
+      }
+    }
+  }
+
   // ── Both empty → send the nudge email ────────────────────────────────
   if (watches.length === 0 && storePicks.length === 0) {
     const html = generateEmptyWatchlistNudgeEmail({ appUrl })
@@ -262,6 +301,7 @@ export async function sendWatchlistEmailForSubscriber(
     if (isSuppressed(d)) return false
     if (!passesTierFilter(d)) return false
     if (minDiscount != null) {
+      if (d.deal_type === 'price-point') return false
       const isNonPercent = NON_PERCENT_DEAL_TYPES.has(d.deal_type ?? '')
       if (!isNonPercent) {
         const pct = d.percent_off ?? 0
@@ -295,8 +335,12 @@ export async function sendWatchlistEmailForSubscriber(
 
   // ── Store-pick sections: deals whose retailer matches the picked store ─
   const storeSections: WatchSection[] = storePicks.map((sp) => {
-    const target = normName(sp.name)
-    const matching = allDeals.filter((d) => d.retailer && normName(d.retailer) === target)
+    const targets = new Set(
+      brandNamesIncludingAliases(
+        relatedNamesByPickedStore.get(sp.id) ?? new Set([sp.name]),
+      ).map(normName),
+    )
+    const matching = allDeals.filter((d) => d.retailer && targets.has(normName(d.retailer)))
     const ranked = rankDeals(matching, storeTiers).slice(0, MAX_DEALS_PER_WATCH)
     return { label: sp.name, deals: ranked }
   })
@@ -312,7 +356,11 @@ export async function sendWatchlistEmailForSubscriber(
   // an empty CompactBuckets (anyCompactOptIn === false skips the
   // entire section in the generator).
   const watchedSlugs = new Set(watches.map((w) => w.category_slug))
-  const pickedStoreNorms = new Set(storePicks.map((sp) => normName(sp.name)))
+  const pickedStoreNorms = new Set(
+    storePicks.flatMap((sp) =>
+      [...(relatedNamesByPickedStore.get(sp.id) ?? new Set([sp.name]))].map(normName)
+    )
+  )
   const matchesUserWatchlist = (d: Deal) => {
     const retailerNorm = normName(d.retailer ?? '')
     if (retailerNorm && pickedStoreNorms.has(retailerNorm)) return true

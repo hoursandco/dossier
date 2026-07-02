@@ -1,14 +1,14 @@
-name: Hourly Ingest
+name: Frequent Ingest
 
-# Calls the production ingest endpoint on dealdossier.io once an hour.
+# Calls the production ingest endpoint on dealdossier.io every 15 minutes.
 # Replaces the Vercel daily cron — moved here because (a) the Vercel
-# Hobby plan caps cron resolution at daily, (b) hourly ingestion lets
-# fresh deals reach watchlist users within an hour instead of up to 24,
+# Hobby plan caps cron resolution at daily, (b) frequent ingestion lets
+# fresh deals reach watchlist users quickly instead of up to 24 hours,
 # and (c) GitHub Actions's 6-hour job timeout is well beyond anything
 # the ingest could ever need.
 #
 # The endpoint itself still runs on Vercel with all the secrets it
-# needs (OpenAI, Gmail OAuth, Supabase, Resend). This workflow only
+# needs (OpenRouter, Gmail IMAP, Supabase, Resend). This workflow only
 # needs CRON_SECRET to authenticate the call.
 #
 # Manual trigger is enabled via workflow_dispatch — handy for ad-hoc
@@ -20,7 +20,7 @@ on:
     # '0 * * * *'), so runs can drift 15-60+ minutes or get skipped
     # entirely under load. Shifting off the top of the hour gets us
     # more reliable firings.
-    - cron: '17 * * * *'  # every hour at :17 past (UTC)
+    - cron: '7,22,37,52 * * * *'  # every 15 minutes, shifted off hot :00/:15 marks
   workflow_dispatch:
     inputs:
       hours:
@@ -123,6 +123,11 @@ jobs:
                   exit 0
                 fi
                 break
+              fi
+
+              if [ "$status" = "409" ]; then
+                echo "Ingest is already running; skipping this scheduled tick."
+                exit 0
               fi
 
               # Only retry on 502/503 (gateway errors where the function never

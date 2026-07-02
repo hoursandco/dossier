@@ -9,6 +9,7 @@
 
 import { format } from 'date-fns'
 import type { Deal } from '@/types'
+import { formatRedemptionChannel } from '@/lib/deals'
 
 // ── Dossier Look palette (literal hex — CSS vars don't work in mail) ──
 const FONT_DISPLAY = "'Alfa Slab One',Georgia,serif"
@@ -136,6 +137,11 @@ function savingsBadge(deal: Deal): string {
       return wrap(GREEN, `${small('YOURS', CREAM_TEXT)}${mid('FREE', CREAM_TEXT)}<div style="font-family:${FONT_STAMP};color:${CREAM_TEXT};font-size:10px;letter-spacing:.2em;text-transform:uppercase;margin-top:2px;">ITEM</div>`, '14px 16px 10px')
     case 'free-shipping':
       return wrap(GREEN, `${small('FREE', CREAM_TEXT)}${mid('SHIP', CREAM_TEXT)}`)
+    case 'price-point': {
+      const price = deal.description.match(/\$\d+(?:\.\d{1,2})?/)?.[0]
+      const label = /\bstarting at\b/i.test(deal.description) ? 'FROM' : 'SALE PRICE'
+      return wrap(BLUE, `${small(label, CREAM_TEXT)}${mid(price ?? 'PRICED', CREAM_TEXT)}`)
+    }
   }
   if (deal.percent_off) {
     if (deal.deal_type === 'up-to') {
@@ -154,17 +160,18 @@ function dealRow(deal: Deal, storeUrls: Record<string, string>): string {
   const codeChip = deal.promo_code
     ? `<span style="display:inline-block;background:${YELLOW};border:1.5px solid ${INK};padding:4px 9px 3px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:${INK};">CODE&nbsp;·&nbsp;${escape(deal.promo_code)}</span>`
     : ''
+  const channelChip = `<span style="display:inline-block;background:${PANEL};border:1.5px solid ${INK};padding:4px 9px 3px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:${INK};${codeChip ? 'margin-left:8px;' : ''}">${escape(formatRedemptionChannel(deal.redemption_channel))}</span>`
   const expiry = deal.expiration_date
-    ? `<span style="display:inline-block;font-family:${FONT_BODY};font-style:italic;font-size:13px;color:${INK_SOFT};${deal.promo_code ? 'margin-left:8px;' : ''}">Ends ${escape(deal.expiration_date)}</span>`
+    ? `<span style="display:inline-block;font-family:${FONT_BODY};font-style:italic;font-size:13px;color:${INK_SOFT};margin-left:8px;">Ends ${escape(deal.expiration_date)}</span>`
     : ''
   // "Original email →" link — only rendered when the source email had a
   // "view in browser" URL we could extract. Helps the user verify the
   // promo on the retailer's marketing page if anything looks off.
   const sourceEmailLink = deal.source_email_link
-    ? `<a href="${escape(deal.source_email_link)}" style="display:inline-block;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:${INK_SOFT};text-decoration:underline;text-decoration-style:dotted;${codeChip || expiry ? 'margin-left:8px;' : ''}">Original email →</a>`
+    ? `<a href="${escape(deal.source_email_link)}" style="display:inline-block;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:${INK_SOFT};text-decoration:underline;text-decoration-style:dotted;margin-left:8px;">Original email →</a>`
     : ''
-  const meta = codeChip || expiry || sourceEmailLink
-    ? `<div style="margin-top:8px;">${codeChip}${expiry}${sourceEmailLink}</div>`
+  const meta = codeChip || channelChip || expiry || sourceEmailLink
+    ? `<div style="margin-top:8px;">${codeChip}${channelChip}${expiry}${sourceEmailLink}</div>`
     : ''
 
   return `

@@ -12,6 +12,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { trackPixel } from '@/lib/pixel'
 import { trackEvent } from '@/lib/analytics'
+import { resolveDealLink } from '@/lib/dealLinks'
+import { formatDealExpiration } from '@/lib/dealDates'
+import { formatRedemptionChannel } from '@/lib/deals'
 
 type StoreLite = { id: string; name: string }
 type KeywordSuggestion = { keyword: string; deal_count: number; type: 'keyword' | 'brand' }
@@ -27,6 +30,7 @@ type DealResult = {
   affiliate_link: string | null
   store_website: string | null
   source_email_link: string | null
+  redemption_channel: string | null
   week_of: string
   price_tier: string | null
 }
@@ -701,19 +705,8 @@ export function HomePicker() {
                   ))}
                 </div>
 
-                <div style={{ marginTop: 24, padding: '18px 20px', background: '#fff8e2', border: '2px dashed var(--ink)' }}>
-                  {signedIn === true ? (
-                    <>
-                      <p style={{ margin: '0 0 12px', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink)' }}>
-                        Want these emailed to you? Hit send below.
-                      </p>
-                      <button type="button" onClick={sendDealsNow} disabled={sendingDeals} className="submit-btn" style={{ width: '100%' }}>
-                        {sendingDeals ? 'SENDING…' : 'EMAIL THESE DEALS →'}
-                      </button>
-                      {statusMsg && <p style={{ margin: '10px 0 0', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 14, color: 'var(--ink-soft)', textAlign: 'center' }}>{statusMsg}</p>}
-                      {error && <p style={{ margin: '10px 0 0', fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--red-deep)', textAlign: 'center' }}>{error}</p>}
-                    </>
-                  ) : (
+                {signedIn !== true && (
+                  <div style={{ marginTop: 24, padding: '18px 20px', background: '#fff8e2', border: '2px dashed var(--ink)' }}>
                     <>
                       <p style={{ margin: '0 0 12px', fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 15, color: 'var(--ink)' }}>
                         Drop your email and we&rsquo;ll send you these — plus flag new ones as they land.
@@ -737,8 +730,8 @@ export function HomePicker() {
                         No card · No password · Unsubscribe anytime
                       </p>
                     </>
-                  )}
-                </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -753,7 +746,7 @@ export function HomePicker() {
 
 // ── DealCard ────────────────────────────────────────────────────────────
 
-function formatDealType(type: string, pct: number | null): string {
+function formatDealType(type: string, pct: number | null, description = ''): string {
   if (type === 'percent-off' && pct) return `${pct}% off`
   if (type === 'bogo-free') return 'BOGO free'
   if (type === 'bogo-half') return 'BOGO 50% off'
@@ -762,13 +755,16 @@ function formatDealType(type: string, pct: number | null): string {
   if (type === 'up-to' && pct) return `Up to ${pct}% off`
   if (type === 'loyalty') return 'Loyalty offer'
   if (type === 'stackable') return 'Stackable deal'
+  if (type === 'price-point') {
+    return /\bstarting at\b/i.test(description) ? 'Starting at' : 'Sale price'
+  }
   return 'Sale'
 }
 
 function DealCard({ deal }: { deal: DealResult }) {
-  const badge = formatDealType(deal.deal_type, deal.percent_off)
-  const fallbackLink = deal.original_link.includes('google.com/search') ? null : deal.original_link
-  const link = deal.store_website || deal.affiliate_link || fallbackLink || '#'
+  const badge = formatDealType(deal.deal_type, deal.percent_off, deal.description)
+  const link = resolveDealLink(deal)
+  const redemptionLabel = formatRedemptionChannel(deal.redemption_channel)
 
   return (
     <div style={{
@@ -787,15 +783,25 @@ function DealCard({ deal }: { deal: DealResult }) {
             {deal.retailer}
           </span>
         </div>
-        {deal.promo_code && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <span style={{
-            fontFamily: "'Special Elite', monospace", fontSize: 12,
-            padding: '3px 8px', background: 'var(--ink)', color: '#fff8e2',
-            letterSpacing: '.12em', whiteSpace: 'nowrap',
+            fontFamily: "'Stardos Stamp', monospace", fontSize: 10,
+            padding: '4px 8px 3px', background: 'var(--yellow)', color: 'var(--ink)',
+            border: '1.5px solid var(--ink)', letterSpacing: '.16em',
+            textTransform: 'uppercase', whiteSpace: 'nowrap',
           }}>
-            {deal.promo_code}
+            {redemptionLabel}
           </span>
-        )}
+          {deal.promo_code && (
+            <span style={{
+              fontFamily: "'Special Elite', monospace", fontSize: 12,
+              padding: '3px 8px', background: 'var(--ink)', color: '#fff8e2',
+              letterSpacing: '.12em', whiteSpace: 'nowrap',
+            }}>
+              {deal.promo_code}
+            </span>
+          )}
+        </div>
       </div>
 
       <p style={{ margin: '0 0 10px', fontFamily: "'IM Fell English', serif", fontSize: 15, lineHeight: 1.45, color: 'var(--ink)' }}>
@@ -805,23 +811,25 @@ function DealCard({ deal }: { deal: DealResult }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         {deal.expiration_date && (
           <span style={{ fontFamily: "'Special Elite', monospace", fontSize: 12, color: 'var(--ink-soft)' }}>
-            Expires {deal.expiration_date}
+            Expires {formatDealExpiration(deal.expiration_date)}
           </span>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <a
-            href={link}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
-              letterSpacing: '.18em', textTransform: 'uppercase',
-              color: 'var(--ink)', textDecoration: 'underline',
-              textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
-            }}
-          >
-            Shop the deal →
-          </a>
+          {link && (
+            <a
+              href={link}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
+                letterSpacing: '.18em', textTransform: 'uppercase',
+                color: 'var(--ink)', textDecoration: 'underline',
+                textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
+              }}
+            >
+              Shop the deal →
+            </a>
+          )}
           {deal.source_email_link && (
             <a
               href={deal.source_email_link}

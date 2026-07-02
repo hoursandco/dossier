@@ -6,6 +6,11 @@ export type Tier = 'free' | 'paid'
 // the DB without a TypeScript redeploy.
 export type Category = string
 
+export type DealRedemptionChannel =
+  | 'online'
+  | 'in-store'
+  | 'online-and-in-store'
+
 export type DealType =
   | 'percent-off'
   | 'bogo-free'
@@ -16,6 +21,7 @@ export type DealType =
   | 'stackable'
   | 'loyalty'
   | 'up-to'
+  | 'price-point'
 
 export interface Subscriber {
   id: string
@@ -54,9 +60,11 @@ export interface Deal {
   affiliate_link: string | null
   categories: Category[]
   deal_subtype: string | null
+  gender: string[] | null
   week_of: string
   source_email_id: string | null
   source_email_link: string | null
+  redemption_channel: DealRedemptionChannel | null
   last_seen_at: string | null
   is_manual: boolean
   created_at: string
@@ -73,6 +81,7 @@ export const DEAL_TYPE_LABELS: Record<DealType, string> = {
   'stackable': 'Stackable Codes',
   'loyalty': 'Loyalty Deals',
   'up-to': 'Up To Deals',
+  'price-point': 'Advertised Prices',
 }
 
 export const DEAL_RANK: Record<DealType | 'high-discount', number> = {
@@ -85,5 +94,6 @@ export const DEAL_RANK: Record<DealType | 'high-discount', number> = {
   'stackable': 7,
   'loyalty': 9,
   'up-to': 10,
+  'price-point': 11,
   'high-discount': 2,
 }
