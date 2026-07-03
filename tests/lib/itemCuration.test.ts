@@ -9,6 +9,8 @@ const reviews = [
   { keyword: 'food discounts', canonical_keyword: 'food', is_hidden: false },
   { keyword: 'food tasting', canonical_keyword: 'food', is_hidden: false },
   { keyword: 'promotional fluff', canonical_keyword: null, is_hidden: true },
+  { keyword: 'deals', canonical_keyword: null, parent_keyword: 'restaurant', is_hidden: true },
+  { keyword: 'offer', canonical_keyword: null, parent_keyword: 'restaurant', is_hidden: true },
   { keyword: 'eye shadow', canonical_keyword: null, parent_keyword: 'makeup', is_hidden: false },
   { keyword: 'eyeshadow', canonical_keyword: 'eye shadow', parent_keyword: 'makeup', is_hidden: false },
   { keyword: 'skin care', canonical_keyword: 'skincare', is_hidden: false },
@@ -62,6 +64,12 @@ describe('item curation', () => {
       'makeup',
       'eye shadow',
       'eyeshadow',
+    ])
+  })
+
+  it('does not expand broad searches into hidden generic promo words', () => {
+    expect(expandItemSearchTerms(['restaurant'], reviews)).toEqual([
+      'restaurant',
     ])
   })
 

@@ -21,7 +21,7 @@ export function expandItemSearchTerms(
 ): string[] {
   const canonicalByKeyword = new Map(
     reviews
-      .filter((review) => review.canonical_keyword)
+      .filter((review) => review.canonical_keyword && !review.is_hidden)
       .map((review) => [
         normalizeItem(review.keyword),
         normalizeItem(review.canonical_keyword!),
@@ -35,6 +35,7 @@ export function expandItemSearchTerms(
     aliasesByCanonical.set(canonical, aliases)
   }
   for (const review of reviews) {
+    if (review.is_hidden) continue
     if (!review.parent_keyword) continue
     const parent = normalizeItem(review.parent_keyword)
     const child = normalizeItem(review.keyword)
