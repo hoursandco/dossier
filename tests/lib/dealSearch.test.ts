@@ -6,6 +6,7 @@ const deal = {
   description: 'Save 40% on select body care, hand soaps, and scented candles.',
   deal_subtype: 'body lotion',
   keywords: ['body wash', 'hand soaps', 'scented candles'],
+  categories: ['skincare'],
 }
 
 describe('deal search matching', () => {
@@ -25,6 +26,25 @@ describe('deal search matching', () => {
 
   it('uses OR logic for multiple search terms', () => {
     expect(dealMatchesAnySearchTerm(deal, ['jeans', 'body wash'])).toBe(true)
+  })
+
+  it('can run item searches without matching retailer names or loose descriptions', () => {
+    expect(dealMatchesSearchTerm(deal, 'Bath and Body Works', {
+      includeRetailer: false,
+      includeDescription: false,
+    })).toBe(false)
+    expect(dealMatchesSearchTerm(deal, 'body care', {
+      includeRetailer: false,
+      includeDescription: false,
+    })).toBe(false)
+    expect(dealMatchesSearchTerm(deal, 'hand soap', {
+      includeRetailer: false,
+      includeDescription: false,
+    })).toBe(true)
+  })
+
+  it('matches category slugs for category-like item searches', () => {
+    expect(dealMatchesSearchTerm(deal, 'skincare')).toBe(true)
   })
 
   it('does not match unrelated partial words', () => {

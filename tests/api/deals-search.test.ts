@@ -25,28 +25,78 @@ const recentDeals = [
     created_at: '2026-06-18T12:00:00Z',
     source_email_link: null,
   },
+  {
+    id: 'deal-noisy-description',
+    retailer: 'Everything Store',
+    description: 'Save during our hand soap inspired summer event.',
+    percent_off: 30,
+    deal_type: 'percent-off',
+    promo_code: null,
+    expiration_date: null,
+    original_link: 'https://example.com/noisy',
+    affiliate_link: null,
+    categories: [],
+    keywords: ['summer sale'],
+    deal_subtype: null,
+    week_of: '2026-06-18',
+    created_at: '2026-06-18T12:00:00Z',
+    source_email_link: null,
+  },
+  {
+    id: 'deal-noisy-category',
+    retailer: 'LOFT',
+    description: 'Save on summer dresses.',
+    percent_off: 30,
+    deal_type: 'percent-off',
+    promo_code: null,
+    expiration_date: null,
+    original_link: 'https://example.com/loft',
+    affiliate_link: null,
+    categories: ['restaurants'],
+    keywords: ['dresses'],
+    deal_subtype: null,
+    week_of: '2026-06-18',
+    created_at: '2026-06-18T12:00:00Z',
+    source_email_link: null,
+  },
 ]
 
 describe('GET /api/deals/search', () => {
-  it('matches free-typed brands and non-exact product terms', async () => {
+  it('matches non-exact product terms without matching loose description text', async () => {
     await mockSupabase(null, {
-      deals: [{ data: recentDeals, error: null }, { data: recentDeals, error: null }],
+      deals: { data: recentDeals, error: null },
       item_keyword_reviews: [
-        { data: [], error: null },
         { data: [], error: null },
       ],
       stores: [
-        { data: [{ name: 'Bath & Body Works', website: 'https://bathandbodyworks.com', price_tier: '$$' }], error: null },
         { data: [{ name: 'Bath & Body Works', website: 'https://bathandbodyworks.com', price_tier: '$$' }], error: null },
       ],
     })
     const { GET } = await import('@/app/api/deals/search/route')
 
-    const brandResponse = await GET(new NextRequest('http://localhost/api/deals/search?keyword=Bath%20and%20Body%20Works'))
     const productResponse = await GET(new NextRequest('http://localhost/api/deals/search?keyword=hand%20soap'))
+    const body = await productResponse.json()
 
-    await expect(brandResponse.json()).resolves.toMatchObject({ deals: [{ id: 'deal-1' }] })
-    await expect(productResponse.json()).resolves.toMatchObject({ deals: [{ id: 'deal-1' }] })
+    expect(body).toMatchObject({ deals: [{ id: 'deal-1' }] })
+    expect(body.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-noisy-description')
+  })
+
+  it('does not treat noisy category tags as item-search matches', async () => {
+    await mockSupabase(null, {
+      deals: { data: recentDeals, error: null },
+      item_keyword_reviews: [
+        { data: [], error: null },
+      ],
+      stores: [
+        { data: [], error: null },
+      ],
+    })
+    const { GET } = await import('@/app/api/deals/search/route')
+
+    const response = await GET(new NextRequest('http://localhost/api/deals/search?keyword=restaurant'))
+    const body = await response.json()
+
+    expect(body.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-noisy-category')
   })
 
   it('matches an alternate extracted retailer name when a brand is selected', async () => {

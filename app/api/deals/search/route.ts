@@ -119,7 +119,13 @@ export async function GET(request: NextRequest) {
         const normalized = normalizeRetailerName(d.retailer ?? '')
         return retailerNames.some((name) => normalizeRetailerName(name) === normalized)
       })
-    : (data ?? []).filter((d) => dealMatchesAnySearchTerm(d, keywords)).slice(0, 50)
+    : (data ?? [])
+        .filter((d) => dealMatchesAnySearchTerm(d, keywords, {
+          includeRetailer: false,
+          includeDescription: false,
+          includeCategories: false,
+        }))
+        .slice(0, 50)
 
   console.log(`[deals/search] retailer="${retailer}" → ${deals.length} rows`)
   if (retailer && deals.length === 0) {
