@@ -110,7 +110,7 @@ const INGEST_STALE_RUN_MS = Math.max(
 
 const INGEST_MAX_EMAIL_AGE_DAYS = Math.max(
   1,
-  Number(process.env.INGEST_MAX_EMAIL_AGE_DAYS) || 4,
+  Number(process.env.INGEST_MAX_EMAIL_AGE_DAYS) || 1,
 )
 
 // Returns true when an email body is mostly images — stripping tags leaves

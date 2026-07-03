@@ -75,8 +75,8 @@ describe('selectEmailsForIngest', () => {
   it('flags emails older than the configured useful search window', () => {
     const now = new Date('2026-07-02T17:00:00Z')
 
-    expect(isEmailOlderThanDays('2026-06-28T16:59:59Z', 4, now)).toBe(true)
-    expect(isEmailOlderThanDays('2026-06-28T17:00:00Z', 4, now)).toBe(false)
-    expect(isEmailOlderThanDays('not-a-date', 4, now)).toBe(false)
+    expect(isEmailOlderThanDays('2026-07-01T16:59:59Z', 1, now)).toBe(true)
+    expect(isEmailOlderThanDays('2026-07-01T17:00:00Z', 1, now)).toBe(false)
+    expect(isEmailOlderThanDays('not-a-date', 1, now)).toBe(false)
   })
 })
