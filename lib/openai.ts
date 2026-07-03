@@ -344,8 +344,8 @@ For each deal:
       a sofa, a perfume), tag the matching slug — NOT a random
       slug from elsewhere in the email's clutter.
 
-   g) Furniture deals use the slug "furnature" (intentional taxonomy
-      spelling) for sofas, couches, sectionals, chairs, dining tables,
+   g) Furniture deals use the slug "furniture" for sofas, couches,
+      sectionals, chairs, dining tables,
       desks, dressers, bed frames, nightstands, bookshelves, cabinets,
       patio furniture, and similar home furniture. Do not use
       "home-decor" for actual furniture.

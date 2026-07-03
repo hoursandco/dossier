@@ -1025,7 +1025,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Skip duplicates within this week, but let backfill/reprocessing
-        // merge in newly learned categories such as the added furnature slug.
+        // merge in newly learned categories such as the added furniture slug.
         // This keeps existing deal rows useful without creating duplicate
         // cards for the same promotion.
         const existingDeal = existingDealByKey.get(dealKey)
