@@ -46,8 +46,7 @@ function includesPhrase(value: string, term: string): boolean {
 function matchesKeyword(keyword: string, rawTerm: string, term: string): boolean {
   const normalizedKeyword = normalizeComparable(keyword)
   return normalizedKeyword === term ||
-    includesPhrase(keyword, rawTerm) ||
-    includesPhrase(rawTerm, keyword)
+    includesPhrase(keyword, rawTerm)
 }
 
 export function dealMatchesSearchTerm(

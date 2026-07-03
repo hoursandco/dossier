@@ -51,4 +51,23 @@ describe('deal search matching', () => {
     expect(dealMatchesSearchTerm(deal, 'bathroom')).toBe(false)
     expect(dealMatchesSearchTerm(deal, 'shoe')).toBe(false)
   })
+
+  it('does not match generic deal keywords inside a longer user query', () => {
+    expect(dealMatchesSearchTerm({
+      ...deal,
+      keywords: ['deals', 'offer'],
+    }, 'restaurant deal', {
+      includeRetailer: false,
+      includeDescription: false,
+      includeCategories: false,
+    })).toBe(false)
+    expect(dealMatchesSearchTerm({
+      ...deal,
+      keywords: ['offer'],
+    }, 'restaurant offer', {
+      includeRetailer: false,
+      includeDescription: false,
+      includeCategories: false,
+    })).toBe(false)
+  })
 })

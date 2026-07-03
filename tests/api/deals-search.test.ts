@@ -59,6 +59,40 @@ const recentDeals = [
     created_at: '2026-06-18T12:00:00Z',
     source_email_link: null,
   },
+  {
+    id: 'deal-generic-offer',
+    retailer: 'LOFT Outlet',
+    description: 'Extra 15% off purchases of $75 or more.',
+    percent_off: 15,
+    deal_type: 'percent-off',
+    promo_code: null,
+    expiration_date: null,
+    original_link: 'https://example.com/loft-outlet',
+    affiliate_link: null,
+    categories: [],
+    keywords: ['discount', 'offer'],
+    deal_subtype: null,
+    week_of: '2026-06-18',
+    created_at: '2026-06-18T12:00:00Z',
+    source_email_link: null,
+  },
+  {
+    id: 'deal-generic-deals',
+    retailer: 'Spencer\'s',
+    description: 'Score fan favorites for $5 each in clearance.',
+    percent_off: null,
+    deal_type: 'price-point',
+    promo_code: null,
+    expiration_date: null,
+    original_link: 'https://example.com/spencers',
+    affiliate_link: null,
+    categories: [],
+    keywords: ['clearance', 'deals'],
+    deal_subtype: null,
+    week_of: '2026-06-18',
+    created_at: '2026-06-18T12:00:00Z',
+    source_email_link: null,
+  },
 ]
 
 describe('GET /api/deals/search', () => {
@@ -97,6 +131,31 @@ describe('GET /api/deals/search', () => {
     const body = await response.json()
 
     expect(body.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-noisy-category')
+  })
+
+  it('does not match generic promo keywords inside longer restaurant queries', async () => {
+    await mockSupabase(null, {
+      deals: [
+        { data: recentDeals, error: null },
+        { data: recentDeals, error: null },
+      ],
+      item_keyword_reviews: [
+        { data: [], error: null },
+        { data: [], error: null },
+      ],
+      stores: [
+        { data: [], error: null },
+      ],
+    })
+    const { GET } = await import('@/app/api/deals/search/route')
+
+    const dealResponse = await GET(new NextRequest('http://localhost/api/deals/search?keyword=restaurant%20deal'))
+    const offerResponse = await GET(new NextRequest('http://localhost/api/deals/search?keyword=restaurant%20offer'))
+    const dealBody = await dealResponse.json()
+    const offerBody = await offerResponse.json()
+
+    expect(dealBody.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-generic-deals')
+    expect(offerBody.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-generic-offer')
   })
 
   it('matches an alternate extracted retailer name when a brand is selected', async () => {
