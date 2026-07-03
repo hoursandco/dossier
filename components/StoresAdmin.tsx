@@ -29,6 +29,12 @@ interface Category {
   slug: string
   label: string
   group_name?: string | null
+  is_editorial?: boolean
+}
+
+type StoreDraft = Partial<Store> & {
+  retailer_categories?: string[]
+  previous_retailer?: string | null
 }
 
 const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
@@ -61,7 +67,9 @@ export function StoresAdmin() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null) // null = none, 'new' = new row
-  const [draft, setDraft] = useState<Partial<Store>>(emptyDraft())
+  const [draft, setDraft] = useState<StoreDraft>(emptyDraft())
+  const [allCategories, setAllCategories] = useState<Category[]>([])
+  const [loadingRetailerTags, setLoadingRetailerTags] = useState(false)
   const [saving, setSaving] = useState(false)
   const [autoTagging, setAutoTagging] = useState(false)
   const [seeding, setSeeding] = useState(false)
@@ -94,6 +102,10 @@ export function StoresAdmin() {
       .then((r) => (r.ok ? r.json() : { collections: [] }))
       .then((data) => setCollections(data.collections ?? []))
       .catch(() => {})
+    fetch('/api/categories')
+      .then((r) => (r.ok ? r.json() : { categories: [] }))
+      .then((data) => setAllCategories(data.categories ?? []))
+      .catch(() => {})
   }, [loadStores])
 
   // Debounce the search input so we don't fire a query on every keystroke.
@@ -109,9 +121,24 @@ export function StoresAdmin() {
     [collections]
   )
 
+  const contentCategories = useMemo(
+    () => allCategories.filter((c) => !c.is_editorial),
+    [allCategories]
+  )
+
+  const groupedRetailerCategories = useMemo(
+    () => groupCategories(contentCategories),
+    [contentCategories]
+  )
+
   const collectionLabelsBySlug = useMemo(
     () => new Map(collections.map((c) => [c.slug, c.label])),
     [collections]
+  )
+
+  const categoryLabelsBySlug = useMemo(
+    () => new Map(allCategories.map((c) => [c.slug, c.label])),
+    [allCategories]
   )
 
   const sortedStores = useMemo(() => {
@@ -146,7 +173,7 @@ export function StoresAdmin() {
     }))
   }
 
-  const startEdit = (store: Store) => {
+  const startEdit = async (store: Store) => {
     setError(null)
     setInfo(null)
     setEditingId(store.id)
@@ -159,14 +186,36 @@ export function StoresAdmin() {
     // re-save cleans up the orphans automatically.
     const editorialSlugs = new Set(collections.map((c) => c.slug))
     const cleanedCategories = (store.categories ?? []).filter((s) => editorialSlugs.has(s))
-    setDraft({ ...store, categories: cleanedCategories })
+    setDraft({
+      ...store,
+      categories: cleanedCategories,
+      retailer_categories: [],
+      previous_retailer: store.name,
+    })
+    setLoadingRetailerTags(true)
+    try {
+      const res = await fetch(`/api/admin/stores/${store.id}/retailer-categories`, {
+        cache: 'no-store',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to load retailer tags')
+      setDraft((prev) => ({
+        ...prev,
+        retailer_categories: data.categories ?? [],
+        previous_retailer: data.retailer ?? store.name,
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load retailer tags')
+    } finally {
+      setLoadingRetailerTags(false)
+    }
   }
 
   const startNew = () => {
     setError(null)
     setInfo(null)
     setEditingId('new')
-    setDraft(emptyDraft())
+    setDraft({ ...emptyDraft(), retailer_categories: [], previous_retailer: null })
   }
 
   const cancelEdit = () => {
@@ -190,10 +239,13 @@ export function StoresAdmin() {
       // sets, race conditions, etc.). startEdit already does this, but
       // belts and suspenders on the write path is cheap.
       const editorialSlugs = new Set(collections.map((c) => c.slug))
+      const retailerCategorySlugs = new Set(contentCategories.map((c) => c.slug))
       const payload = {
         ...draft,
         categories: (draft.categories ?? []).filter((s) => editorialSlugs.has(s)),
       }
+      delete payload.retailer_categories
+      delete payload.previous_retailer
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -202,6 +254,23 @@ export function StoresAdmin() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Save failed')
+      }
+      const data = await res.json()
+      const savedStore = data.store
+      if (savedStore?.id) {
+        const tagRes = await fetch(`/api/admin/stores/${savedStore.id}/retailer-categories`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            retailer: draft.name,
+            previous_retailer: draft.previous_retailer,
+            categories: (draft.retailer_categories ?? []).filter((s) => retailerCategorySlugs.has(s)),
+          }),
+        })
+        if (!tagRes.ok) {
+          const tagData = await tagRes.json().catch(() => ({}))
+          throw new Error(tagData.error || 'Store saved, but retailer tags failed')
+        }
       }
       setEditingId(null)
       setDraft(emptyDraft())
@@ -296,6 +365,15 @@ export function StoresAdmin() {
       if (set.has(slug)) set.delete(slug)
       else set.add(slug)
       return { ...prev, categories: Array.from(set) }
+    })
+  }
+
+  const toggleRetailerCategory = (slug: string) => {
+    setDraft((prev) => {
+      const set = new Set(prev.retailer_categories ?? [])
+      if (set.has(slug)) set.delete(slug)
+      else set.add(slug)
+      return { ...prev, retailer_categories: Array.from(set) }
     })
   }
 
@@ -408,10 +486,14 @@ export function StoresAdmin() {
               draft={draft}
               setDraft={setDraft}
               groupedCategories={groupedCategories}
+              groupedRetailerCategories={groupedRetailerCategories}
+              categoryLabelsBySlug={categoryLabelsBySlug}
               toggleCategory={toggleCategory}
+              toggleRetailerCategory={toggleRetailerCategory}
               onSave={save}
               onCancel={cancelEdit}
               saving={saving}
+              loadingRetailerTags={loadingRetailerTags}
               isNew={editingId === 'new'}
             />
           </div>
@@ -468,6 +550,7 @@ export function StoresAdmin() {
               .slice(0, 3)
               .join(', ')
             const more = editorialOnly.length > 3 ? ` +${editorialOnly.length - 3}` : ''
+            const hiddenTags = s.categories.filter((slug) => !collectionLabelsBySlug.has(slug))
             return (
               <div
                 key={s.id}
@@ -501,6 +584,11 @@ export function StoresAdmin() {
                 <div style={{ fontSize: 12.5, color: 'var(--ink-70)' }}>
                   {catLabels || <span style={{ color: 'var(--ink-40)' }}>—</span>}
                   {more}
+                  {hiddenTags.length > 0 && (
+                    <div style={{ marginTop: 3, color: 'var(--red-deep)', fontSize: 11 }}>
+                      {hiddenTags.length} legacy tag{hiddenTags.length === 1 ? '' : 's'}
+                    </div>
+                  )}
                 </div>
                 <div className="t-mono" style={{ color: 'var(--ink-70)' }}>
                   {s.price_tier ?? '—'}
@@ -588,19 +676,27 @@ function StoreForm({
   draft,
   setDraft,
   groupedCategories,
+  groupedRetailerCategories,
+  categoryLabelsBySlug,
   toggleCategory,
+  toggleRetailerCategory,
   onSave,
   onCancel,
   saving,
+  loadingRetailerTags,
   isNew,
 }: {
-  draft: Partial<Store>
-  setDraft: (updater: (prev: Partial<Store>) => Partial<Store>) => void
+  draft: StoreDraft
+  setDraft: (updater: (prev: StoreDraft) => StoreDraft) => void
   groupedCategories: ReturnType<typeof groupCategories>
+  groupedRetailerCategories: ReturnType<typeof groupCategories>
+  categoryLabelsBySlug: Map<string, string>
   toggleCategory: (slug: string) => void
+  toggleRetailerCategory: (slug: string) => void
   onSave: () => void
   onCancel: () => void
   saving: boolean
+  loadingRetailerTags: boolean
   isNew: boolean
 }) {
   const [subTypeInput, setSubTypeInput] = useState('')
@@ -704,6 +800,114 @@ function StoreForm({
                       key={c.slug}
                       type="button"
                       onClick={() => toggleCategory(c.slug)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '6px 10px',
+                        border: `1.5px solid ${on ? 'var(--ink)' : 'var(--ink-15)'}`,
+                        background: on ? 'var(--ink)' : 'transparent',
+                        color: on ? 'var(--paper)' : 'var(--ink)',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        fontSize: 12,
+                        transition: 'all .12s',
+                      }}
+                    >
+                      {on ? '✓ ' : '+ '}{c.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* AI / retailer product tags */}
+      <div style={{ marginBottom: 16 }}>
+        <div className="t-meta" style={{ marginBottom: 6 }}>
+          Product tags — AI/general retailer categories used for store-category routing
+        </div>
+        {(draft.retailer_categories ?? []).length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            {(draft.retailer_categories ?? []).map((slug) => (
+              <span
+                key={slug}
+                style={{
+                  padding: '4px 9px',
+                  border: '1px solid var(--ink-15)',
+                  background: 'var(--paper)',
+                  fontSize: 12,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                {categoryLabelsBySlug.get(slug) ?? slug}
+                <button
+                  type="button"
+                  onClick={() => toggleRetailerCategory(slug)}
+                  aria-label={`Remove ${categoryLabelsBySlug.get(slug) ?? slug}`}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--ink-55)',
+                    padding: 0,
+                    fontSize: 14,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div
+          style={{
+            maxHeight: 300,
+            overflowY: 'auto',
+            padding: 8,
+            border: '1px solid var(--ink-15)',
+            background: 'var(--bone, var(--paper))',
+          }}
+        >
+          {loadingRetailerTags ? (
+            <div style={{ padding: 12, color: 'var(--ink-55)', fontSize: 13 }}>Loading product tags…</div>
+          ) : groupedRetailerCategories.length === 0 ? (
+            <div style={{ padding: 12, color: 'var(--ink-55)', fontSize: 13 }}>No product tags available.</div>
+          ) : groupedRetailerCategories.map((group) => (
+            <div key={group.name} style={{ marginBottom: 12 }}>
+              <div
+                className="t-meta"
+                style={{
+                  padding: '4px 4px 6px',
+                  color: 'var(--olive-deep)',
+                  letterSpacing: '0.08em',
+                  fontSize: 10.5,
+                  textTransform: 'uppercase',
+                  position: 'sticky',
+                  top: 0,
+                  background: 'var(--bone, var(--paper))',
+                  zIndex: 1,
+                }}
+              >
+                {group.name}
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                  gap: 4,
+                }}
+              >
+                {group.items.map((c) => {
+                  const on = (draft.retailer_categories ?? []).includes(c.slug)
+                  return (
+                    <button
+                      key={c.slug}
+                      type="button"
+                      onClick={() => toggleRetailerCategory(c.slug)}
                       style={{
                         textAlign: 'left',
                         padding: '6px 10px',

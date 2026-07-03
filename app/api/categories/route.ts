@@ -14,7 +14,7 @@ export async function GET() {
   // state — clients without groupings just see every category in "Other".
   const tryWithGroup = await service
     .from('categories')
-    .select('slug, label, sort_order, group_name')
+    .select('slug, label, sort_order, group_name, is_editorial')
     .eq('is_active', true)
     .order('sort_order')
 
