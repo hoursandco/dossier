@@ -179,11 +179,6 @@ export function IngestAuditPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [backfillOffset, setBackfillOffset] = useState(0)
-  const [backfillRunning, setBackfillRunning] = useState(false)
-  const [backfillMessage, setBackfillMessage] = useState('')
-  const [shadowRunning, setShadowRunning] = useState(false)
-  const [shadowMessage, setShadowMessage] = useState('')
 
   const load = useCallback(async (selectedRunId?: string) => {
     setLoading(true)
@@ -237,51 +232,6 @@ export function IngestAuditPanel() {
     return result
   }, [comparisons])
 
-  const runAuditBackfill = async (restart = false) => {
-    const offset = restart ? 0 : backfillOffset
-    setBackfillRunning(true)
-    setBackfillMessage(`Scanning 14 days from batch offset ${offset}…`)
-    try {
-      const res = await fetch(`/api/admin/run-ingest?hours=336&limit=40&reprocess=1&offset=${offset}`, {
-        method: 'POST',
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Backfill failed.')
-      const nextOffset = typeof data.next_offset === 'number' ? data.next_offset : 0
-      setBackfillOffset(nextOffset)
-      setBackfillMessage(
-        data.next_offset == null
-          ? `Audit backfill complete: ${data.emails_processed ?? 0} emails in final batch.`
-          : `Batch complete: ${data.emails_processed ?? 0} emails. ${data.emails_deferred ?? 0} remain.`,
-      )
-      await load(data.audit_run_id)
-    } catch (err) {
-      setBackfillMessage(err instanceof Error ? err.message : 'Backfill failed.')
-    } finally {
-      setBackfillRunning(false)
-    }
-  }
-
-  const runShadowQueue = async () => {
-    setShadowRunning(true)
-    setShadowMessage('Processing queued OpenRouter comparisons...')
-    try {
-      const res = await fetch('/api/admin/process-extraction-jobs?limit=50&concurrency=3', {
-        method: 'POST',
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'OpenRouter comparison run failed.')
-      setShadowMessage(
-        `OpenRouter queue: ${data.claimed ?? 0} claimed, ${data.completed ?? 0} completed, ${data.pending ?? 0} pending, ${data.failed ?? 0} failed.`,
-      )
-      await load(runId)
-    } catch (err) {
-      setShadowMessage(err instanceof Error ? err.message : 'OpenRouter comparison run failed.')
-    } finally {
-      setShadowRunning(false)
-    }
-  }
-
   if (loading) return <p className="t-meta">Loading ingest evidence…</p>
   if (error) return <p style={{ color: 'var(--red-deep)' }}>{error}</p>
 
@@ -299,20 +249,7 @@ export function IngestAuditPanel() {
             </option>
           ))}
         </select>
-        <button className="admin-btn admin-btn-sm" disabled={backfillRunning} onClick={() => runAuditBackfill(backfillOffset === 0)}>
-          {backfillRunning ? 'Scanning…' : backfillOffset > 0 ? 'Run Next Audit Batch' : 'Start 14-Day Audit'}
-        </button>
-        {backfillOffset > 0 && (
-          <button className="admin-link-btn" disabled={backfillRunning} onClick={() => runAuditBackfill(true)}>
-            Restart at first batch
-          </button>
-        )}
-        <button className="admin-btn admin-btn-sm admin-btn-ghost" disabled={shadowRunning} onClick={runShadowQueue}>
-          {shadowRunning ? 'Comparing...' : 'Process OpenRouter Queue'}
-        </button>
       </div>
-      {backfillMessage && <p className="t-meta" style={{ marginBottom: 18 }}>{backfillMessage}</p>}
-      {shadowMessage && <p className="t-meta" style={{ marginBottom: 18 }}>{shadowMessage}</p>}
 
       {selectedRun && (
         <div className="admin-stat-row admin-stat-row-5" style={{ marginBottom: 24 }}>
