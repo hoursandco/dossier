@@ -123,7 +123,6 @@ export async function GET(request: NextRequest) {
         .filter((d) => dealMatchesAnySearchTerm(d, keywords, {
           includeRetailer: false,
           includeDescription: false,
-          includeCategories: false,
         }))
         .slice(0, 50)
 

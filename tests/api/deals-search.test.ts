@@ -43,17 +43,34 @@ const recentDeals = [
     source_email_link: null,
   },
   {
-    id: 'deal-noisy-category',
-    retailer: 'LOFT',
-    description: 'Save on summer dresses.',
-    percent_off: 30,
+    id: 'deal-restaurant-category',
+    retailer: 'Some Grill',
+    description: 'Buy one entree, get one free with any drink purchase.',
+    percent_off: null,
+    deal_type: 'bogo-half',
+    promo_code: null,
+    expiration_date: null,
+    original_link: 'https://example.com/somegrill',
+    affiliate_link: null,
+    categories: ['restaurant'],
+    keywords: ['bogo entree', 'kids eat free'],
+    deal_subtype: null,
+    week_of: '2026-06-18',
+    created_at: '2026-06-18T12:00:00Z',
+    source_email_link: null,
+  },
+  {
+    id: 'deal-unrelated-category',
+    retailer: 'Gadget World',
+    description: 'Save on headphones and chargers.',
+    percent_off: 20,
     deal_type: 'percent-off',
     promo_code: null,
     expiration_date: null,
-    original_link: 'https://example.com/loft',
+    original_link: 'https://example.com/gadgetworld',
     affiliate_link: null,
-    categories: ['restaurants'],
-    keywords: ['dresses'],
+    categories: ['electronics'],
+    keywords: ['headphones', 'chargers'],
     deal_subtype: null,
     week_of: '2026-06-18',
     created_at: '2026-06-18T12:00:00Z',
@@ -115,7 +132,7 @@ describe('GET /api/deals/search', () => {
     expect(body.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-noisy-description')
   })
 
-  it('does not treat noisy category tags as item-search matches', async () => {
+  it('surfaces deals matched only by category, without pulling in unrelated categories', async () => {
     await mockSupabase(null, {
       deals: { data: recentDeals, error: null },
       item_keyword_reviews: [
@@ -129,8 +146,10 @@ describe('GET /api/deals/search', () => {
 
     const response = await GET(new NextRequest('http://localhost/api/deals/search?keyword=restaurant'))
     const body = await response.json()
+    const ids = body.deals.map((deal: { id: string }) => deal.id)
 
-    expect(body.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-noisy-category')
+    expect(ids).toContain('deal-restaurant-category')
+    expect(ids).not.toContain('deal-unrelated-category')
   })
 
   it('does not match generic promo keywords inside longer restaurant queries', async () => {
