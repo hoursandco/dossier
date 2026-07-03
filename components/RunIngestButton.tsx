@@ -13,7 +13,7 @@ export function RunIngestButton() {
     setResult(null)
     try {
       const url = nextMode === 'backfill'
-        ? '/api/admin/run-ingest?hours=8&limit=20'
+        ? '/api/admin/run-ingest?hours=24&limit=20'
         : '/api/admin/run-ingest'
       const res = await fetch(url, { method: 'POST' })
       const data = await res.json()
@@ -28,7 +28,7 @@ export function RunIngestButton() {
 
   const summary =
     status === 'done' && result
-      ? `${(result.emails_processed as number) ?? 0} emails · ${(result.new_deals as number) ?? 0} new deals`
+      ? `${(result.emails_processed as number) ?? 0} emails · ${(result.emails_skipped_stale as number) ?? 0} stale skipped · ${(result.new_deals as number) ?? 0} new deals`
       : null
 
   return (
@@ -59,8 +59,8 @@ export function RunIngestButton() {
         }`}
       >
         <span>
-          {status === 'idle' || mode !== 'backfill' ? '8h Backfill' : null}
-          {status === 'running' && mode === 'backfill' && 'Scanning 8h...'}
+          {status === 'idle' || mode !== 'backfill' ? '24h Backfill' : null}
+          {status === 'running' && mode === 'backfill' && 'Scanning 24h...'}
           {status === 'done' && mode === 'backfill' && (summary || 'Done')}
           {status === 'error' && mode === 'backfill' &&
             ((result?.error as string | undefined) ?? 'Error - try again')}
