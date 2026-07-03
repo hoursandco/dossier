@@ -84,6 +84,9 @@ jobs:
           limit="${INPUT_LIMIT:-20}"
           start_offset="${INPUT_OFFSET:-0}"
           batches="${INPUT_BATCHES:-1}"
+          if [ -z "$INPUT_HOURS" ] && [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            INPUT_HOURS="24"
+          fi
 
           body_file=$(mktemp)
           trap 'rm -f "$body_file"' EXIT
