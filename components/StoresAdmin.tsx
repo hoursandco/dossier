@@ -33,6 +33,16 @@ interface Category {
 
 const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
 
+type SortKey = 'name' | 'collections' | 'price_tier' | 'status'
+type SortDirection = 'asc' | 'desc'
+
+const SORT_LABELS: Record<SortKey, string> = {
+  name: 'Name',
+  collections: 'Collections',
+  price_tier: '$',
+  status: 'Status',
+}
+
 const emptyDraft = (): Partial<Store> => ({
   name: '',
   website: '',
@@ -57,6 +67,10 @@ export function StoresAdmin() {
   const [seeding, setSeeding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: 'name',
+    direction: 'asc',
+  })
 
   const loadStores = useCallback(async (q?: string) => {
     setLoading(true)
@@ -94,6 +108,43 @@ export function StoresAdmin() {
     () => groupCategories(collections),
     [collections]
   )
+
+  const collectionLabelsBySlug = useMemo(
+    () => new Map(collections.map((c) => [c.slug, c.label])),
+    [collections]
+  )
+
+  const sortedStores = useMemo(() => {
+    const getComparable = (store: Store) => {
+      if (sort.key === 'collections') {
+        return (store.categories ?? [])
+          .filter((slug) => collectionLabelsBySlug.has(slug))
+          .map((slug) => collectionLabelsBySlug.get(slug) ?? slug)
+          .sort((a, b) => a.localeCompare(b))
+          .join(', ')
+      }
+      if (sort.key === 'price_tier') return store.price_tier?.length ?? 0
+      if (sort.key === 'status') return STATUS_LABELS[store.status]?.label ?? store.status
+      return store.name
+    }
+
+    return [...stores].sort((a, b) => {
+      const aValue = getComparable(a)
+      const bValue = getComparable(b)
+      const comparison =
+        typeof aValue === 'number' && typeof bValue === 'number'
+          ? aValue - bValue
+          : String(aValue).localeCompare(String(bValue), undefined, { sensitivity: 'base' })
+      return sort.direction === 'asc' ? comparison : -comparison
+    })
+  }, [collectionLabelsBySlug, sort, stores])
+
+  const toggleSort = (key: SortKey) => {
+    setSort((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+    }))
+  }
 
   const startEdit = (store: Store) => {
     setError(null)
@@ -328,18 +379,43 @@ export function StoresAdmin() {
         </div>
       )}
 
-      {/* Edit / new form (renders above the table when active) */}
+      {/* Edit / new form */}
       {editingId !== null && (
-        <StoreForm
-          draft={draft}
-          setDraft={setDraft}
-          groupedCategories={groupedCategories}
-          toggleCategory={toggleCategory}
-          onSave={save}
-          onCancel={cancelEdit}
-          saving={saving}
-          isNew={editingId === 'new'}
-        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="store-editor-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            padding: '24px clamp(12px, 3vw, 32px)',
+            background: 'rgba(34, 31, 25, 0.42)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              width: 'min(980px, 100%)',
+              maxHeight: 'min(88vh, 920px)',
+              overflowY: 'auto',
+              boxShadow: '0 24px 80px rgba(0, 0, 0, 0.22)',
+            }}
+          >
+            <StoreForm
+              draft={draft}
+              setDraft={setDraft}
+              groupedCategories={groupedCategories}
+              toggleCategory={toggleCategory}
+              onSave={save}
+              onCancel={cancelEdit}
+              saving={saving}
+              isNew={editingId === 'new'}
+            />
+          </div>
+        </div>
       )}
 
       {/* Table */}
@@ -365,10 +441,10 @@ export function StoresAdmin() {
             fontFamily: 'var(--font-mono)',
           }}
         >
-          <div>Name</div>
-          <div>Collections</div>
-          <div>$</div>
-          <div>Status</div>
+          <SortableHeader sortKey="name" sort={sort} onSort={toggleSort} />
+          <SortableHeader sortKey="collections" sort={sort} onSort={toggleSort} />
+          <SortableHeader sortKey="price_tier" sort={sort} onSort={toggleSort} />
+          <SortableHeader sortKey="status" sort={sort} onSort={toggleSort} />
           <div></div>
         </div>
 
@@ -379,7 +455,7 @@ export function StoresAdmin() {
             {search ? 'No stores match that search.' : 'No stores yet. Add one or import from the sheet.'}
           </div>
         ) : (
-          stores.map((s) => {
+          sortedStores.map((s) => {
             // Only render slugs that actually exist as editorial
             // Collections. Orphan content slugs (legacy 'womens-clothes'
             // etc.) show as raw strings otherwise — looks like garbage
@@ -388,7 +464,7 @@ export function StoresAdmin() {
               collections.some((c) => c.slug === slug)
             )
             const catLabels = editorialOnly
-              .map((slug) => collections.find((c) => c.slug === slug)?.label ?? slug)
+              .map((slug) => collectionLabelsBySlug.get(slug) ?? slug)
               .slice(0, 3)
               .join(', ')
             const more = editorialOnly.length > 3 ? ` +${editorialOnly.length - 3}` : ''
@@ -468,6 +544,46 @@ export function StoresAdmin() {
   )
 }
 
+function SortableHeader({
+  sortKey,
+  sort,
+  onSort,
+}: {
+  sortKey: SortKey
+  sort: { key: SortKey; direction: SortDirection }
+  onSort: (key: SortKey) => void
+}) {
+  const active = sort.key === sortKey
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      aria-label={`Sort by ${SORT_LABELS[sortKey]}${
+        active ? `, currently ${sort.direction === 'asc' ? 'ascending' : 'descending'}` : ''
+      }`}
+      style={{
+        border: 'none',
+        background: 'transparent',
+        padding: 0,
+        color: active ? 'var(--ink)' : 'inherit',
+        cursor: 'pointer',
+        font: 'inherit',
+        letterSpacing: 'inherit',
+        textTransform: 'inherit',
+        textAlign: 'left',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+      }}
+    >
+      <span>{SORT_LABELS[sortKey]}</span>
+      <span aria-hidden="true" style={{ fontSize: 10, lineHeight: 1 }}>
+        {active ? (sort.direction === 'asc' ? '▲' : '▼') : '↕'}
+      </span>
+    </button>
+  )
+}
+
 function StoreForm({
   draft,
   setDraft,
@@ -513,7 +629,7 @@ function StoreForm({
         background: 'var(--paper)',
       }}
     >
-      <div className="t-eyebrow" style={{ marginBottom: 16 }}>
+      <div id="store-editor-title" className="t-eyebrow" style={{ marginBottom: 16 }}>
         {isNew ? 'New Store' : 'Edit Store'}
       </div>
 
