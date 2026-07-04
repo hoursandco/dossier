@@ -8,7 +8,7 @@ import {
 import {
   brandNamesIncludingAliases,
   relatedBrandNamesForTarget,
-  type BrandRelationshipRow,
+  type RelationshipStore,
 } from '@/lib/brandRelationships'
 import {
   expandItemSearchTerms,
@@ -75,27 +75,18 @@ export async function GET(request: NextRequest) {
   let retailerNames = retailer ? brandNamesIncludingAliases([retailer]) : []
 
   if (retailer) {
-    const [{ data: directoryRows }, { data: relationshipRows, error: relationshipError }] = await Promise.all([
-      supabase
-        .from('stores')
-        .select('id, name')
-        .eq('status', 'active')
-        .eq('is_active', true)
-        .limit(5000),
-      supabase
-        .from('brand_relationship_reviews')
-        .select('store_a_id, store_b_id, decision, parent_store_id, child_store_id')
-        .limit(5000),
-    ])
-    const targetStore = (directoryRows ?? []).find(
+    const { data: directoryRows } = await supabase
+      .from('stores')
+      .select('id, name, parent_store_id, alias_of_store_id')
+      .eq('status', 'active')
+      .eq('is_active', true)
+      .limit(5000)
+    const directory = (directoryRows ?? []) as RelationshipStore[]
+    const targetStore = directory.find(
       (store) => normalizeRetailerName(store.name) === normalizeRetailerName(retailer),
     )
-    if (targetStore && !relationshipError) {
-      retailerNames = relatedBrandNamesForTarget(
-        targetStore.id,
-        directoryRows ?? [],
-        (relationshipRows ?? []) as BrandRelationshipRow[],
-      )
+    if (targetStore) {
+      retailerNames = relatedBrandNamesForTarget(targetStore.id, directory)
     }
   }
 

@@ -219,10 +219,9 @@ describe('GET /api/deals/search', () => {
     }
     await mockSupabase(null, {
       stores: [
-        { data: [{ id: 'store-altra', name: 'Altra' }], error: null },
+        { data: [{ id: 'store-altra', name: 'Altra', parent_store_id: null, alias_of_store_id: null }], error: null },
         { data: [{ name: 'Altra', website: 'https://altrarunning.com', price_tier: '$$' }], error: null },
       ],
-      brand_relationship_reviews: { data: [], error: null },
       deals: { data: [altraDeal], error: null },
     })
     const { GET } = await import('@/app/api/deals/search/route')

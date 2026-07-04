@@ -27,8 +27,7 @@ import { dealMatchesSearchTerm } from '@/lib/dealSearch'
 import { fetchStoreData } from '@/lib/stores'
 import {
   brandNamesIncludingAliases,
-  relatedStoreIdsForTarget,
-  type BrandRelationshipRow,
+  type RelationshipStore,
 } from '@/lib/brandRelationships'
 
 const LOOKBACK_DAYS = 7
@@ -190,7 +189,7 @@ export async function sendWatchlistEmailForSubscriber(
   // ── Load store picks ─────────────────────────────────────────────────
   const { data: storeRows, error: storeErr } = await service
     .from('subscriber_stores')
-    .select('store_id, stores!inner(id, name)')
+    .select('store_id, stores!inner(id, name, parent_store_id, alias_of_store_id)')
     .eq('subscriber_id', subscriber.id)
 
   if (storeErr) {
@@ -199,7 +198,7 @@ export async function sendWatchlistEmailForSubscriber(
     console.warn('[watchlistSend] store-picks load failed:', JSON.stringify(storeErr))
   }
 
-  type PickedStore = { id: string; name: string }
+  type PickedStore = RelationshipStore
   const storePicks: PickedStore[] = (storeRows ?? [])
     .map((r) => {
       const s = Array.isArray(r.stores) ? r.stores[0] : r.stores
@@ -207,34 +206,42 @@ export async function sendWatchlistEmailForSubscriber(
     })
     .filter((s): s is PickedStore => !!s && !!s.name)
 
-  // Expand parent-brand picks to their reviewed child brands, and expand
-  // equivalent-name records both ways. Missing migration 044 degrades to
-  // the original exact-name behavior.
+  // Expand parent-brand picks to their child brands, and alias records both
+  // ways, via the relationship columns on stores (migration 054): child
+  // rows point at the pick through parent_store_id, alias rows through
+  // alias_of_store_id, and a picked alias points at its canonical row.
   const relatedNamesByPickedStore = new Map<string, Set<string>>()
   for (const store of storePicks) relatedNamesByPickedStore.set(store.id, new Set([store.name]))
   if (storePicks.length > 0) {
-    const { data: relationshipRows, error: relationshipError } = await service
-      .from('brand_relationship_reviews')
-      .select('store_a_id, store_b_id, decision, parent_store_id, child_store_id')
+    const pickIds = storePicks.map((store) => store.id)
+    const aliasTargetIds = storePicks
+      .map((store) => store.alias_of_store_id)
+      .filter((id): id is string => !!id)
+    const orFilters = [
+      `parent_store_id.in.(${pickIds.join(',')})`,
+      `alias_of_store_id.in.(${pickIds.join(',')})`,
+    ]
+    if (aliasTargetIds.length > 0) orFilters.push(`id.in.(${aliasTargetIds.join(',')})`)
+    const { data: relatedRows, error: relatedError } = await service
+      .from('stores')
+      .select('id, name, parent_store_id, alias_of_store_id')
+      .or(orFilters.join(','))
       .limit(5000)
-    if (!relationshipError) {
-      const relationships = (relationshipRows ?? []) as BrandRelationshipRow[]
-      const relatedIds = new Set<string>()
-      for (const store of storePicks) {
-        for (const id of relatedStoreIdsForTarget(store.id, relationships)) relatedIds.add(id)
-      }
-      const additionalIds = [...relatedIds].filter((id) => !storePicks.some((store) => store.id === id))
-      if (additionalIds.length > 0) {
-        const { data: relatedStores } = await service
-          .from('stores')
-          .select('id, name')
-          .in('id', additionalIds)
-        const nameById = new Map((relatedStores ?? []).map((store) => [store.id, store.name]))
-        for (const store of storePicks) {
-          const names = relatedNamesByPickedStore.get(store.id)!
-          for (const id of relatedStoreIdsForTarget(store.id, relationships)) {
-            const name = nameById.get(id)
-            if (name) names.add(name)
+    if (relatedError) {
+      // 42703 = relationship columns missing (migration 054 not applied).
+      // Degrade to exact-name matching rather than crash.
+      console.warn('[watchlistSend] related-brands load failed:', JSON.stringify(relatedError))
+    } else {
+      for (const pick of storePicks) {
+        const names = relatedNamesByPickedStore.get(pick.id)!
+        for (const row of relatedRows ?? []) {
+          if (!row.name) continue
+          if (
+            row.parent_store_id === pick.id ||
+            row.alias_of_store_id === pick.id ||
+            (pick.alias_of_store_id && row.id === pick.alias_of_store_id)
+          ) {
+            names.add(row.name)
           }
         }
       }

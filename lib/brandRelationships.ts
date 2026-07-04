@@ -1,16 +1,19 @@
-export type BrandRelationshipDecision = 'unrelated' | 'parent_child' | 'equivalent'
+// Brand family relationships, stored as columns on stores (migration 054):
+//
+//   parent_store_id      directional family — watching/searching the parent
+//                        includes the child; the child stays specific.
+//   alias_of_store_id    same brand under another name — matches expand in
+//                        both directions. The pointed-at row is canonical.
+//   unrelated_store_ids  alias-audit dismissals, held on the
+//                        lexicographically-smaller store id of the pair.
 
-export type BrandRelationshipRow = {
-  store_a_id: string
-  store_b_id: string
-  decision: BrandRelationshipDecision
-  parent_store_id: string | null
-  child_store_id: string | null
-}
+export type BrandRelationshipDecision = 'unrelated' | 'parent_child' | 'equivalent'
 
 export type RelationshipStore = {
   id: string
   name: string
+  parent_store_id?: string | null
+  alias_of_store_id?: string | null
 }
 
 // Alternate names the ingest model may extract for a single store record.
@@ -43,21 +46,15 @@ export function orderedStorePair(leftId: string, rightId: string): [string, stri
 /** Store IDs whose deals should match a search/watch for targetStoreId. */
 export function relatedStoreIdsForTarget(
   targetStoreId: string,
-  relationships: BrandRelationshipRow[],
+  stores: RelationshipStore[],
 ): Set<string> {
   const ids = new Set([targetStoreId])
-  for (const relationship of relationships) {
-    if (relationship.decision === 'equivalent') {
-      if (relationship.store_a_id === targetStoreId) ids.add(relationship.store_b_id)
-      if (relationship.store_b_id === targetStoreId) ids.add(relationship.store_a_id)
+  for (const store of stores) {
+    if (store.id === targetStoreId && store.alias_of_store_id) {
+      ids.add(store.alias_of_store_id)
     }
-    if (
-      relationship.decision === 'parent_child' &&
-      relationship.parent_store_id === targetStoreId &&
-      relationship.child_store_id
-    ) {
-      ids.add(relationship.child_store_id)
-    }
+    if (store.alias_of_store_id === targetStoreId) ids.add(store.id)
+    if (store.parent_store_id === targetStoreId) ids.add(store.id)
   }
   return ids
 }
@@ -65,9 +62,8 @@ export function relatedStoreIdsForTarget(
 export function relatedBrandNamesForTarget(
   targetStoreId: string,
   stores: RelationshipStore[],
-  relationships: BrandRelationshipRow[],
 ): string[] {
-  const ids = relatedStoreIdsForTarget(targetStoreId, relationships)
+  const ids = relatedStoreIdsForTarget(targetStoreId, stores)
   return brandNamesIncludingAliases(
     stores.filter((store) => ids.has(store.id)).map((store) => store.name),
   )

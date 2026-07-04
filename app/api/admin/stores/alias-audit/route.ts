@@ -20,15 +20,25 @@ export async function GET(request: NextRequest) {
   const PAGE_SIZE = 1000
   const EVIDENCE_SAMPLE_SIZE = 1000
 
+  type AuditStoreRow = {
+    id: string
+    name: string
+    website: string | null
+    status: string | null
+    is_active: boolean
+    parent_store_id: string | null
+    alias_of_store_id: string | null
+    unrelated_store_ids: string[] | null
+  }
   const loadStores = async () => {
-    const rows: Array<{ id: string; name: string; website: string | null; status: string | null; is_active: boolean }> = []
+    const rows: AuditStoreRow[] = []
     for (let page = 0; page < 10; page++) {
       const result = await db.from('stores')
-        .select('id, name, website, status, is_active')
+        .select('id, name, website, status, is_active, parent_store_id, alias_of_store_id, unrelated_store_ids')
         .order('name', { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
       if (result.error) return { rows, error: result.error }
-      rows.push(...(result.data ?? []))
+      rows.push(...((result.data ?? []) as AuditStoreRow[]))
       if ((result.data?.length ?? 0) < PAGE_SIZE) break
     }
     return { rows, error: null }
@@ -39,7 +49,7 @@ export async function GET(request: NextRequest) {
   // 1,000 of each keeps this admin request comfortably below serverless
   // timeouts; the previous version serially paged up to 10,000 rows from
   // both evidence tables before returning anything.
-  const [storesResult, dealsResult, scansResult, reviewsResult] = await Promise.all([
+  const [storesResult, dealsResult, scansResult] = await Promise.all([
     loadStores(),
     db.from('deals')
       .select('retailer, original_link')
@@ -50,9 +60,6 @@ export async function GET(request: NextRequest) {
       .select('retailer, sender_email')
       .order('emails_processed', { ascending: false })
       .limit(EVIDENCE_SAMPLE_SIZE),
-    db.from('brand_relationship_reviews')
-      .select('store_a_id, store_b_id, decision, parent_store_id, child_store_id, updated_at')
-      .limit(5000),
   ])
 
   if (storesResult.error) {
@@ -62,22 +69,46 @@ export async function GET(request: NextRequest) {
 
   if (dealsResult.error) console.warn('[alias audit] deal evidence unavailable:', JSON.stringify(dealsResult.error))
   if (scansResult.error) console.warn('[alias audit] sender evidence unavailable:', JSON.stringify(scansResult.error))
-  const reviewsUnavailable = !!reviewsResult.error
-  if (reviewsResult.error) {
-    const code = (reviewsResult.error as { code?: string }).code
-    if (code !== '42P01' && code !== 'PGRST205') {
-      console.warn('[alias audit] reviews unavailable:', JSON.stringify(reviewsResult.error))
-    }
-  }
+  const reviewsUnavailable = false
 
   const dealRows = dealsResult.data ?? []
   const scanRows = scansResult.data ?? []
-  const reviewsByPair = new Map(
-    (reviewsResult.data ?? []).map((review) => [
-      orderedStorePair(review.store_a_id, review.store_b_id).join('::'),
-      review,
-    ]),
-  )
+
+  // Prior decisions now live as columns on the store rows themselves
+  // (migration 054); rebuild the per-pair review map the UI expects.
+  type PairReview = {
+    decision: 'unrelated' | 'parent_child' | 'equivalent'
+    parent_store_id: string | null
+    child_store_id: string | null
+    updated_at: string | null
+  }
+  const reviewsByPair = new Map<string, PairReview>()
+  for (const store of storesResult.rows) {
+    if (store.parent_store_id) {
+      reviewsByPair.set(orderedStorePair(store.id, store.parent_store_id).join('::'), {
+        decision: 'parent_child',
+        parent_store_id: store.parent_store_id,
+        child_store_id: store.id,
+        updated_at: null,
+      })
+    }
+    if (store.alias_of_store_id) {
+      reviewsByPair.set(orderedStorePair(store.id, store.alias_of_store_id).join('::'), {
+        decision: 'equivalent',
+        parent_store_id: null,
+        child_store_id: null,
+        updated_at: null,
+      })
+    }
+    for (const unrelatedId of store.unrelated_store_ids ?? []) {
+      reviewsByPair.set(orderedStorePair(store.id, unrelatedId).join('::'), {
+        decision: 'unrelated',
+        parent_store_id: null,
+        child_store_id: null,
+        updated_at: null,
+      })
+    }
+  }
   const allCandidates = buildBrandAliasCandidates(storesResult.rows, dealRows, scanRows)
     .map((candidate) => ({
       ...candidate,
