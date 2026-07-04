@@ -47,51 +47,74 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim() ?? ''
   let keywordsQuery = db
     .from('keywords')
-    .select('keyword, deal_count, last_seen')
+    .select('keyword, deal_count, last_seen, canonical_keyword, parent_keyword, is_hidden, reviewed_at')
     .order('deal_count', { ascending: false })
     .limit(400)
   if (q) keywordsQuery = keywordsQuery.ilike('keyword', `%${q}%`)
 
-  const [{ data: keywords, error: keywordsError }, { data: reviews, error: reviewsError }] =
+  // Curation lives on the keywords rows themselves (migration 056). The
+  // second query pulls the curated slice so a search by canonical/parent
+  // term can surface rows whose own keyword didn't match the ilike.
+  const [{ data: keywords, error: keywordsError }, { data: curated, error: curatedError }] =
     await Promise.all([
       keywordsQuery,
       db
-        .from('item_keyword_reviews')
-        .select('keyword, canonical_keyword, parent_keyword, is_hidden, updated_at')
+        .from('keywords')
+        .select('keyword, deal_count, last_seen, canonical_keyword, parent_keyword, is_hidden, reviewed_at')
+        .or('canonical_keyword.not.is.null,parent_keyword.not.is.null,is_hidden.eq.true')
         .limit(5000),
     ])
 
   if (keywordsError) {
+    const code = (keywordsError as { code?: string }).code
+    if (code === '42703') {
+      return NextResponse.json({
+        error: 'Keyword curation columns are not installed yet. Run migration 056.',
+        setup_required: true,
+      }, { status: 503 })
+    }
     return NextResponse.json({ error: 'Could not load item vocabulary.' }, { status: 500 })
   }
-  if (reviewsError) {
-    return NextResponse.json({
-      error: 'Item audit table is not installed yet. Run migration 045.',
-      setup_required: true,
-    }, { status: 503 })
+  if (curatedError) {
+    return NextResponse.json({ error: 'Could not load item curation.' }, { status: 500 })
   }
 
-  const reviewByKeyword = new Map((reviews ?? []).map((row) => [row.keyword, row]))
+  type KeywordRow = {
+    keyword: string
+    deal_count: number
+    last_seen: string | null
+    canonical_keyword: string | null
+    parent_keyword: string | null
+    is_hidden: boolean
+    reviewed_at: string | null
+  }
+  const toItem = (row: KeywordRow) => {
+    const isReviewed = !!row.canonical_keyword || !!row.parent_keyword || row.is_hidden || !!row.reviewed_at
+    return {
+      keyword: row.keyword,
+      deal_count: row.deal_count,
+      last_seen: row.last_seen,
+      review: isReviewed
+        ? {
+            keyword: row.keyword,
+            canonical_keyword: row.canonical_keyword,
+            parent_keyword: row.parent_keyword,
+            is_hidden: row.is_hidden,
+            updated_at: row.reviewed_at,
+          }
+        : null,
+    }
+  }
+
   const itemsByKeyword = new Map(
-    (keywords ?? []).map((item) => [
-      item.keyword,
-      {
-        ...item,
-        review: reviewByKeyword.get(item.keyword) ?? null,
-      },
-    ]),
+    ((keywords ?? []) as KeywordRow[]).map((row) => [row.keyword, toItem(row)]),
   )
 
   if (q) {
-    for (const review of reviews ?? []) {
-      if (!reviewMatchesQuery(review, q)) continue
-      if (itemsByKeyword.has(review.keyword)) continue
-      itemsByKeyword.set(review.keyword, {
-        keyword: review.keyword,
-        deal_count: 0,
-        last_seen: null,
-        review,
-      })
+    for (const row of (curated ?? []) as KeywordRow[]) {
+      if (!reviewMatchesQuery(row, q)) continue
+      if (itemsByKeyword.has(row.keyword)) continue
+      itemsByKeyword.set(row.keyword, toItem(row))
     }
   }
 
@@ -120,23 +143,28 @@ export async function POST(request: NextRequest) {
   }
 
   const db = createServiceClient()
+  // Upsert onto the keywords vocabulary row (migration 056). deal_count is
+  // deliberately omitted so an existing row's count is never clobbered; a
+  // brand-new curation-only row gets the column default.
   const { data, error } = await db
-    .from('item_keyword_reviews')
+    .from('keywords')
     .upsert({
       keyword,
       canonical_keyword: canonicalKeyword,
       parent_keyword: parentKeyword,
       is_hidden: parsed.data.is_hidden,
       reviewed_by_email: user.email ?? null,
-      updated_at: new Date().toISOString(),
+      reviewed_at: new Date().toISOString(),
     }, { onConflict: 'keyword' })
-    .select('keyword, canonical_keyword, parent_keyword, is_hidden, updated_at')
+    .select('keyword, canonical_keyword, parent_keyword, is_hidden, reviewed_at')
     .single()
 
   if (error) {
     return NextResponse.json({ error: 'Could not save item review.' }, { status: 500 })
   }
-  return NextResponse.json({ review: data })
+  return NextResponse.json({
+    review: data ? { ...data, updated_at: data.reviewed_at } : data,
+  })
 }
 
 export async function DELETE(request: NextRequest) {
@@ -147,7 +175,18 @@ export async function DELETE(request: NextRequest) {
   if (!keyword) return NextResponse.json({ error: 'Keyword is required.' }, { status: 400 })
 
   const db = createServiceClient()
-  const { error } = await db.from('item_keyword_reviews').delete().eq('keyword', keyword)
+  // Clearing a review resets the curation columns but keeps the vocabulary
+  // row — deal_count/last_seen are real usage data, not curation.
+  const { error } = await db
+    .from('keywords')
+    .update({
+      canonical_keyword: null,
+      parent_keyword: null,
+      is_hidden: false,
+      reviewed_by_email: null,
+      reviewed_at: null,
+    })
+    .eq('keyword', keyword)
   if (error) return NextResponse.json({ error: 'Could not clear item review.' }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

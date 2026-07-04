@@ -44,9 +44,12 @@ export async function GET(request: NextRequest) {
   const supabase = createServiceClient()
 
   if (keywords.length > 0) {
+    // Keyword curation lives on the keywords vocabulary table itself
+    // (migration 056); only the curated slice matters for expansion.
     const { data: itemReviews, error: itemReviewsError } = await supabase
-      .from('item_keyword_reviews')
+      .from('keywords')
       .select('keyword, canonical_keyword, parent_keyword, is_hidden')
+      .or('canonical_keyword.not.is.null,parent_keyword.not.is.null,is_hidden.eq.true')
       .limit(5000)
     if (!itemReviewsError) {
       keywords = expandItemSearchTerms(

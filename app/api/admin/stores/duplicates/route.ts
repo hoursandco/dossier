@@ -33,6 +33,7 @@ type StoreRow = {
   price_tier: string | null
   date_added: string | null
   created_at: string
+  unrelated_store_ids: string[] | null
 }
 
 export async function GET() {
@@ -44,19 +45,12 @@ export async function GET() {
 
   const service = createServiceClient()
 
-  // Pull stores + the dismissals list in parallel. Dismissals are
-  // admin-flagged false-positive clusters (e.g. Gap Inc.'s sub-brands
-  // all collapsing to gap.com but actually being distinct brands).
-  // The table may not exist yet pre-migration-027 — treat that as
-  // "no dismissals" so the panel keeps working.
-  const [storesRes, dismissedRes] = await Promise.all([
-    service
-      .from('stores')
-      .select('id, name, website, status, is_active, categories, price_tier, date_added, created_at'),
-    service
-      .from('non_duplicate_clusters')
-      .select('normalized_website'),
-  ])
+  // Dismissals ("these rows are genuinely distinct brands") live as
+  // pairwise entries in stores.unrelated_store_ids (migration 057) —
+  // shared with the alias-audit tab's unrelated decisions.
+  const storesRes = await service
+    .from('stores')
+    .select('id, name, website, status, is_active, categories, price_tier, date_added, created_at, unrelated_store_ids')
 
   if (storesRes.error) {
     console.error('[admin stores duplicates] load error:', JSON.stringify(storesRes.error))
@@ -65,40 +59,44 @@ export async function GET() {
 
   const stores = (storesRes.data ?? []) as StoreRow[]
 
-  const dismissed = new Set<string>()
-  if (!dismissedRes.error) {
-    for (const d of dismissedRes.data ?? []) {
-      if (d.normalized_website) dismissed.add(d.normalized_website)
-    }
-  } else {
-    // 42P01 (raw Postgres) and PGRST205 (PostgREST wrapper) both mean
-    // "table missing" → migration 027 not applied. Quietly proceed
-    // with empty dismissals. Other errors get logged.
-    const code = (dismissedRes.error as { code?: string }).code
-    if (code !== '42P01' && code !== 'PGRST205') {
-      console.warn(
-        '[admin stores duplicates] dismissals load error (continuing):',
-        JSON.stringify(dismissedRes.error)
-      )
+  // Symmetric pair lookup — a dismissal counts no matter which of the
+  // two rows carries it.
+  const unrelatedPairs = new Set<string>()
+  for (const s of stores) {
+    for (const other of s.unrelated_store_ids ?? []) {
+      unrelatedPairs.add([s.id, other].sort().join('::'))
     }
   }
+  const pairDismissed = (a: string, b: string) =>
+    unrelatedPairs.has([a, b].sort().join('::'))
 
-  // Group by normalized website. Skip groups whose key is dismissed.
+  // Group by normalized website.
   const groups = new Map<string, StoreRow[]>()
   for (const s of stores) {
     const key = normalizeRetailerWebsite(s.website)
     if (!key) continue
-    if (dismissed.has(key)) continue
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(s)
   }
 
-  // Keep only multi-store groups. Bias each group toward the row most
-  // likely to be the "good" one — newest + most categories first —
-  // so the panel can default-recommend it. Caller still gets the full
-  // list and picks freely.
+  // Keep only multi-store groups where at least one pair is still
+  // unreviewed — a cluster whose every pair has been marked unrelated is
+  // dismissed. A new row joining the apex later resurfaces the cluster,
+  // since its pairs are unmarked.
+  const clusterDismissed = (members: StoreRow[]) => {
+    for (let i = 0; i < members.length; i++) {
+      for (let j = i + 1; j < members.length; j++) {
+        if (!pairDismissed(members[i].id, members[j].id)) return false
+      }
+    }
+    return true
+  }
+
+  // Bias each group toward the row most likely to be the "good" one —
+  // newest + most categories first — so the panel can default-recommend
+  // it. Caller still gets the full list and picks freely.
   const clusters = Array.from(groups.entries())
-    .filter(([, members]) => members.length >= 2)
+    .filter(([, members]) => members.length >= 2 && !clusterDismissed(members))
     .map(([normalized, members]) => ({
       normalized_website: normalized,
       members: [...members].sort((a, b) => {

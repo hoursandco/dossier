@@ -74,7 +74,7 @@ export function DuplicateStoresPanel() {
     async (cluster: Cluster) => {
       if (
         !confirm(
-          `Keep all ${cluster.members.length} rows under "${cluster.normalized_website.replace(/^https?:\/\//, '')}"?\n\nThis hides the cluster from the review panel permanently. Future stores sharing this apex domain won't surface here either. To undo: delete the row from the non_duplicate_clusters table in SQL.`
+          `Keep all ${cluster.members.length} rows under "${cluster.normalized_website.replace(/^https?:\/\//, '')}"?\n\nThis marks these rows as distinct brands and hides the cluster from the review panel. A NEW store joining this domain later will resurface it. To undo: clear unrelated_store_ids on these stores in SQL.`
         )
       ) {
         return
@@ -84,7 +84,7 @@ export function DuplicateStoresPanel() {
         const res = await fetch('/api/admin/stores/duplicates/dismiss', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ normalized_website: cluster.normalized_website }),
+          body: JSON.stringify({ store_ids: cluster.members.map((m) => m.id) }),
         })
         const d = await res.json().catch(() => ({}))
         if (!res.ok) {

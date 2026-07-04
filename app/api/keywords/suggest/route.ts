@@ -61,9 +61,12 @@ export async function GET(request: NextRequest) {
       .eq('status', 'active')
       .eq('is_active', true)
       .limit(12),
+    // Curation columns live on the keywords table itself (migration 056);
+    // fetch only the curated slice.
     supabase
-      .from('item_keyword_reviews')
+      .from('keywords')
       .select('keyword, canonical_keyword, parent_keyword, is_hidden')
+      .or('canonical_keyword.not.is.null,parent_keyword.not.is.null,is_hidden.eq.true')
       .limit(5000),
   ])
 

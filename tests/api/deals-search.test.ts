@@ -110,7 +110,7 @@ describe('GET /api/deals/search', () => {
   it('matches non-exact product terms without matching loose description text', async () => {
     await mockSupabase(null, {
       deals: { data: recentDeals, error: null },
-      item_keyword_reviews: [
+      keywords: [
         { data: [], error: null },
       ],
       categories: [
@@ -132,7 +132,7 @@ describe('GET /api/deals/search', () => {
   it('surfaces deals matched only by category, without pulling in unrelated categories', async () => {
     await mockSupabase(null, {
       deals: { data: recentDeals, error: null },
-      item_keyword_reviews: [
+      keywords: [
         { data: [], error: null },
       ],
       categories: [
@@ -158,7 +158,7 @@ describe('GET /api/deals/search', () => {
         { data: recentDeals, error: null },
         { data: recentDeals, error: null },
       ],
-      item_keyword_reviews: [
+      keywords: [
         { data: [], error: null },
         { data: [], error: null },
       ],
@@ -192,7 +192,7 @@ describe('GET /api/deals/search', () => {
     }
     await mockSupabase(null, {
       deals: { data: [skincareDeal], error: null },
-      item_keyword_reviews: [
+      keywords: [
         { data: [], error: null },
       ],
       categories: [
