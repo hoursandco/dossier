@@ -23,6 +23,7 @@ import {
   type WatchSection,
 } from '@/lib/watchlistEmailGenerator'
 import { rankDeals, isJunkDeal } from '@/lib/deals'
+import { dealMatchesSearchTerm } from '@/lib/dealSearch'
 import { fetchStoreData } from '@/lib/stores'
 import {
   brandNamesIncludingAliases,
@@ -323,7 +324,15 @@ export async function sendWatchlistEmailForSubscriber(
     const matching = allDeals.filter((d) => {
       const cats = (d.categories ?? []) as string[]
       if (!cats.includes(w.category_slug)) return false
-      if (w.sub_type && d.deal_subtype !== w.sub_type) return false
+      // Optional item narrowing ("Skincare — moisturizer") matches against
+      // the deal's keyword terms only — retailer/description/category hits
+      // would defeat the point of narrowing within an already-matched
+      // category.
+      if (w.sub_type && !dealMatchesSearchTerm(d, w.sub_type, {
+        includeRetailer: false,
+        includeDescription: false,
+        includeCategories: false,
+      })) return false
       return true
     })
     const ranked = rankDeals(matching, storeTiers).slice(0, MAX_DEALS_PER_WATCH)

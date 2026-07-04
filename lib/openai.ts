@@ -946,7 +946,7 @@ Return ONLY this exact JSON structure:
     const content = await callExtractor({
       systemPrompt,
       userContent: `Retailer: ${retailer}`,
-      schemaName: 'retailer_categories',
+      schemaName: 'store_categories',
       schema: retailerCategoriesJsonSchema,
     })
     if (!content) return []

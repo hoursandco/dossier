@@ -20,7 +20,6 @@ const recentDeals = [
     affiliate_link: null,
     categories: [],
     keywords: ['hand soaps'],
-    deal_subtype: 'body lotion',
     week_of: '2026-06-18',
     created_at: '2026-06-18T12:00:00Z',
     source_email_link: null,
@@ -37,7 +36,6 @@ const recentDeals = [
     affiliate_link: null,
     categories: [],
     keywords: ['summer sale'],
-    deal_subtype: null,
     week_of: '2026-06-18',
     created_at: '2026-06-18T12:00:00Z',
     source_email_link: null,
@@ -54,7 +52,6 @@ const recentDeals = [
     affiliate_link: null,
     categories: ['restaurant'],
     keywords: ['bogo entree', 'kids eat free'],
-    deal_subtype: null,
     week_of: '2026-06-18',
     created_at: '2026-06-18T12:00:00Z',
     source_email_link: null,
@@ -71,7 +68,6 @@ const recentDeals = [
     affiliate_link: null,
     categories: ['electronics'],
     keywords: ['headphones', 'chargers'],
-    deal_subtype: null,
     week_of: '2026-06-18',
     created_at: '2026-06-18T12:00:00Z',
     source_email_link: null,
@@ -88,7 +84,6 @@ const recentDeals = [
     affiliate_link: null,
     categories: [],
     keywords: ['discount', 'offer'],
-    deal_subtype: null,
     week_of: '2026-06-18',
     created_at: '2026-06-18T12:00:00Z',
     source_email_link: null,
@@ -105,7 +100,6 @@ const recentDeals = [
     affiliate_link: null,
     categories: [],
     keywords: ['clearance', 'deals'],
-    deal_subtype: null,
     week_of: '2026-06-18',
     created_at: '2026-06-18T12:00:00Z',
     source_email_link: null,
@@ -117,6 +111,9 @@ describe('GET /api/deals/search', () => {
     await mockSupabase(null, {
       deals: { data: recentDeals, error: null },
       item_keyword_reviews: [
+        { data: [], error: null },
+      ],
+      categories: [
         { data: [], error: null },
       ],
       stores: [
@@ -136,6 +133,9 @@ describe('GET /api/deals/search', () => {
     await mockSupabase(null, {
       deals: { data: recentDeals, error: null },
       item_keyword_reviews: [
+        { data: [], error: null },
+      ],
+      categories: [
         { data: [], error: null },
       ],
       stores: [
@@ -162,6 +162,10 @@ describe('GET /api/deals/search', () => {
         { data: [], error: null },
         { data: [], error: null },
       ],
+      categories: [
+        { data: [], error: null },
+        { data: [], error: null },
+      ],
       stores: [
         { data: [], error: null },
       ],
@@ -175,6 +179,34 @@ describe('GET /api/deals/search', () => {
 
     expect(dealBody.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-generic-deals')
     expect(offerBody.deals.map((deal: { id: string }) => deal.id)).not.toContain('deal-generic-offer')
+  })
+
+  it('maps the category alias "skin care" onto skincare-tagged deals', async () => {
+    const skincareDeal = {
+      ...recentDeals[0],
+      id: 'deal-skincare',
+      retailer: 'Glow Co',
+      description: 'Save 25% on the whole line.',
+      categories: ['skincare'],
+      keywords: ['serum'],
+    }
+    await mockSupabase(null, {
+      deals: { data: [skincareDeal], error: null },
+      item_keyword_reviews: [
+        { data: [], error: null },
+      ],
+      categories: [
+        { data: [{ slug: 'skincare', label: 'Skincare', search_terms: ['skin care'] }], error: null },
+      ],
+      stores: [
+        { data: [], error: null },
+      ],
+    })
+    const { GET } = await import('@/app/api/deals/search/route')
+
+    const response = await GET(new NextRequest('http://localhost/api/deals/search?keyword=skin%20care'))
+
+    await expect(response.json()).resolves.toMatchObject({ deals: [{ id: 'deal-skincare' }] })
   })
 
   it('matches an alternate extracted retailer name when a brand is selected', async () => {

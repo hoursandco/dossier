@@ -59,7 +59,6 @@ export interface Deal {
   original_link: string
   affiliate_link: string | null
   categories: Category[]
-  deal_subtype: string | null
   gender: string[] | null
   week_of: string
   source_email_id: string | null

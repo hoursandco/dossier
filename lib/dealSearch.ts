@@ -1,7 +1,6 @@
 export interface SearchableDeal {
   retailer?: string | null
   description?: string | null
-  deal_subtype?: string | null
   keywords?: string[] | null
   categories?: string[] | null
 }
@@ -71,8 +70,6 @@ export function dealMatchesSearchTerm(
     return true
   }
 
-  if (includesPhrase(deal.deal_subtype ?? '', rawTerm)) return true
-
   if (
     includeCategories &&
     (deal.categories ?? []).some((category) => matchesKeyword(category, rawTerm, term))
@@ -89,4 +86,36 @@ export function dealMatchesAnySearchTerm(
   options?: DealSearchOptions,
 ): boolean {
   return terms.some((term) => dealMatchesSearchTerm(deal, term, options))
+}
+
+export interface CategorySearchRow {
+  slug: string
+  label?: string | null
+  search_terms?: string[] | null
+}
+
+// Map free-typed search terms onto canonical category slugs. A term that
+// matches a category's slug, label, or one of its search_terms aliases
+// ("skin care" → skincare) expands to include the slug itself, which is
+// what deals.categories and stores.categories store verbatim.
+export function expandCategorySearchTerms(
+  terms: string[],
+  categories: CategorySearchRow[],
+): string[] {
+  const slugByAlias = new Map<string, string>()
+  for (const category of categories) {
+    const aliases = [category.slug, category.label ?? '', ...(category.search_terms ?? [])]
+    for (const alias of aliases) {
+      const key = normalizeComparable(alias)
+      if (key && !slugByAlias.has(key)) slugByAlias.set(key, category.slug)
+    }
+  }
+
+  const expanded = new Set<string>()
+  for (const term of terms) {
+    expanded.add(term)
+    const slug = slugByAlias.get(normalizeComparable(term))
+    if (slug) expanded.add(slug)
+  }
+  return [...expanded]
 }

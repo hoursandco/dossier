@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/admin'
+import { filterToCanonicalCategorySlugs } from '@/lib/storeCategories'
 
 export const dynamic = 'force-dynamic'
 
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
     .insert({
       name,
       website,
-      categories: body.categories ?? [],
+      categories: await filterToCanonicalCategorySlugs(service, body.categories ?? []),
       sub_types: body.sub_types ?? [],
       price_tier: body.price_tier ?? null,
       // Keep is_active + status in sync. If caller sent status, derive

@@ -73,19 +73,35 @@ export function makeDealKey(deal: { retailer: string; deal_type: string; percent
 export interface DuplicateDealMetadata {
   categories?: string[] | null
   keywords?: string[] | null
-  deal_subtype?: string | null
   redemption_channel?: string | null
+}
+
+export interface IncomingDuplicateDealMetadata extends DuplicateDealMetadata {
+  // Legacy extraction field — folded into keywords, never stored on its own.
+  deal_subtype?: string | null
+}
+
+// Normalize incoming item terms (keywords + legacy deal_subtype) the same
+// way ingest stores them: lowercased, trimmed, blanks dropped.
+export function mergeSubtypeIntoKeywords(
+  keywords: string[] | null | undefined,
+  dealSubtype: string | null | undefined,
+): string[] {
+  return Array.from(new Set(
+    [...(keywords ?? []), ...(dealSubtype ? [dealSubtype] : [])]
+      .map((keyword) => keyword.toLowerCase().trim())
+      .filter(Boolean)
+  ))
 }
 
 export function buildDuplicateDealRefresh(
   existingDeal: DuplicateDealMetadata,
-  incomingDeal: DuplicateDealMetadata,
+  incomingDeal: IncomingDuplicateDealMetadata,
   seenAt: string,
 ): {
   update: {
     categories: string[]
     keywords: string[]
-    deal_subtype: string | null
     redemption_channel: string | null
     last_seen_at: string
   }
@@ -96,22 +112,19 @@ export function buildDuplicateDealRefresh(
   )
   const nextKeywords = Array.from(new Set([
     ...(existingDeal.keywords ?? []),
-    ...(incomingDeal.keywords ?? []).map((keyword) => keyword.toLowerCase()),
+    ...mergeSubtypeIntoKeywords(incomingDeal.keywords, incomingDeal.deal_subtype),
   ]))
-  const nextSubtype = existingDeal.deal_subtype ?? incomingDeal.deal_subtype ?? null
   const nextRedemptionChannel =
     existingDeal.redemption_channel ?? incomingDeal.redemption_channel ?? null
   const metadataChanged =
     nextCategories.length !== (existingDeal.categories ?? []).length ||
     nextKeywords.length !== (existingDeal.keywords ?? []).length ||
-    nextSubtype !== (existingDeal.deal_subtype ?? null) ||
     nextRedemptionChannel !== (existingDeal.redemption_channel ?? null)
 
   return {
     update: {
       categories: nextCategories,
       keywords: nextKeywords,
-      deal_subtype: nextSubtype,
       redemption_channel: nextRedemptionChannel,
       last_seen_at: seenAt,
     },

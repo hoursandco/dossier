@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildDuplicateDealRefresh,
+  mergeSubtypeIntoKeywords,
   rankDeals,
   filterDealsForSubscriber,
   isDealValidForWeek,
@@ -26,7 +27,6 @@ function makeDeal(overrides: Partial<Deal> = {}): Deal {
     original_link: 'https://example.com',
     affiliate_link: null,
     categories: ['fashion'],
-    deal_subtype: null,
     gender: ['men', 'women', 'unisex'],
     week_of: '2026-04-21',
     source_email_id: null,
@@ -238,6 +238,23 @@ describe('getDealLink', () => {
   })
 })
 
+describe('mergeSubtypeIntoKeywords', () => {
+  it('folds the legacy deal_subtype into a normalized keyword list', () => {
+    expect(mergeSubtypeIntoKeywords(['Jeans', ' denim '], ' Skinny Jeans ')).toEqual([
+      'jeans', 'denim', 'skinny jeans',
+    ])
+  })
+
+  it('dedupes a subtype that already exists as a keyword', () => {
+    expect(mergeSubtypeIntoKeywords(['moisturizer'], 'Moisturizer')).toEqual(['moisturizer'])
+  })
+
+  it('handles missing keywords and subtype', () => {
+    expect(mergeSubtypeIntoKeywords(null, null)).toEqual([])
+    expect(mergeSubtypeIntoKeywords(undefined, 'air fryer')).toEqual(['air fryer'])
+  })
+})
+
 describe('buildDuplicateDealRefresh', () => {
   it('refreshes last_seen_at when duplicate metadata is unchanged', () => {
     const seenAt = '2026-07-02T14:20:00.000Z'
@@ -245,7 +262,6 @@ describe('buildDuplicateDealRefresh', () => {
       {
         categories: ['pets'],
         keywords: [],
-        deal_subtype: null,
         redemption_channel: 'online',
       },
       {
@@ -261,18 +277,16 @@ describe('buildDuplicateDealRefresh', () => {
     expect(result.update).toEqual({
       categories: ['pets'],
       keywords: [],
-      deal_subtype: null,
       redemption_channel: 'online',
       last_seen_at: seenAt,
     })
   })
 
-  it('merges new duplicate metadata while refreshing last_seen_at', () => {
+  it('merges new duplicate metadata, folding the incoming subtype into keywords', () => {
     const result = buildDuplicateDealRefresh(
       {
         categories: ['pets'],
         keywords: ['dog food'],
-        deal_subtype: null,
         redemption_channel: null,
       },
       {
@@ -287,9 +301,28 @@ describe('buildDuplicateDealRefresh', () => {
     expect(result.metadataChanged).toBe(true)
     expect(result.update).toMatchObject({
       categories: ['pets', 'pet-supplies'],
-      keywords: ['dog food', 'cat litter'],
-      deal_subtype: 'pet supplies',
+      keywords: ['dog food', 'cat litter', 'pet supplies'],
       redemption_channel: 'online',
     })
+  })
+
+  it('does not report a change when the incoming subtype is already a keyword', () => {
+    const result = buildDuplicateDealRefresh(
+      {
+        categories: ['skincare'],
+        keywords: ['moisturizer'],
+        redemption_channel: 'online',
+      },
+      {
+        categories: ['skincare'],
+        keywords: [],
+        deal_subtype: 'Moisturizer',
+        redemption_channel: 'online',
+      },
+      '2026-07-02T14:20:00.000Z',
+    )
+
+    expect(result.metadataChanged).toBe(false)
+    expect(result.update.keywords).toEqual(['moisturizer'])
   })
 })

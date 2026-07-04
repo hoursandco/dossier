@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isAdminEmail } from '@/lib/admin'
+import { filterToCanonicalCategorySlugs } from '@/lib/storeCategories'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,6 +72,12 @@ export async function PATCH(
   }
 
   const service = createServiceClient()
+  if (Array.isArray(update.categories)) {
+    update.categories = await filterToCanonicalCategorySlugs(
+      service,
+      update.categories as string[],
+    )
+  }
   const { data, error } = await service
     .from('stores')
     .update(update)

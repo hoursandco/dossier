@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { dealMatchesAnySearchTerm } from '@/lib/dealSearch'
+import {
+  dealMatchesAnySearchTerm,
+  expandCategorySearchTerms,
+  type CategorySearchRow,
+} from '@/lib/dealSearch'
 import {
   brandNamesIncludingAliases,
   relatedBrandNamesForTarget,
@@ -50,6 +54,20 @@ export async function GET(request: NextRequest) {
         (itemReviews ?? []) as ItemKeywordReview[],
       )
     }
+
+    // Category aliases: "skin care" (or the label "Skincare") expands to the
+    // canonical slug so category-tagged deals match. Skipped silently if the
+    // search_terms column isn't there yet (migration 050 not applied).
+    const { data: categoryRows, error: categoryError } = await supabase
+      .from('categories')
+      .select('slug, label, search_terms')
+      .eq('is_active', true)
+    if (!categoryError) {
+      keywords = expandCategorySearchTerms(
+        keywords,
+        (categoryRows ?? []) as CategorySearchRow[],
+      )
+    }
   }
 
   const today = new Date().toISOString().slice(0, 10)
@@ -82,7 +100,7 @@ export async function GET(request: NextRequest) {
   }
 
   const SELECT =
-    'id, retailer, description, percent_off, deal_type, promo_code, expiration_date, original_link, affiliate_link, categories, keywords, deal_subtype, redemption_channel, week_of, created_at, last_seen_at, source_email_link'
+    'id, retailer, description, percent_off, deal_type, promo_code, expiration_date, original_link, affiliate_link, categories, keywords, redemption_channel, week_of, created_at, last_seen_at, source_email_link'
 
   let query = supabase
     .from('deals')

@@ -25,6 +25,7 @@ import {
   getJunkDealReason,
   isPricePointDescription,
   buildDuplicateDealRefresh,
+  mergeSubtypeIntoKeywords,
 } from '@/lib/deals'
 import { fixRetailerCase } from '@/lib/stores'
 import { sendAdminAlert } from '@/lib/resend'
@@ -568,10 +569,13 @@ export async function GET(request: NextRequest) {
       `[ingest] loaded ${storesByName.size} stores (${activeCount} active, ${storesByName.size - activeCount} inactive) for routing + auto-activation`
     )
 
-    // In-memory cache of retailers already known to the retailer_categories
-    // table. Avoids duplicate LLM calls within a single run when multiple
-    // emails come from the same retailer.
-    const retailerCategoriesCache = new Map<string, boolean>()
+    // Content (non-editorial) slugs, used to decide whether a store row
+    // still needs LLM category tagging.
+    const contentSlugs = new Set(allCategories.map((c) => c.slug))
+
+    // Stores already checked for content categories this run. Avoids
+    // duplicate LLM calls when multiple emails come from the same retailer.
+    const storeCategoriesChecked = new Set<string>()
 
     // Pre-load processed email IDs for this week so backfill re-runs skip
     // emails the LLM already saw. Without this, re-running a backfill on the
@@ -618,7 +622,7 @@ export async function GET(request: NextRequest) {
     // the same sale twice even if 3 emails announce it
     const { data: existingDealsThisWeek } = await supabase
       .from('deals')
-      .select('id, retailer, deal_type, percent_off, promo_code, description, categories, keywords, deal_subtype, redemption_channel')
+      .select('id, retailer, deal_type, percent_off, promo_code, description, categories, keywords, redemption_channel')
       .eq('week_of', weekOfStr)
 
     const existingDealByKey = new Map(
@@ -628,7 +632,6 @@ export async function GET(request: NextRequest) {
           id: d.id as string,
           categories: (d.categories ?? []) as string[],
           keywords: (d.keywords ?? []) as string[],
-          deal_subtype: (d.deal_subtype ?? null) as string | null,
           redemption_channel: (d.redemption_channel ?? null) as string | null,
         },
       ])
@@ -1049,7 +1052,6 @@ export async function GET(request: NextRequest) {
           } else {
             existingDeal.categories = update.categories
             existingDeal.keywords = update.keywords
-            existingDeal.deal_subtype = update.deal_subtype
             existingDeal.redemption_channel = update.redemption_channel
             if (metadataChanged) {
               console.log(`[ingest] enriched duplicate deal: ${retailer} → keywords=[${update.keywords.join(',')}]`)
@@ -1092,8 +1094,9 @@ export async function GET(request: NextRequest) {
           original_link: deal.link || `https://google.com/search?q=${encodeURIComponent(retailer)}`,
           affiliate_link: null,
           categories: mergedCategories,
-          deal_subtype: deal.deal_subtype ?? null,
-          keywords: (deal.keywords ?? []).map((k) => k.toLowerCase()),
+          // The extraction model may still return deal_subtype; it lives on
+          // as one more keyword rather than its own column.
+          keywords: mergeSubtypeIntoKeywords(deal.keywords, deal.deal_subtype),
           redemption_channel: deal.redemption_channel ?? 'online',
           last_seen_at: new Date().toISOString(),
           week_of: weekOfStr,
@@ -1102,35 +1105,29 @@ export async function GET(request: NextRequest) {
           is_manual: email.isManual,
         }
 
-        // Lazy-populate retailer_categories: the first time we see a deal
-        // from this retailer in this run, ask the LLM what categories the
-        // brand sells overall (Walmart → 50+, Boll & Branch → 2). Cached
-        // in-memory for the rest of the run; persisted across runs in the
-        // retailer_categories table.
-        if (!dryRun && !retailerCategoriesCache.has(retailer)) {
-          retailerCategoriesCache.set(retailer, true)
-          // Skip the LLM call if the retailer is already known
-          const { data: existingMapping } = await supabase
-            .from('retailer_categories')
-            .select('retailer')
-            .eq('retailer', retailer)
-            .limit(1)
-            .maybeSingle()
-          if (!existingMapping) {
+        // Lazy-fill store content categories: the first time we see a deal
+        // from this store in this run, if its row carries no content-
+        // category slugs, ask the LLM what the brand sells overall
+        // (Walmart → 50+, Boll & Branch → 2) and merge the answer into
+        // stores.categories alongside any editorial Collections tags.
+        if (!dryRun && storeMatch && !storeCategoriesChecked.has(storeMatch.id)) {
+          storeCategoriesChecked.add(storeMatch.id)
+          const hasContentCategories = storeMatch.categories.some((c) => contentSlugs.has(c))
+          if (!hasContentCategories) {
             const retailerCats = await getRetailerCategories(retailer, allCategories)
             if (retailerCats.length > 0) {
-              const rows = retailerCats.map((slug, i) => ({
-                retailer,
-                category_slug: slug,
-                is_primary: i === 0,
-              }))
+              const mergedStoreCategories = Array.from(
+                new Set([...storeMatch.categories, ...retailerCats])
+              )
               const { error } = await supabase
-                .from('retailer_categories')
-                .upsert(rows, { onConflict: 'retailer,category_slug' })
+                .from('stores')
+                .update({ categories: mergedStoreCategories })
+                .eq('id', storeMatch.id)
               if (error) {
-                console.error('[ingest] retailer_categories upsert error:', JSON.stringify(error))
+                console.error('[ingest] store categories upsert error:', JSON.stringify(error))
               } else {
-                console.log(`[ingest] retailer_categories: ${retailer} → ${retailerCats.join(', ')}`)
+                storeMatch.categories = mergedStoreCategories
+                console.log(`[ingest] store categories: ${retailer} → ${retailerCats.join(', ')}`)
               }
             }
           }
