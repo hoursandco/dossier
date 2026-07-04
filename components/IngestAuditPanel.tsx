@@ -102,6 +102,19 @@ type ExtractionComparison = {
   shadow_output: ExtractionOutput
 }
 
+// When the email landed in the inbox — not when ingest processed it.
+function formatReceivedAt(value: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 const OUTCOME_LABELS: Record<string, string> = {
   deals_inserted: 'Inserted',
   no_deals_extracted: 'No candidates',
@@ -296,13 +309,8 @@ export function IngestAuditPanel() {
                     <span className="t-mono" style={{ fontSize: 11 }}>
                       {email.extracted_count} extracted · {email.inserted_count} added
                     </span>
-                    <span
-                      className="t-meta"
-                      style={{
-                        color: latestComparison ? COMPARISON_COLORS[latestComparison.status] : 'var(--ink-45)',
-                      }}
-                    >
-                      {latestComparison ? COMPARISON_LABELS[latestComparison.status] : 'No shadow'}
+                    <span className="t-meta" title="When the email arrived in the inbox">
+                      {formatReceivedAt(email.received_at)}
                     </span>
                     <span className="t-meta">{isExpanded ? 'Close −' : 'Inspect +'}</span>
                   </div>
