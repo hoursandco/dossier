@@ -30,7 +30,6 @@ type StoreRow = {
   status: string | null
   is_active: boolean
   categories: string[] | null
-  sub_types: string[] | null
   price_tier: string | null
   date_added: string | null
   created_at: string
@@ -53,7 +52,7 @@ export async function GET() {
   const [storesRes, dismissedRes] = await Promise.all([
     service
       .from('stores')
-      .select('id, name, website, status, is_active, categories, sub_types, price_tier, date_added, created_at'),
+      .select('id, name, website, status, is_active, categories, price_tier, date_added, created_at'),
     service
       .from('non_duplicate_clusters')
       .select('normalized_website'),

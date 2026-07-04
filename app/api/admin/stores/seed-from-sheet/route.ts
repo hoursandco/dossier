@@ -185,7 +185,6 @@ export async function POST() {
   const iName = findCol(['company name', 'brand', 'brand name', 'store', 'store name', 'name'])
   const iWeb = findCol(['website', 'url', 'site', 'domain', 'link'])
   const iTier = findCol(['spend tier', 'spend', 'price tier', 'price', 'tier'])
-  const iSub = findCol(['subcategory', 'sub-category', 'sub category', 'sub type', 'sub-type'])
   const iDate = findCol(['date added', 'added', 'added on', 'date'])
   const iAge = findCol(['age group', 'age'])
   // Try standard status column names — also fall back to header[1] if
@@ -209,7 +208,6 @@ export async function POST() {
   const records: Array<{
     name: string
     website: string
-    sub_types: string[]
     price_tier: string | null
     age_group: string | null
     date_added: string | null
@@ -229,15 +227,9 @@ export async function POST() {
     if (seenWebsites.has(websiteKey)) continue
     seenWebsites.add(websiteKey)
 
-    const subRaw = iSub >= 0 ? (r[iSub] ?? '').trim() : ''
-    const subTypes = subRaw
-      ? subRaw.split(/[,;/]/).map((s) => s.trim()).filter(Boolean)
-      : []
-
     records.push({
       name,
       website,
-      sub_types: subTypes,
       price_tier: iTier >= 0 ? ((r[iTier] ?? '').trim() || null) : null,
       age_group: iAge >= 0 ? ((r[iAge] ?? '').trim() || null) : null,
       date_added: iDate >= 0 ? reformatDate(r[iDate] ?? '') : null,
@@ -266,7 +258,6 @@ export async function POST() {
       name: rec.name,
       website: rec.website,
       categories: [],
-      sub_types: rec.sub_types,
       price_tier: rec.price_tier,
       age_group: rec.age_group,
       date_added: rec.date_added ?? undefined,

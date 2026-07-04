@@ -26,7 +26,6 @@ interface StoreUpdate {
   name?: string
   website?: string
   categories?: string[]
-  sub_types?: string[]
   price_tier?: string | null
   is_active?: boolean
   status?: string
@@ -56,7 +55,7 @@ export async function PATCH(
   // designed.
   const update: Record<string, unknown> = {}
   for (const key of [
-    'name', 'website', 'categories', 'sub_types', 'price_tier',
+    'name', 'website', 'categories', 'price_tier',
     'is_active', 'status', 'age_group', 'affiliate_id',
   ] as const) {
     if (key in body) update[key] = body[key]

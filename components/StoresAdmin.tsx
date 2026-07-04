@@ -8,7 +8,6 @@ interface Store {
   name: string
   website: string
   categories: string[]
-  sub_types: string[]
   price_tier: string | null
   is_active: boolean
   status: string
@@ -50,7 +49,6 @@ const emptyDraft = (): Partial<Store> => ({
   name: '',
   website: '',
   categories: [],
-  sub_types: [],
   price_tier: null,
   is_active: true,
   status: 'active',
@@ -594,23 +592,6 @@ function StoreForm({
   saving: boolean
   isNew: boolean
 }) {
-  const [subTypeInput, setSubTypeInput] = useState('')
-  const addSubType = () => {
-    const v = subTypeInput.trim()
-    if (!v) return
-    setDraft((prev) => ({
-      ...prev,
-      sub_types: Array.from(new Set([...(prev.sub_types ?? []), v])),
-    }))
-    setSubTypeInput('')
-  }
-  const removeSubType = (s: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      sub_types: (prev.sub_types ?? []).filter((x) => x !== s),
-    }))
-  }
-
   return (
     <div
       style={{
@@ -715,66 +696,6 @@ function StoreForm({
             </div>
           ))}
         </div>
-      </div>
-
-      {/* Sub-types — chip-based input */}
-      <div style={{ marginBottom: 16 }}>
-        <div className="t-meta" style={{ marginBottom: 6 }}>
-          Sub-types — sub-classifications (denim, cashmere, fast food)
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          <div className="field" style={{ flex: 1 }}>
-            <input
-              type="text"
-              value={subTypeInput}
-              onChange={(e) => setSubTypeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  addSubType()
-                }
-              }}
-              placeholder="Type a sub-type and press Enter"
-            />
-          </div>
-          <button type="button" onClick={addSubType} className="btn-ghost" style={{ fontSize: 12 }}>
-            Add
-          </button>
-        </div>
-        {(draft.sub_types ?? []).length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {(draft.sub_types ?? []).map((s) => (
-              <span
-                key={s}
-                style={{
-                  padding: '4px 10px',
-                  background: 'var(--ink-08, #f0eee9)',
-                  fontSize: 12,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                {s}
-                <button
-                  type="button"
-                  onClick={() => removeSubType(s)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--ink-55)',
-                    padding: 0,
-                    fontSize: 14,
-                    lineHeight: 1,
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Price tier, active, age */}

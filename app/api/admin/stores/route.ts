@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   // whole table instead of a silently-truncated, unfiltered first 1000.
   const PAGE_SIZE = 1000
   const SELECT_COLS =
-    'id, name, website, categories, sub_types, price_tier, is_active, status, age_group, affiliate_id, date_added, created_at, updated_at'
+    'id, name, website, categories, price_tier, is_active, status, age_group, affiliate_id, date_added, created_at, updated_at'
 
   const buildQuery = (pageIndex: number) => {
     let q = service
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
     let fallbackQuery = service
       .from('stores')
       .select(
-        'id, name, website, categories, sub_types, price_tier, is_active, age_group, affiliate_id, date_added, updated_at'
+        'id, name, website, categories, price_tier, is_active, age_group, affiliate_id, date_added, updated_at'
       )
       .order('name', { ascending: true })
     if (safeSearch) fallbackQuery = fallbackQuery.ilike('name', `%${safeSearch}%`)
@@ -111,7 +111,6 @@ interface StoreInput {
   name?: string
   website?: string
   categories?: string[]
-  sub_types?: string[]
   price_tier?: string | null
   is_active?: boolean
   status?: string
@@ -143,7 +142,6 @@ export async function POST(request: NextRequest) {
       name,
       website,
       categories: await filterToCanonicalCategorySlugs(service, body.categories ?? []),
-      sub_types: body.sub_types ?? [],
       price_tier: body.price_tier ?? null,
       // Keep is_active + status in sync. If caller sent status, derive
       // is_active. Else trust whatever's there.

@@ -18,7 +18,6 @@ export interface StoreRow {
   name: string
   website: string
   categories: string[]
-  sub_types: string[]
   price_tier: string | null
   age_group: string | null
   date_added: string
@@ -84,7 +83,7 @@ export async function GET(req: NextRequest) {
     const q = supabase
       .from('stores')
       .select(
-        'id, name, website, categories, sub_types, price_tier, age_group, date_added, status, is_active'
+        'id, name, website, categories, price_tier, age_group, date_added, status, is_active'
       )
       .order('name', { ascending: true })
       .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
@@ -120,7 +119,7 @@ export async function GET(req: NextRequest) {
     const fbPage = (i: number) =>
       supabase
         .from('stores')
-        .select('id, name, website, categories, sub_types, price_tier, age_group, date_added, is_active')
+        .select('id, name, website, categories, price_tier, age_group, date_added, is_active')
         .eq('is_active', true)
         .order('name', { ascending: true })
         .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)

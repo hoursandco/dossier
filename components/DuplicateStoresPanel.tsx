@@ -21,7 +21,6 @@ type Member = {
   status: string | null
   is_active: boolean
   categories: string[] | null
-  sub_types: string[] | null
   price_tier: string | null
   date_added: string | null
   created_at: string
