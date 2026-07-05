@@ -198,7 +198,7 @@
 /* Two-column search + live results layout */
 .dl-shell .hero-search-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(320px, 29vw, 380px);
+  grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
   align-items: flex-start;
   gap: 0;
   min-height: min(760px, calc(100vh - 24px));
@@ -265,7 +265,7 @@
   overflow-y: auto;
 }
 .dl-shell .deal-results-shell {
-  max-width: 520px;
+  max-width: 620px;
   margin: 0 auto;
   padding-bottom: 32px;
 }

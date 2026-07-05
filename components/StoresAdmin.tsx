@@ -153,6 +153,14 @@ export function StoresAdmin() {
     })
   }, [categoryLabelsBySlug, search, sort, stores])
 
+  const storeActivityCounts = useMemo(() => {
+    const active = stores.filter((store) => store.is_active).length
+    return {
+      active,
+      inactive: stores.length - active,
+    }
+  }, [stores])
+
   const toggleSort = (key: SortKey) => {
     setSort((prev) => ({
       key,
@@ -259,7 +267,7 @@ export function StoresAdmin() {
         <div>
           <div className="t-eyebrow">Stores</div>
           <div className="t-meta" style={{ color: 'var(--ink-55)', marginTop: 4 }}>
-            {visibleStores.length} of {stores.length} store{stores.length === 1 ? '' : 's'}
+            {visibleStores.length} of {stores.length} store{stores.length === 1 ? '' : 's'} · {storeActivityCounts.active} active · {storeActivityCounts.inactive} non-active
           </div>
         </div>
       </div>
