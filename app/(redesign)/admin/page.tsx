@@ -325,19 +325,18 @@ export default async function AdminPage() {
 
   const subscriptionsTab = (
     <div className="admin-card">
+      <SectionLabel n="01">Coupons</SectionLabel>
+      <p className="t-meta" style={{ color: 'var(--ink-40)', marginTop: 8, marginBottom: 20 }}>
+        In-app discount codes — validated and applied server-side without a Stripe round-trip. Uncheck <em>Require credit card</em> for 100%-off comp codes that skip Stripe entirely (no card collected, no $0 invoices in your Stripe dashboard).
+      </p>
+      <DiscountCodesPanel />
+
+      <div style={{ height: 36 }} />
+      <SectionLabel n="02">Subscribers</SectionLabel>
       <p className="t-meta" style={{ color: 'var(--ink-40)', marginBottom: 20 }}>
         Comp / uncomp accounts, cancel or reactivate Stripe subscriptions, refund the latest invoice. Search by email to find any subscriber.
       </p>
       <SubscriptionsPanel />
-    </div>
-  )
-
-  const couponsTab = (
-    <div className="admin-card">
-      <p className="t-meta" style={{ color: 'var(--ink-40)', marginBottom: 20 }}>
-        In-app discount codes — validated and applied server-side without a Stripe round-trip. Uncheck <em>Require credit card</em> for 100%-off comp codes that skip Stripe entirely (no card collected, no $0 invoices in your Stripe dashboard).
-      </p>
-      <DiscountCodesPanel />
     </div>
   )
 
@@ -559,7 +558,6 @@ export default async function AdminPage() {
             tabs={[
               { id: 'data', label: 'Data', content: dataTab },
               { id: 'subscriptions', label: 'Subscriptions', content: subscriptionsTab },
-              { id: 'coupons', label: 'Coupons', content: couponsTab },
               { id: 'ingest-audit', label: 'Ingest Audit', content: ingestAuditTab },
               { id: 'alias-audit', label: 'Alias Audit', content: aliasAuditTab },
               { id: 'categories', label: 'Categories', content: categoriesTab },

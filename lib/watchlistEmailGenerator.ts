@@ -137,6 +137,10 @@ function savingsBadge(deal: Deal): string {
       return wrap(GREEN, `${small('YOURS', CREAM_TEXT)}${mid('FREE', CREAM_TEXT)}<div style="font-family:${FONT_STAMP};color:${CREAM_TEXT};font-size:10px;letter-spacing:.2em;text-transform:uppercase;margin-top:2px;">ITEM</div>`, '14px 16px 10px')
     case 'free-shipping':
       return wrap(GREEN, `${small('FREE', CREAM_TEXT)}${mid('SHIP', CREAM_TEXT)}`)
+    case 'amount-off': {
+      const amount = deal.description.match(/\$\d+(?:\.\d{1,2})?/)?.[0]
+      return wrap(RED, `${small('SAVE', CREAM_TEXT)}${mid(amount ?? '$ OFF', CREAM_TEXT)}`)
+    }
     case 'price-point': {
       const price = deal.description.match(/\$\d+(?:\.\d{1,2})?/)?.[0]
       const label = /\bstarting at\b/i.test(deal.description) ? 'FROM' : 'SALE PRICE'

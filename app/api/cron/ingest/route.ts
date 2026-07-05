@@ -118,6 +118,14 @@ function isBodySparse(html: string): boolean {
   return text.length < 500
 }
 
+function shouldScanImagesForDollarCoupons(
+  source: string,
+  extracted: Array<{ deal_type?: string | null }>,
+): boolean {
+  if (extracted.some((deal) => deal.deal_type === 'amount-off')) return false
+  return /\b(e-?coupons?|digital\s+(deals?|coupons?)|add\s+coupon|clip\s+coupon|view\s+coupons?|save\s+\$\d+(?:\.\d{2})?)\b/i.test(source)
+}
+
 function decodeHtmlAttr(value: string): string {
   return value
     .replace(/&amp;/g, '&')
@@ -893,11 +901,20 @@ export async function GET(request: NextRequest) {
       let extracted = await extractDealsFromEmail(email.from, email.subject, emailBody, allCategories)
       console.log(`[ingest] ${email.from} | subject: ${email.subject} | text extracted: ${extracted.length}`)
 
-      if (sparseOriginalBody || extracted.length === 0) {
+      const scanDollarCouponImages = shouldScanImagesForDollarCoupons(
+        `${email.subject}\n${email.body}\n${emailBody}`,
+        extracted,
+      )
+      if (sparseOriginalBody || extracted.length === 0 || scanDollarCouponImages) {
         imageCount = imageUrlsForExtraction.length
         if (imageUrlsForExtraction.length > 0) {
+          const visionReason = sparseOriginalBody
+            ? 'sparse body'
+            : extracted.length === 0
+              ? 'no text deals'
+              : 'digital coupon images'
           console.log(
-            `[ingest] vision fallback (${sparseOriginalBody ? 'sparse body' : 'no text deals'}): ${imageUrlsForExtraction.length} images`
+            `[ingest] vision fallback (${visionReason}): ${imageUrlsForExtraction.length} images`
           )
           const imageExtracted = await extractDealsFromEmailImages(
             email.from,
@@ -906,8 +923,12 @@ export async function GET(request: NextRequest) {
             allCategories,
           )
           if (imageExtracted.length > 0) {
-            extracted = imageExtracted
-            extractionMethod = 'vision'
+            extracted = scanDollarCouponImages && extracted.length > 0
+              ? [...extracted, ...imageExtracted]
+              : imageExtracted
+            extractionMethod = scanDollarCouponImages && extracted.length > imageExtracted.length
+              ? 'text+vision'
+              : 'vision'
             console.log(`[ingest] ${email.from} | subject: ${email.subject} | image extracted: ${extracted.length}`)
           } else {
             console.log(`[ingest] vision fallback found no deals`)

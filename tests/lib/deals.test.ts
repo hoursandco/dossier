@@ -42,7 +42,7 @@ function makeDeal(overrides: Partial<Deal> = {}): Deal {
 const defaultFilter = {
   minDiscount: 20,
   enabledCategories: ['fashion'],
-  enabledDealTypes: ['percent-off', 'bogo-free', 'free-item', 'free-shipping', 'bogo-half', 'flash-sale', 'stackable', 'loyalty', 'up-to', 'price-point'],
+  enabledDealTypes: ['percent-off', 'bogo-free', 'free-item', 'free-shipping', 'bogo-half', 'flash-sale', 'stackable', 'loyalty', 'up-to', 'price-point', 'amount-off'],
   weekOf: baseWeek,
 }
 
@@ -126,6 +126,16 @@ describe('filterDealsForSubscriber', () => {
     expect(result).toHaveLength(1)
   })
 
+  it('passes dollar-off coupons regardless of percent_off', () => {
+    const deal = makeDeal({
+      deal_type: 'amount-off',
+      percent_off: null,
+      description: "Save $2.50 on any ONE Hellmann's mayonnaise.",
+    })
+    const result = filterDealsForSubscriber([deal], 50, ['fashion'], defaultFilter.enabledDealTypes, baseWeek)
+    expect(result).toHaveLength(1)
+  })
+
   it('filters by gender', () => {
     const deals = [
       makeDeal({ gender: ['men'] }),
@@ -169,6 +179,14 @@ describe('formatSavings', () => {
 
   it('returns Free for free-item', () => {
     expect(formatSavings(makeDeal({ deal_type: 'free-item', percent_off: null }))).toBe('Free')
+  })
+
+  it('returns the dollar amount for amount-off coupons', () => {
+    expect(formatSavings(makeDeal({
+      deal_type: 'amount-off',
+      percent_off: null,
+      description: 'Save $2.50 on any ONE Hellmann’s mayonnaise.',
+    }))).toBe('$2.50')
   })
 
   it('labels promoted prices without claiming a discount', () => {

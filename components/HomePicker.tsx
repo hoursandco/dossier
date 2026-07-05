@@ -752,6 +752,10 @@ function formatDealType(type: string, pct: number | null, description = ''): str
   if (type === 'bogo-half') return 'BOGO 50% off'
   if (type === 'free-item') return 'Free item'
   if (type === 'free-shipping') return 'Free shipping'
+  if (type === 'amount-off') {
+    const amount = description.match(/\$\d+(?:\.\d{1,2})?/)?.[0]
+    return amount ? `Save ${amount}` : 'Dollar off'
+  }
   if (type === 'up-to' && pct) return `Up to ${pct}% off`
   if (type === 'loyalty') return 'Loyalty offer'
   if (type === 'stackable') return 'Stackable deal'

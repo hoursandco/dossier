@@ -74,6 +74,10 @@ function dedupKey(d: Deal): string {
   const type = d.deal_type ?? 'unknown'
   const pct = d.percent_off ?? 0
   const code = (d.promo_code ?? '').trim().toUpperCase()
+  if (type === 'amount-off') {
+    const snippet = (d.description ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 50)
+    return `${retailer}::${type}::${snippet}::${code}`
+  }
   // For "no-quantifier" types like free-shipping, free-item, flash-sale,
   // bogo-*, loyalty: there's nothing meaningful to distinguish two
   // deals with the same retailer + type beyond the promo code, so they
@@ -116,7 +120,7 @@ function dedupeDeals(deals: Deal[]): Deal[] {
 // surprise the user.
 const NON_PERCENT_DEAL_TYPES = new Set<string>([
   'free-shipping', 'free-item', 'flash-sale', 'bogo-free', 'bogo-half',
-  'loyalty', 'stackable',
+  'loyalty', 'stackable', 'amount-off',
 ])
 
 // Default-suppressed deal types — extracted and stored in the DB but

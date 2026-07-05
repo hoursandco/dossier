@@ -216,78 +216,104 @@ export function CategoriesAdmin() {
       )}
 
       {editingSlug !== null && (
-        <div style={{ padding: 18, border: '1.5px solid var(--ink)', background: 'var(--paper)', marginBottom: 18 }}>
-          <div className="t-eyebrow" style={{ marginBottom: 14 }}>
-            {editingSlug === 'new' ? 'New Category' : 'Edit Category'}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 90px 110px', gap: 12, alignItems: 'end' }}>
-            <div>
-              <div className="t-meta" style={{ marginBottom: 6 }}>Slug</div>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="category-editor-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            padding: '24px clamp(12px, 3vw, 32px)',
+            background: 'rgba(34, 31, 25, 0.42)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              width: 'min(980px, 100%)',
+              maxHeight: 'min(88vh, 760px)',
+              overflowY: 'auto',
+              padding: 18,
+              border: '1.5px solid var(--ink)',
+              background: 'var(--paper)',
+              boxShadow: '0 24px 80px rgba(0, 0, 0, 0.22)',
+            }}
+          >
+            <div id="category-editor-title" className="t-eyebrow" style={{ marginBottom: 14 }}>
+              {editingSlug === 'new' ? 'New Category' : 'Edit Category'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 90px 110px', gap: 12, alignItems: 'end' }}>
+              <div>
+                <div className="t-meta" style={{ marginBottom: 6 }}>Slug</div>
+                <div className="field">
+                  <input
+                    value={draft.slug}
+                    disabled={editingSlug !== 'new'}
+                    onChange={(event) => setDraft((current) => ({ ...current, slug: event.target.value }))}
+                    placeholder="skincare"
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="t-meta" style={{ marginBottom: 6 }}>Label</div>
+                <div className="field">
+                  <input
+                    value={draft.label}
+                    onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))}
+                    placeholder="Skincare"
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="t-meta" style={{ marginBottom: 6 }}>Group</div>
+                <div className="field">
+                  <input
+                    value={draft.group_name ?? ''}
+                    onChange={(event) => setDraft((current) => ({ ...current, group_name: event.target.value }))}
+                    placeholder="Health & Wellness"
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="t-meta" style={{ marginBottom: 6 }}>Sort</div>
+                <div className="field">
+                  <input
+                    type="number"
+                    value={draft.sort_order}
+                    onChange={(event) => setDraft((current) => ({ ...current, sort_order: Number(event.target.value) }))}
+                  />
+                </div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 10, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={draft.is_active}
+                  onChange={(event) => setDraft((current) => ({ ...current, is_active: event.target.checked }))}
+                />
+                Active
+              </label>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <div className="t-meta" style={{ marginBottom: 6 }}>Aliases / search terms</div>
               <div className="field">
                 <input
-                  value={draft.slug}
-                  disabled={editingSlug !== 'new'}
-                  onChange={(event) => setDraft((current) => ({ ...current, slug: event.target.value }))}
-                  placeholder="skincare"
+                  value={termsText}
+                  onChange={(event) => setTermsText(event.target.value)}
+                  placeholder="skin care, face care, moisturizer"
                 />
               </div>
             </div>
-            <div>
-              <div className="t-meta" style={{ marginBottom: 6 }}>Label</div>
-              <div className="field">
-                <input
-                  value={draft.label}
-                  onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))}
-                  placeholder="Skincare"
-                />
-              </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button type="button" onClick={save} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              <button type="button" onClick={cancel} disabled={saving} className="btn-ghost">
+                Cancel
+              </button>
             </div>
-            <div>
-              <div className="t-meta" style={{ marginBottom: 6 }}>Group</div>
-              <div className="field">
-                <input
-                  value={draft.group_name ?? ''}
-                  onChange={(event) => setDraft((current) => ({ ...current, group_name: event.target.value }))}
-                  placeholder="Health & Wellness"
-                />
-              </div>
-            </div>
-            <div>
-              <div className="t-meta" style={{ marginBottom: 6 }}>Sort</div>
-              <div className="field">
-                <input
-                  type="number"
-                  value={draft.sort_order}
-                  onChange={(event) => setDraft((current) => ({ ...current, sort_order: Number(event.target.value) }))}
-                />
-              </div>
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 10, fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={draft.is_active}
-                onChange={(event) => setDraft((current) => ({ ...current, is_active: event.target.checked }))}
-              />
-              Active
-            </label>
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <div className="t-meta" style={{ marginBottom: 6 }}>Aliases / search terms</div>
-            <div className="field">
-              <input
-                value={termsText}
-                onChange={(event) => setTermsText(event.target.value)}
-                placeholder="skin care, face care, moisturizer"
-              />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-            <button type="button" onClick={save} disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-            <button type="button" onClick={cancel} disabled={saving} className="btn-ghost">
-              Cancel
-            </button>
           </div>
         </div>
       )}

@@ -45,6 +45,7 @@ const DEAL_RANK_SCORE = (deal: Deal): number => {
   if (pct >= 30) return 70
   if (type === 'bogo-half') return 65
   if (type === 'free-shipping') return 40
+  if (type === 'amount-off') return 45
   if (type === 'price-point') return 20
   return 30
 }
@@ -220,7 +221,7 @@ export function filterDealsForSubscriber(
     if (deal.deal_type === 'price-point' && minDiscount > 0) return false
 
     if (deal.percent_off !== null && deal.percent_off < minDiscount) {
-      if (!['free-item', 'bogo-free', 'bogo-half', 'free-shipping'].includes(deal.deal_type)) {
+      if (!['free-item', 'bogo-free', 'bogo-half', 'free-shipping', 'amount-off'].includes(deal.deal_type)) {
         return false
       }
     }
@@ -313,7 +314,7 @@ function applyCategoryExclusions(categories: Category[]): Category[] {
   return Array.from(set) as Category[]
 }
 
-const JUNK_DEAL_TYPES = new Set(['free-shipping', 'bogo-free', 'bogo-half', 'free-item'])
+const JUNK_DEAL_TYPES = new Set(['free-shipping', 'bogo-free', 'bogo-half', 'free-item', 'amount-off'])
 
 export function isPricePointDescription(description: string | null | undefined): boolean {
   const desc = description ?? ''
@@ -412,6 +413,9 @@ export function formatSavings(deal: Deal): string {
   if (deal.deal_type === 'bogo-half') return 'BOGO 50%'
   if (deal.deal_type === 'free-item') return 'Free'
   if (deal.deal_type === 'free-shipping') return 'Free Shipping'
+  if (deal.deal_type === 'amount-off') {
+    return deal.description.match(/\$\d+(?:\.\d{1,2})?/)?.[0] ?? 'Dollar Off'
+  }
   if (deal.deal_type === 'price-point') {
     return /\bstarting at\b/i.test(deal.description) ? 'Starting At' : 'Sale Price'
   }

@@ -22,6 +22,7 @@ export type DealType =
   | 'loyalty'
   | 'up-to'
   | 'price-point'
+  | 'amount-off'
 
 export interface Subscriber {
   id: string
@@ -81,6 +82,7 @@ export const DEAL_TYPE_LABELS: Record<DealType, string> = {
   'loyalty': 'Loyalty Deals',
   'up-to': 'Up To Deals',
   'price-point': 'Advertised Prices',
+  'amount-off': 'Dollar Off',
 }
 
 export const DEAL_RANK: Record<DealType | 'high-discount', number> = {
@@ -94,5 +96,6 @@ export const DEAL_RANK: Record<DealType | 'high-discount', number> = {
   'loyalty': 9,
   'up-to': 10,
   'price-point': 11,
+  'amount-off': 6,
   'high-discount': 2,
 }

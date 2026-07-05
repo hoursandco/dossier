@@ -40,7 +40,7 @@ const DealSchema = z.object({
   deal_type: z.enum([
     'percent-off', 'bogo-free', 'bogo-half', 'free-item',
     'free-shipping', 'flash-sale', 'stackable', 'loyalty', 'up-to',
-    'price-point'
+    'price-point', 'amount-off'
   ]),
   promo_code: z.string().nullable(),
   expiration_date: z.string().nullable(),
@@ -95,6 +95,7 @@ const extractionJsonSchema: JsonSchema = {
               'loyalty',
               'up-to',
               'price-point',
+              'amount-off',
             ],
           },
           promo_code: { type: ['string', 'null'] },
@@ -311,7 +312,7 @@ For each deal:
 1. RETAILER: The store/brand name (clean, no domain)
 2. DESCRIPTION: Clear, factual description of the deal (1–2 sentences, no hype)
 3. PERCENT_OFF: The discount percentage as a number (null if not a percentage deal)
-4. DEAL_TYPE: One of: percent-off, bogo-free, bogo-half, free-item, free-shipping, flash-sale, stackable, loyalty, up-to, price-point
+4. DEAL_TYPE: One of: percent-off, bogo-free, bogo-half, free-item, free-shipping, flash-sale, stackable, loyalty, up-to, price-point, amount-off
 5. PROMO_CODE: The promotional code if present (null if none)
 6. EXPIRATION_DATE: The expiration date in YYYY-MM-DD format (null if unknown)
 7. LINK: The direct URL to the deal (null if not found)
@@ -363,6 +364,7 @@ RULES:
 - "Up to X% off" deals use deal_type "up-to" not "percent-off"
 - "Sale" or "event" with no stated percentage: use deal_type "flash-sale" and percent_off null
 - A promoted product price with no comparison price or stated savings uses deal_type "price-point" and percent_off null. Examples: "denim shorts starting at $12.99", "steak on sale for $8.99", "$1.98 spinach", or a furniture item advertised at a specific price. Preserve the product, package/size, and advertised price in the description.
+- A dollar-off coupon or savings amount uses deal_type "amount-off" and percent_off null. Preserve the dollar amount and item requirements in the description. Examples: "Save $2.50 on any ONE (1) Hellmann's or Best Foods mayonnaise." or "Save $1.00 on 2 General Mills cereals." These are especially common in grocery eCoupon cards.
 - For "up-to" and "flash-sale" deals where the email body lists specific brands, products, or categories on sale, include ALL of them in the description as a comma-separated list. Format: "Up to 55% off KitchenAid, Dyson, Instant Pot, Shark, Ninja and more as part of Deals of the Day." Do not truncate with "and more" unless you have genuinely listed every brand mentioned. If no specific items are named, keep the description general.
 - For BOGO deals, use bogo-free or bogo-half accordingly
 - Free shipping promotions count as deals (deal_type "free-shipping")
