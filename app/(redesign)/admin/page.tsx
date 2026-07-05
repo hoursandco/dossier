@@ -9,6 +9,7 @@ import { SubscriptionsPanel } from '@/components/SubscriptionsPanel'
 import { DiscountCodesPanel } from '@/components/DiscountCodesPanel'
 import { AutoAddedStoresPanel } from '@/components/AutoAddedStoresPanel'
 import { StoresAdmin } from '@/components/StoresAdmin'
+import { CategoriesAdmin } from '@/components/CategoriesAdmin'
 import { AdminTabs } from '@/components/AdminTabs'
 import { isAdminEmail } from '@/lib/admin'
 import { DossierNav } from '@/components/DossierNav'
@@ -461,6 +462,7 @@ export default async function AdminPage() {
   )
 
   const storesTab = <StoresAdmin />
+  const categoriesTab = <CategoriesAdmin />
   const ingestAuditTab = (
     <div className="admin-card">
       <SectionLabel n="01">Raw Ingest Evidence</SectionLabel>
@@ -560,6 +562,7 @@ export default async function AdminPage() {
               { id: 'coupons', label: 'Coupons', content: couponsTab },
               { id: 'ingest-audit', label: 'Ingest Audit', content: ingestAuditTab },
               { id: 'alias-audit', label: 'Alias Audit', content: aliasAuditTab },
+              { id: 'categories', label: 'Categories', content: categoriesTab },
               { id: 'item-audit', label: 'Item Audit', content: itemAuditTab },
               {
                 id: 'review',
@@ -567,7 +570,7 @@ export default async function AdminPage() {
                 badge: pendingSuggestions || null,
                 content: reviewTab,
               },
-              { id: 'stores', label: 'Manage Stores', content: storesTab },
+              { id: 'stores', label: 'Stores', content: storesTab },
             ]}
           />
         </div>

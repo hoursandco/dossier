@@ -35,14 +35,16 @@ type StoreDraft = Partial<Store>
 
 const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
 
-type SortKey = 'name' | 'categories' | 'price_tier' | 'status'
+type SortKey = 'name' | 'website' | 'categories' | 'price_tier' | 'status' | 'is_active'
 type SortDirection = 'asc' | 'desc'
 
 const SORT_LABELS: Record<SortKey, string> = {
   name: 'Name',
+  website: 'Website',
   categories: 'Categories',
   price_tier: '$',
   status: 'Status',
+  is_active: 'Active',
 }
 
 const emptyDraft = (): Partial<Store> => ({
@@ -73,12 +75,11 @@ export function StoresAdmin() {
     direction: 'asc',
   })
 
-  const loadStores = useCallback(async (q?: string) => {
+  const loadStores = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const url = q ? `/api/admin/stores?q=${encodeURIComponent(q)}` : '/api/admin/stores'
-      const res = await fetch(url, { cache: 'no-store' })
+      const res = await fetch('/api/admin/stores', { cache: 'no-store' })
       if (!res.ok) throw new Error('Failed to load stores')
       const data = await res.json()
       setStores(data.stores ?? [])
@@ -97,14 +98,6 @@ export function StoresAdmin() {
       .catch(() => {})
   }, [loadStores])
 
-  // Debounce the search input so we don't fire a query on every keystroke.
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      loadStores(search.trim() || undefined)
-    }, 300)
-    return () => clearTimeout(handle)
-  }, [search, loadStores])
-
   // One picker over the whole canonical taxonomy: editorial Collections
   // render as their own group (group_name='Collections'), content
   // categories under their content groups. All of it writes to
@@ -119,8 +112,26 @@ export function StoresAdmin() {
     [allCategories]
   )
 
-  const sortedStores = useMemo(() => {
+  const visibleStores = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    const rows = term
+      ? stores.filter((store) => {
+          const categoryText = (store.categories ?? [])
+            .map((slug) => categoryLabelsBySlug.get(slug) ?? slug)
+            .join(' ')
+          return [
+            store.name,
+            store.website,
+            categoryText,
+            store.price_tier ?? '',
+            STATUS_LABELS[store.status]?.label ?? store.status,
+            store.is_active ? 'active yes visible' : 'inactive no hidden',
+          ].join(' ').toLowerCase().includes(term)
+        })
+      : stores
+
     const getComparable = (store: Store) => {
+      if (sort.key === 'website') return store.website
       if (sort.key === 'categories') {
         return (store.categories ?? [])
           .map((slug) => categoryLabelsBySlug.get(slug) ?? slug)
@@ -129,10 +140,11 @@ export function StoresAdmin() {
       }
       if (sort.key === 'price_tier') return store.price_tier?.length ?? 0
       if (sort.key === 'status') return STATUS_LABELS[store.status]?.label ?? store.status
+      if (sort.key === 'is_active') return store.is_active ? 1 : 0
       return store.name
     }
 
-    return [...stores].sort((a, b) => {
+    return [...rows].sort((a, b) => {
       const aValue = getComparable(a)
       const bValue = getComparable(b)
       const comparison =
@@ -141,7 +153,7 @@ export function StoresAdmin() {
           : String(aValue).localeCompare(String(bValue), undefined, { sensitivity: 'base' })
       return sort.direction === 'asc' ? comparison : -comparison
     })
-  }, [categoryLabelsBySlug, sort, stores])
+  }, [categoryLabelsBySlug, search, sort, stores])
 
   const toggleSort = (key: SortKey) => {
     setSort((prev) => ({
@@ -202,7 +214,7 @@ export function StoresAdmin() {
       setEditingId(null)
       setDraft(emptyDraft())
       setInfo(isNew ? 'Store added' : 'Store updated')
-      await loadStores(search.trim() || undefined)
+      await loadStores()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -219,7 +231,7 @@ export function StoresAdmin() {
       })
       if (!res.ok) throw new Error('Update failed')
       setInfo(`${name} → ${STATUS_LABELS[status]?.label ?? status}`)
-      await loadStores(search.trim() || undefined)
+      await loadStores()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed')
     }
@@ -252,7 +264,7 @@ export function StoresAdmin() {
         `Updated ${data.updated_existing ?? 0} existing. Skipped ${data.skipped_duplicate} duplicate conflicts. ` +
         `Total processed: ${data.total_in_sheet}.`
       )
-      await loadStores(search.trim() || undefined)
+      await loadStores()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed')
     } finally {
@@ -278,7 +290,7 @@ export function StoresAdmin() {
       setInfo(
         `Tagged ${data.tagged} stores. ${data.skipped_unknown} were unknown to the LLM and need manual tagging.`
       )
-      await loadStores(search.trim() || undefined)
+      await loadStores()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Auto-tag failed')
     } finally {
@@ -297,6 +309,24 @@ export function StoresAdmin() {
 
   return (
     <div style={{ marginTop: 48 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          marginBottom: 18,
+        }}
+      >
+        <div>
+          <div className="t-eyebrow">Stores</div>
+          <div className="t-meta" style={{ color: 'var(--ink-55)', marginTop: 4 }}>
+            {visibleStores.length} of {stores.length} store{stores.length === 1 ? '' : 's'}
+          </div>
+        </div>
+      </div>
+
       {/* Controls */}
       <div
         style={{
@@ -310,7 +340,7 @@ export function StoresAdmin() {
         <div className="field" style={{ flex: 1, minWidth: 260 }}>
           <input
             type="search"
-            placeholder="Search stores by name…"
+            placeholder="Search names, websites, categories, status..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -425,7 +455,7 @@ export function StoresAdmin() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '1.4fr 1.8fr 50px 70px 130px',
+            gridTemplateColumns: '1.1fr 1.2fr 1.7fr 50px 80px 70px 130px',
             gap: 12,
             padding: '12px 16px',
             borderBottom: '1px solid var(--ink-15)',
@@ -438,20 +468,22 @@ export function StoresAdmin() {
           }}
         >
           <SortableHeader sortKey="name" sort={sort} onSort={toggleSort} />
+          <SortableHeader sortKey="website" sort={sort} onSort={toggleSort} />
           <SortableHeader sortKey="categories" sort={sort} onSort={toggleSort} />
           <SortableHeader sortKey="price_tier" sort={sort} onSort={toggleSort} />
           <SortableHeader sortKey="status" sort={sort} onSort={toggleSort} />
+          <SortableHeader sortKey="is_active" sort={sort} onSort={toggleSort} />
           <div></div>
         </div>
 
         {loading ? (
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-55)' }}>Loading…</div>
-        ) : stores.length === 0 ? (
+        ) : visibleStores.length === 0 ? (
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-55)' }}>
             {search ? 'No stores match that search.' : 'No stores yet. Add one or import from the sheet.'}
           </div>
         ) : (
-          sortedStores.map((s) => {
+          visibleStores.map((s) => {
             const catLabels = (s.categories ?? [])
               .map((slug) => categoryLabelsBySlug.get(slug) ?? slug)
               .sort((a, b) => a.localeCompare(b))
@@ -462,7 +494,7 @@ export function StoresAdmin() {
                 key={s.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1.4fr 1.8fr 50px 70px 130px',
+                  gridTemplateColumns: '1.1fr 1.2fr 1.7fr 50px 80px 70px 130px',
                   gap: 12,
                   padding: '12px 16px',
                   borderBottom: '1px solid var(--ink-08, var(--ink-15))',
@@ -473,6 +505,8 @@ export function StoresAdmin() {
               >
                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <div style={{ fontWeight: 500 }}>{s.name}</div>
+                </div>
+                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <a
                     href={s.website}
                     target="_blank"
@@ -496,6 +530,9 @@ export function StoresAdmin() {
                 </div>
                 <div style={{ fontSize: 11, color: STATUS_LABELS[s.status]?.color ?? 'var(--ink-55)' }}>
                   {STATUS_LABELS[s.status]?.label ?? s.status}
+                </div>
+                <div className="t-mono" style={{ color: s.is_active ? 'var(--olive-deep)' : 'var(--ink-40)' }}>
+                  {s.is_active ? 'Yes' : 'No'}
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
@@ -523,11 +560,6 @@ export function StoresAdmin() {
             )
           })
         )}
-      </div>
-
-      <div style={{ marginTop: 16, fontSize: 12, color: 'var(--ink-55)' }}>
-        {stores.length} store{stores.length === 1 ? '' : 's'}
-        {search ? ` matching "${search}"` : ''}
       </div>
     </div>
   )

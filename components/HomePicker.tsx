@@ -677,7 +677,7 @@ export function HomePicker() {
 
         {searchResults === null ? (
           <div className="deal-results-empty">
-            <p>Deals will appear here as you search.</p>
+            <p>Deals from the last 7 days will appear here as you search.</p>
           </div>
         ) : (
           <div>
@@ -688,7 +688,7 @@ export function HomePicker() {
             ) : displayedSearchResults.length === 0 ? (
               <div style={{ padding: '20px 0', textAlign: 'center' }}>
                 <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: 'italic', fontSize: 17, color: 'var(--ink-soft)', margin: 0 }}>
-                  No live deals for <strong style={{ fontStyle: 'normal' }}>&ldquo;{activeKeywords.join(', ')}&rdquo;</strong>{tierFilterActive ? ` in ${Array.from(allowedTiers).join(', ')} stores` : ''} right now.
+                  No live deals for <strong style={{ fontStyle: 'normal' }}>&ldquo;{activeKeywords.join(', ')}&rdquo;</strong>{tierFilterActive ? ` in ${Array.from(allowedTiers).join(', ')} stores` : ''} in the last 7 days.
                 </p>
                 <p style={{ fontFamily: "'Special Elite', monospace", fontSize: 13, color: 'var(--ink-soft)', marginTop: 8 }}>
                   {tierFilterActive ? 'Clear a price filter or search something else.' : 'New deals land daily — try again tomorrow or search something else.'}
