@@ -28,6 +28,7 @@ import {
   mergeSubtypeIntoKeywords,
 } from '@/lib/deals'
 import { fixRetailerCase } from '@/lib/stores'
+import { normalizeRetailerWebsite } from '@/lib/domainNormalize'
 import { sendAdminAlert } from '@/lib/resend'
 import { format, subHours } from 'date-fns'
 import type { Category } from '@/types'
@@ -48,25 +49,15 @@ function parseSenderName(from: string): string {
   return from.split('@')[0].trim()
 }
 
-// Extract the apex domain from a sender ("From: Best Buy
-// <hello@emails.bestbuy.com>" → "bestbuy.com"). Used as the website
-// when auto-creating an unknown store row — stores.website is NOT
-// NULL and has a case-insensitive unique index, so we need a stable
-// per-brand key. Strips common marketing-email subdomain prefixes
-// (mail., emails., news., m., etc.) so different ESP-routing
-// subdomains for the same brand collapse to one apex.
-function parseSenderDomain(from: string): string | null {
+// Extract and normalize the sender website from "From: Best Buy
+// <hello@emails.bestbuy.com>" → "https://bestbuy.com". Used as the
+// website when auto-creating an unknown store row. The shared normalizer
+// strips common marketing/newsletter subdomains and reduces deep sender
+// hosts to the apex when it can.
+function parseSenderWebsite(from: string): string | null {
   const m = from.match(/@([a-zA-Z0-9.-]+)/)
   if (!m) return null
-  let domain = m[1].toLowerCase().replace(/[>\s]+$/, '')
-  domain = domain.replace(
-    /^(mail|emails?|e|news|m|t|info|hello|noreply|no-reply|do-not-reply|donotreply|update|updates|sale|sales|promo|promos|promotion|promotions|marketing|hi|inbox|shop|store|account|alerts?|offers?|reply|membership|service|order|orders|support|deals|news)\./,
-    '',
-  )
-  // Bail on anything that doesn't look like a real domain (no dot,
-  // single-label, etc.) — better to skip auto-add than seed garbage.
-  if (!domain.includes('.') || domain.length < 4) return null
-  return domain
+  return normalizeRetailerWebsite(m[1])
 }
 
 // Normalize a retailer name for fuzzy matching against stores.name.
@@ -539,7 +530,7 @@ export async function GET(request: NextRequest) {
       status: string
     }
     // Normalize a stored website value to a bare apex domain for comparison
-    // against the output of parseSenderDomain(). Both strip www. and lowercase.
+    // against sender-derived websites. Both strip protocol/www and lowercase.
     function normalizeStoreDomain(website: string): string {
       return website.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').split('/')[0]
     }
@@ -694,7 +685,8 @@ export async function GET(request: NextRequest) {
         return storeMatch
       }
 
-      const domain = parseSenderDomain(email.from)
+      const senderWebsite = parseSenderWebsite(email.from)
+      const domain = senderWebsite ? normalizeStoreDomain(senderWebsite) : null
 
       // Step 2: domain pre-check — if this sender's apex domain already
       // exists in the directory under any name, use that store record and
@@ -718,8 +710,8 @@ export async function GET(request: NextRequest) {
       }
 
       if (dryRun) {
-        console.log(`[DRY RUN] would auto-add: ${retailer} (${domain}) from=${email.from}`)
-        dryRunWouldAutoAdd.push({ name: retailer, domain, from: email.from })
+        console.log(`[DRY RUN] would auto-add: ${retailer} (${senderWebsite}) from=${email.from}`)
+        dryRunWouldAutoAdd.push({ name: retailer, domain: senderWebsite ?? domain, from: email.from })
         return undefined
       }
 
@@ -732,7 +724,7 @@ export async function GET(request: NextRequest) {
         .upsert(
           {
             name: retailer,
-            website: domain,
+            website: senderWebsite,
             status: 'auto_added',
             is_active: false,
             categories,
@@ -742,12 +734,12 @@ export async function GET(request: NextRequest) {
         .select('id, name, categories, is_active, status')
         .maybeSingle()
       if (insertErr) {
-        console.error(`[ingest] auto-add error for ${retailer} (${domain}):`, JSON.stringify(insertErr))
+        console.error(`[ingest] auto-add error for ${retailer} (${senderWebsite}):`, JSON.stringify(insertErr))
         return undefined
       }
       if (!inserted) return undefined
 
-      console.log(`[ingest] auto-added store for review: ${retailer} (${domain})`)
+      console.log(`[ingest] auto-added store for review: ${retailer} (${senderWebsite})`)
       storeMatch = {
         id: inserted.id,
         categories: Array.isArray(inserted.categories) ? inserted.categories : [],
