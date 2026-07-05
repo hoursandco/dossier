@@ -66,8 +66,6 @@ export function StoresAdmin() {
   const [draft, setDraft] = useState<StoreDraft>(emptyDraft())
   const [allCategories, setAllCategories] = useState<Category[]>([])
   const [saving, setSaving] = useState(false)
-  const [autoTagging, setAutoTagging] = useState(false)
-  const [seeding, setSeeding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
@@ -237,67 +235,6 @@ export function StoresAdmin() {
     }
   }
 
-  const seedFromSheet = async () => {
-    if (!confirm('Import stores from the Google Sheet?\n\nActive/approved rows come in as visible.\nPending (or anything else) rows come in as hidden — they auto-activate the first time the ingest cron sees a deal from them.\n\nExisting websites are skipped (no overwrite).')) return
-    setSeeding(true)
-    setError(null)
-    setInfo(null)
-    try {
-      const res = await fetch('/api/admin/stores/seed-from-sheet', { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) {
-        let msg = data.error || 'Import failed'
-        if (data.postgres_code) msg += ` (code ${data.postgres_code})`
-        if (data.detail) msg += ` — ${data.detail}`
-        if (data.failed_row) {
-          msg += ` · failed row: ${data.failed_row.name} (${data.failed_row.website}, status=${data.failed_row.status})`
-        }
-        if (data.imported_so_far) {
-          const c = data.imported_so_far
-          msg += ` · imported before fail: ${c.active}a/${c.pending}p/${c.no_email}n/${c.declined}d`
-        }
-        if (data.detected_headers) msg += ` — headers: ${JSON.stringify(data.detected_headers)}`
-        throw new Error(msg)
-      }
-      setInfo(
-        `Imported ${data.imported} (${data.by_status?.pending ?? 0} pending). ` +
-        `Updated ${data.updated_existing ?? 0} existing. Skipped ${data.skipped_duplicate} duplicate conflicts. ` +
-        `Total processed: ${data.total_in_sheet}.`
-      )
-      await loadStores()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed')
-    } finally {
-      setSeeding(false)
-    }
-  }
-
-  const autoTagCategories = async (force: boolean) => {
-    const message = force
-      ? 'Re-tag collections for EVERY store using AI? This will overwrite existing collection assignments.'
-      : 'Run AI collection tagging for stores with empty collections?'
-    if (!confirm(message)) return
-    setAutoTagging(true)
-    setError(null)
-    setInfo(null)
-    try {
-      const url = force
-        ? '/api/admin/stores/auto-tag-categories?force=1'
-        : '/api/admin/stores/auto-tag-categories'
-      const res = await fetch(url, { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Auto-tag failed')
-      setInfo(
-        `Tagged ${data.tagged} stores. ${data.skipped_unknown} were unknown to the LLM and need manual tagging.`
-      )
-      await loadStores()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Auto-tag failed')
-    } finally {
-      setAutoTagging(false)
-    }
-  }
-
   const toggleCategory = (slug: string) => {
     setDraft((prev) => {
       const set = new Set(prev.categories ?? [])
@@ -352,26 +289,6 @@ export function StoresAdmin() {
           className="btn-primary"
         >
           + Add store
-        </button>
-        <button
-          type="button"
-          onClick={() => autoTagCategories(false)}
-          disabled={autoTagging || editingId !== null}
-          className="btn-ghost"
-          style={{ fontSize: 12 }}
-          title="Fills empty Collections columns by asking the LLM which editorial collections fit each brand"
-        >
-          {autoTagging ? 'Tagging…' : 'AI tag collections'}
-        </button>
-        <button
-          type="button"
-          onClick={seedFromSheet}
-          disabled={seeding || editingId !== null}
-          className="btn-ghost"
-          style={{ fontSize: 12 }}
-          title="Re-import from Google Sheet. Pending rows come in hidden + auto-activate on first deal."
-        >
-          {seeding ? 'Importing…' : 'Import from sheet'}
         </button>
       </div>
 
