@@ -13,9 +13,9 @@
  */
 
 .dl-shell {
-  --cream: #f1e6c8;
+  --cream: #fcf8ed;
   --cream-2: #ede0bd;
-  --paper: #f6ecd2;
+  --paper: #fcf8ed;
   --ink: #181612;
   --ink-soft: #2a261f;
   --red: #d4322a;
@@ -154,7 +154,7 @@
   list-style: none; padding: 0;
   margin: 0 16px;
   width: 100%;
-  background: #f6ecd2;
+  background: #fcf8ed;
   border: 2px solid #181612;
   box-shadow: 6px 6px 0 #181612;
 }

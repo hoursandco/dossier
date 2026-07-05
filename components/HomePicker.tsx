@@ -421,7 +421,7 @@ export function HomePicker() {
                         display: 'inline-flex', alignItems: 'center', gap: 0,
                         border: '1.5px solid var(--ink)',
                         background: 'var(--ink)',
-                        color: 'var(--paper, #f6ecd2)',
+                        color: 'var(--paper, #fcf8ed)',
                         fontFamily: 'var(--font-mono, monospace)', fontSize: 13,
                         minHeight: 36,
                       }}
@@ -446,7 +446,7 @@ export function HomePicker() {
                           minWidth: 36, minHeight: 36, display: 'inline-flex',
                           alignItems: 'center', justifyContent: 'center',
                           border: 'none', background: 'transparent',
-                          color: 'var(--paper, #f6ecd2)', cursor: 'pointer',
+                          color: 'var(--paper, #fcf8ed)', cursor: 'pointer',
                           fontSize: 20, lineHeight: 1, padding: 0,
                         }}
                       >×</button>
@@ -531,7 +531,7 @@ export function HomePicker() {
                       letterSpacing: '.12em', textTransform: 'uppercase',
                       padding: '5px 10px', minHeight: 30,
                       background: allowedTiers.has(tier) ? 'var(--ink)' : '#fffbe6',
-                      color: allowedTiers.has(tier) ? 'var(--paper, #f6ecd2)' : 'var(--ink)',
+                      color: allowedTiers.has(tier) ? 'var(--paper, #fcf8ed)' : 'var(--ink)',
                       border: '1.5px solid var(--ink)',
                       cursor: 'pointer',
                       opacity: 1,
@@ -550,7 +550,7 @@ export function HomePicker() {
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 0,
                       border: '1.5px solid var(--ink)', background: 'var(--ink)',
-                      color: 'var(--paper, #f6ecd2)',
+                      color: 'var(--paper, #fcf8ed)',
                       fontFamily: 'var(--font-mono, monospace)', fontSize: 13,
                       minHeight: 36,
                     }}
@@ -564,7 +564,7 @@ export function HomePicker() {
                         minWidth: 36, minHeight: 36, display: 'inline-flex',
                         alignItems: 'center', justifyContent: 'center',
                         border: 'none', background: 'transparent',
-                        color: 'var(--paper, #f6ecd2)', cursor: 'pointer',
+                        color: 'var(--paper, #fcf8ed)', cursor: 'pointer',
                         fontSize: 20, lineHeight: 1, padding: 0,
                       }}
                     >×</button>

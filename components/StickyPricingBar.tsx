@@ -20,7 +20,7 @@ export function StickyPricingBar() {
           right: 0,
           bottom: 0,
           background: 'var(--ink)',
-          color: 'var(--paper, #f6ecd2)',
+          color: 'var(--paper, #fcf8ed)',
           borderTop: '2px solid var(--ink)',
           padding: '12px 16px',
           display: 'flex',

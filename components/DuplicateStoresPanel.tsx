@@ -183,7 +183,7 @@ function ClusterCard({
     <div
       style={{
         border: '1.5px solid var(--ink, #181612)',
-        background: 'var(--paper, #f6ecd2)',
+        background: 'var(--paper, #fcf8ed)',
         padding: 14,
       }}
     >
