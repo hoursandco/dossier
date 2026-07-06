@@ -83,6 +83,11 @@ const INGEST_CONCURRENCY = Math.max(
   Number(process.env.INGEST_CONCURRENCY) || 2
 )
 
+const INGEST_BACKFILL_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.INGEST_BACKFILL_CONCURRENCY) || 1
+)
+
 // Hard cap on emails processed per run. Vercel's serverless function limit is
 // 5 minutes; a fresh inbox with weeks of accumulated subs can have hundreds of
 // promo emails in the 24-hour IMAP window. Capping per-run lets each invocation
@@ -93,6 +98,11 @@ const INGEST_CONCURRENCY = Math.max(
 const INGEST_MAX_PER_RUN = Math.max(
   1,
   Number(process.env.INGEST_MAX_PER_RUN) || 20
+)
+
+const INGEST_BACKFILL_MAX_PER_RUN = Math.max(
+  1,
+  Number(process.env.INGEST_BACKFILL_MAX_PER_RUN) || 10
 )
 
 const INGEST_STALE_RUN_MS = Math.max(
@@ -340,10 +350,12 @@ export async function GET(request: NextRequest) {
   const forceDateWindow =
     request.nextUrl.searchParams.get('backfill') === '1' || hoursParam !== null
   const limitParam = request.nextUrl.searchParams.get('limit')
-  const requestedLimit = limitParam ? Number(limitParam) : INGEST_MAX_PER_RUN
+  const defaultLimit = forceDateWindow ? INGEST_BACKFILL_MAX_PER_RUN : INGEST_MAX_PER_RUN
+  const requestedLimit = limitParam ? Number(limitParam) : defaultLimit
   const perRunLimit = Number.isFinite(requestedLimit)
     ? Math.min(500, Math.max(1, Math.floor(requestedLimit)))
-    : INGEST_MAX_PER_RUN
+    : defaultLimit
+  const effectiveConcurrency = forceDateWindow ? INGEST_BACKFILL_CONCURRENCY : INGEST_CONCURRENCY
   const reprocess = request.nextUrl.searchParams.get('reprocess') === '1'
   const offsetParam = Number(request.nextUrl.searchParams.get('offset') ?? 0)
   const backfillOffset = Number.isFinite(offsetParam)
@@ -642,6 +654,7 @@ export async function GET(request: NextRequest) {
     let emailsWithDeals = 0
     let emailsWithNoDeals = 0
     let emailsSkippedStale = 0
+    let thumbnailJobsQueued = 0
     const processedEmailIds: string[] = []
     // Track per-email UIDs so we can advance the IMAP cursor only as far as
     // we've successfully processed. If one email fails mid-run, the cursor
@@ -1195,6 +1208,34 @@ export async function GET(request: NextRequest) {
           insertedDeal?.id ?? null,
         )
 
+        if (insertedDeal?.id && imageUrlsForExtraction.length > 0) {
+          const { error: thumbnailJobError } = await supabase
+            .from('deal_thumbnail_jobs')
+            .upsert({
+              deal_id: insertedDeal.id,
+              retailer,
+              description: deal.description,
+              deal_type: deal.deal_type,
+              categories: mergedCategories,
+              keywords: dealRow.keywords,
+              image_urls: imageUrlsForExtraction,
+              status: 'pending',
+              next_attempt_at: new Date().toISOString(),
+              last_error: null,
+              completed_at: null,
+              locked_at: null,
+              locked_by: null,
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: 'deal_id',
+            })
+          if (thumbnailJobError) {
+            console.error('[ingest] thumbnail job enqueue error:', JSON.stringify(thumbnailJobError))
+          } else {
+            thumbnailJobsQueued++
+          }
+        }
+
         // Upsert keywords into the global vocabulary table via a Postgres
         // function that properly increments deal_count on conflict (a plain
         // upsert would reset it to 1). Fire-and-forget — never blocks ingestion.
@@ -1274,7 +1315,7 @@ export async function GET(request: NextRequest) {
     // up the next email as soon as their current one finishes, eliminating
     // the head-of-line blocking of the previous batched approach.
     const tProcessStart = Date.now()
-    await runWithConcurrency(newEmails, INGEST_CONCURRENCY, async (email) => {
+    await runWithConcurrency(newEmails, effectiveConcurrency, async (email) => {
       try {
         await processEmail(email)
       } catch (err) {
@@ -1368,10 +1409,12 @@ export async function GET(request: NextRequest) {
       emails_with_no_deals: emailsWithNoDeals,
       emails_skipped_stale: emailsSkippedStale,
       new_deals: newDeals,
+      thumbnail_jobs_queued: thumbnailJobsQueued,
       total_deals_this_week: totalDeals ?? 0,
       mode: forceDateWindow ? 'backfill' : 'cursor',
       lookback_hours: lookbackHours,
       per_run_limit: perRunLimit,
+      concurrency: effectiveConcurrency,
       reprocess,
       offset: selectedOffset,
       next_offset: deferred > 0 ? selectedOffset + newEmails.length : null,

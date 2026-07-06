@@ -1,0 +1,76 @@
+name: Thumbnail Jobs
+
+# Calls the production thumbnail worker frequently from GitHub Actions.
+# Vercel Hobby cron can only run daily, but the endpoint itself can still
+# execute on Vercel whenever GitHub calls it.
+
+on:
+  schedule:
+    - cron: '12,27,42,57 * * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Thumbnail jobs per run'
+        required: false
+        default: '6'
+        type: string
+      concurrency:
+        description: 'Worker concurrency'
+        required: false
+        default: '1'
+        type: string
+
+jobs:
+  thumbnails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: thumbnail-jobs
+      cancel-in-progress: false
+    steps:
+      - name: Process thumbnail jobs on dealdossier.io
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+          INPUT_CONCURRENCY: ${{ inputs.concurrency }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET secret is not set in this repository."
+            exit 1
+          fi
+
+          INPUT_LIMIT="${INPUT_LIMIT//[$'\t\r\n ']}"
+          INPUT_CONCURRENCY="${INPUT_CONCURRENCY//[$'\t\r\n ']}"
+
+          limit="${INPUT_LIMIT:-6}"
+          concurrency="${INPUT_CONCURRENCY:-1}"
+          worker_url="https://dealdossier.io/api/cron/process-thumbnail-jobs?limit=${limit}&concurrency=${concurrency}"
+          body_file=$(mktemp)
+          trap 'rm -f "$body_file"' EXIT
+
+          for attempt in 1 2; do
+            if ! status=$(curl -sS --max-time 320 \
+              -o "$body_file" \
+              -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$worker_url"); then
+              status="000"
+            fi
+
+            body=$(cat "$body_file")
+            echo "Attempt $attempt: HTTP $status"
+            echo "Body: $body"
+
+            if [ "$status" = "200" ]; then
+              exit 0
+            fi
+
+            if [ "$attempt" = "1" ] && { [ "$status" = "502" ] || [ "$status" = "503" ]; }; then
+              echo "::warning::Transient thumbnail worker failure; retrying once in 10 seconds."
+              sleep 10
+              continue
+            fi
+
+            echo "::error::Thumbnail worker returned $status"
+            exit 1
+          done

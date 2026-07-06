@@ -31,6 +31,9 @@ type DealResult = {
   store_website: string | null
   source_email_link: string | null
   redemption_channel: string | null
+  image_url: string | null
+  image_alt: string | null
+  image_expires_at: string | null
   week_of: string
   price_tier: string | null
 }
@@ -769,6 +772,7 @@ function DealCard({ deal }: { deal: DealResult }) {
   const badge = formatDealType(deal.deal_type, deal.percent_off, deal.description)
   const link = resolveDealLink(deal)
   const redemptionLabel = formatRedemptionChannel(deal.redemption_channel)
+  const imageUrl = deal.image_url
 
   return (
     <div style={{
@@ -777,78 +781,99 @@ function DealCard({ deal }: { deal: DealResult }) {
       background: '#fffbe6',
       boxShadow: '3px 3px 0 var(--ink)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-        <div>
-          <span style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 12, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--red-deep)' }}>
-            {badge}
-          </span>
-          {' · '}
-          <span style={{ fontFamily: "'Alfa Slab One', serif", fontSize: 15, color: 'var(--ink)' }}>
-            {deal.retailer}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <span style={{
-            fontFamily: "'Stardos Stamp', monospace", fontSize: 10,
-            padding: '4px 8px 3px', background: 'var(--yellow)', color: 'var(--ink)',
-            border: '1.5px solid var(--ink)', letterSpacing: '.16em',
-            textTransform: 'uppercase', whiteSpace: 'nowrap',
-          }}>
-            {redemptionLabel}
-          </span>
-          {deal.promo_code && (
-            <span style={{
-              fontFamily: "'Special Elite', monospace", fontSize: 12,
-              padding: '3px 8px', background: 'var(--ink)', color: '#fff8e2',
-              letterSpacing: '.12em', whiteSpace: 'nowrap',
-            }}>
-              {deal.promo_code}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <p style={{ margin: '0 0 10px', fontFamily: "'IM Fell English', serif", fontSize: 15, lineHeight: 1.45, color: 'var(--ink)' }}>
-        {deal.description}
-      </p>
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        {deal.expiration_date && (
-          <span style={{ fontFamily: "'Special Elite', monospace", fontSize: 12, color: 'var(--ink-soft)' }}>
-            Expires {formatDealExpiration(deal.expiration_date)}
-          </span>
+      <div style={{ display: 'grid', gridTemplateColumns: imageUrl ? '88px minmax(0, 1fr)' : '1fr', gap: 14, alignItems: 'start' }}>
+        {imageUrl && (
+          <a href={link || '#'} target="_blank" rel="noopener noreferrer" style={{ display: 'block' }}>
+            <img
+              src={imageUrl}
+              alt={deal.image_alt || `${deal.retailer} product image`}
+              loading="lazy"
+              style={{
+                width: 88,
+                height: 88,
+                objectFit: 'cover',
+                border: '1.5px solid var(--ink)',
+                background: '#fff',
+                display: 'block',
+              }}
+            />
+          </a>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          {link && (
-            <a
-              href={link}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
-                letterSpacing: '.18em', textTransform: 'uppercase',
-                color: 'var(--ink)', textDecoration: 'underline',
-                textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
-              }}
-            >
-              Shop the deal →
-            </a>
-          )}
-          {deal.source_email_link && (
-            <a
-              href={deal.source_email_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
-                letterSpacing: '.18em', textTransform: 'uppercase',
-                color: 'var(--ink-soft)', textDecoration: 'underline',
-                textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
-              }}
-            >
-              View email →
-            </a>
-          )}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+            <div>
+              <span style={{ fontFamily: "'Stardos Stamp', monospace", fontSize: 12, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--red-deep)' }}>
+                {badge}
+              </span>
+              {' · '}
+              <span style={{ fontFamily: "'Alfa Slab One', serif", fontSize: 15, color: 'var(--ink)' }}>
+                {deal.retailer}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <span style={{
+                fontFamily: "'Stardos Stamp', monospace", fontSize: 10,
+                padding: '4px 8px 3px', background: 'var(--yellow)', color: 'var(--ink)',
+                border: '1.5px solid var(--ink)', letterSpacing: '.16em',
+                textTransform: 'uppercase', whiteSpace: 'nowrap',
+              }}>
+                {redemptionLabel}
+              </span>
+              {deal.promo_code && (
+                <span style={{
+                  fontFamily: "'Special Elite', monospace", fontSize: 12,
+                  padding: '3px 8px', background: 'var(--ink)', color: '#fff8e2',
+                  letterSpacing: '.12em', whiteSpace: 'nowrap',
+                }}>
+                  {deal.promo_code}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <p style={{ margin: '0 0 10px', fontFamily: "'IM Fell English', serif", fontSize: 15, lineHeight: 1.45, color: 'var(--ink)' }}>
+            {deal.description}
+          </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            {deal.expiration_date && (
+              <span style={{ fontFamily: "'Special Elite', monospace", fontSize: 12, color: 'var(--ink-soft)' }}>
+                Expires {formatDealExpiration(deal.expiration_date)}
+              </span>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              {link && (
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
+                    letterSpacing: '.18em', textTransform: 'uppercase',
+                    color: 'var(--ink)', textDecoration: 'underline',
+                    textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
+                  }}
+                >
+                  Shop the deal →
+                </a>
+              )}
+              {deal.source_email_link && (
+                <a
+                  href={deal.source_email_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontFamily: "'Stardos Stamp', monospace", fontSize: 11,
+                    letterSpacing: '.18em', textTransform: 'uppercase',
+                    color: 'var(--ink-soft)', textDecoration: 'underline',
+                    textDecorationStyle: 'dotted', whiteSpace: 'nowrap',
+                  }}
+                >
+                  View email →
+                </a>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

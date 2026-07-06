@@ -161,6 +161,9 @@ function savingsBadge(deal: Deal): string {
 function dealRow(deal: Deal, storeUrls: Record<string, string>): string {
   const link = escape(bestDealLink(deal, storeUrls))
   const description = escape(deal.description)
+  const imageExpired = deal.image_expires_at && new Date(deal.image_expires_at).getTime() <= Date.now()
+  const imageUrl = !imageExpired && deal.image_url ? escape(deal.image_url) : ''
+  const imageAlt = escape(deal.image_alt || `${deal.retailer} product image`)
   const codeChip = deal.promo_code
     ? `<span style="display:inline-block;background:${YELLOW};border:1.5px solid ${INK};padding:4px 9px 3px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:${INK};">CODE&nbsp;·&nbsp;${escape(deal.promo_code)}</span>`
     : ''
@@ -177,11 +180,20 @@ function dealRow(deal: Deal, storeUrls: Record<string, string>): string {
   const meta = codeChip || channelChip || expiry || sourceEmailLink
     ? `<div style="margin-top:8px;">${codeChip}${channelChip}${expiry}${sourceEmailLink}</div>`
     : ''
+  const imageCell = imageUrl
+    ? `
+                <td class="deal-image" valign="top" width="76" style="vertical-align:top;width:76px;padding-right:12px;">
+                  <a href="${link}" style="text-decoration:none;">
+                    <img src="${imageUrl}" alt="${imageAlt}" width="64" height="64" style="display:block;width:64px;height:64px;object-fit:cover;border:1.5px solid ${INK};background:#fff;" />
+                  </a>
+                </td>`
+    : ''
 
   return `
             <table class="deal-row" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                <td class="deal-left" valign="top" style="vertical-align:top;padding-right:14px;width:64%;">
+                ${imageCell}
+                <td class="deal-left" valign="top" style="vertical-align:top;padding-right:14px;width:${imageUrl ? '54%' : '64%'};">
                   <a href="${link}" style="font-family:${FONT_TYPE};font-size:16px;line-height:1.45;color:${INK};text-decoration:none;">${description}</a>
                   ${meta}
                 </td>

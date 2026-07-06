@@ -65,6 +65,9 @@ export interface Deal {
   source_email_id: string | null
   source_email_link: string | null
   redemption_channel: DealRedemptionChannel | null
+  image_url: string | null
+  image_alt: string | null
+  image_expires_at: string | null
   last_seen_at: string | null
   is_manual: boolean
   created_at: string

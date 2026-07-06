@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
   }
 
   const SELECT =
-    'id, retailer, description, percent_off, deal_type, promo_code, expiration_date, original_link, affiliate_link, categories, keywords, redemption_channel, week_of, created_at, last_seen_at, source_email_link'
+    'id, retailer, description, percent_off, deal_type, promo_code, expiration_date, original_link, affiliate_link, categories, keywords, redemption_channel, week_of, created_at, last_seen_at, source_email_link, image_url, image_alt, image_expires_at'
 
   let query = supabase
     .from('deals')
@@ -174,10 +174,14 @@ export async function GET(request: NextRequest) {
     const priceTier = storeTierByRetailer[d.retailer] ?? storeTierByRetailer[retailerKey] ?? null
     const website = storeWebsiteByRetailer[d.retailer] ?? storeWebsiteByRetailer[retailerKey] ?? null
     const affiliateLink = d.affiliate_link?.includes('google.com/search') ? null : d.affiliate_link
+    const imageExpired = d.image_expires_at && new Date(d.image_expires_at).getTime() <= Date.now()
+    const imageFields = imageExpired
+      ? { image_url: null, image_alt: null, image_expires_at: null }
+      : {}
     if (!d.affiliate_link && d.original_link.includes('google.com/search')) {
-      if (website) return { ...d, affiliate_link: affiliateLink, original_link: website, store_website: website, price_tier: priceTier }
+      if (website) return { ...d, ...imageFields, affiliate_link: affiliateLink, original_link: website, store_website: website, price_tier: priceTier }
     }
-    return { ...d, affiliate_link: affiliateLink, store_website: website, price_tier: priceTier }
+    return { ...d, ...imageFields, affiliate_link: affiliateLink, store_website: website, price_tier: priceTier }
   })
 
   return NextResponse.json({ deals: enriched })
