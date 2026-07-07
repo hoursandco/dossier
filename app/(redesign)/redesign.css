@@ -292,6 +292,58 @@
    the negative margin was sized for the old stacked layout. */
 .dl-shell .hero-search-row .form-card { margin-top: 0; }
 .dl-shell .hero-search-row .form-section { padding-top: 20px; }
+
+.dl-shell .common-searches {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+}
+.dl-shell .common-searches-label {
+  margin: 0 1px 0 0;
+  font-family: "Stardos Stamp", sans-serif;
+  font-size: 9px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.dl-shell .common-searches-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dl-shell .common-search-tile {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px 3px;
+  border: 1.5px solid rgba(24,22,18,.55);
+  background: #fffbe6;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: "Special Elite", monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: none;
+  transition: border-color .12s, background-color .12s, color .12s;
+}
+.dl-shell .common-search-tile:hover {
+  border-color: var(--ink);
+  background: #fff8e2;
+}
+.dl-shell .common-search-tile:active {
+  background: #f7edca;
+}
+.dl-shell .common-search-tile[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff8e2;
+}
+
 @media (max-width: 880px) {
   .dl-shell .hero-search-row {
     display: flex;

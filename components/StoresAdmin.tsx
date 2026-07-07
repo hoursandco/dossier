@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { groupCategories } from '@/lib/categoryGroups'
 
 interface Store {
   id: string
@@ -96,12 +95,11 @@ export function StoresAdmin() {
       .catch(() => {})
   }, [loadStores])
 
-  // One picker over the whole canonical taxonomy: editorial Collections
-  // render as their own group (group_name='Collections'), content
-  // categories under their content groups. All of it writes to
-  // stores.categories.
-  const groupedCategories = useMemo(
-    () => groupCategories(allCategories),
+  const sortedCategories = useMemo(
+    () => [...allCategories].sort((a, b) => {
+      const labelComparison = a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
+      return labelComparison || a.slug.localeCompare(b.slug, undefined, { sensitivity: 'base' })
+    }),
     [allCategories]
   )
 
@@ -358,7 +356,7 @@ export function StoresAdmin() {
             <StoreForm
               draft={draft}
               setDraft={setDraft}
-              groupedCategories={groupedCategories}
+              categories={sortedCategories}
               toggleCategory={toggleCategory}
               onSave={save}
               onCancel={cancelEdit}
@@ -533,7 +531,7 @@ function SortableHeader({
 function StoreForm({
   draft,
   setDraft,
-  groupedCategories,
+  categories,
   toggleCategory,
   onSave,
   onCancel,
@@ -542,7 +540,7 @@ function StoreForm({
 }: {
   draft: StoreDraft
   setDraft: (updater: (prev: StoreDraft) => StoreDraft) => void
-  groupedCategories: ReturnType<typeof groupCategories>
+  categories: Category[]
   toggleCategory: (slug: string) => void
   onSave: () => void
   onCancel: () => void
@@ -590,7 +588,7 @@ function StoreForm({
       {/* Categories — editorial Collections + canonical content taxonomy */}
       <div style={{ marginBottom: 16 }}>
         <div className="t-meta" style={{ marginBottom: 6 }}>
-          Categories — editorial collections plus what the brand sells
+          Categories — alphabetical
         </div>
         <div
           style={{
@@ -601,57 +599,37 @@ function StoreForm({
             background: 'var(--bone, var(--paper))',
           }}
         >
-          {groupedCategories.map((group) => (
-            <div key={group.name} style={{ marginBottom: 12 }}>
-              <div
-                className="t-meta"
-                style={{
-                  padding: '4px 4px 6px',
-                  color: 'var(--olive-deep)',
-                  letterSpacing: '0.08em',
-                  fontSize: 10.5,
-                  textTransform: 'uppercase',
-                  position: 'sticky',
-                  top: 0,
-                  background: 'var(--bone, var(--paper))',
-                  zIndex: 1,
-                }}
-              >
-                {group.name}
-              </div>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-                  gap: 4,
-                }}
-              >
-                {group.items.map((c) => {
-                  const on = (draft.categories ?? []).includes(c.slug)
-                  return (
-                    <button
-                      key={c.slug}
-                      type="button"
-                      onClick={() => toggleCategory(c.slug)}
-                      style={{
-                        textAlign: 'left',
-                        padding: '6px 10px',
-                        border: `1.5px solid ${on ? 'var(--ink)' : 'var(--ink-15)'}`,
-                        background: on ? 'var(--ink)' : 'transparent',
-                        color: on ? 'var(--paper)' : 'var(--ink)',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: 12,
-                        transition: 'all .12s',
-                      }}
-                    >
-                      {on ? '✓ ' : '+ '}{c.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+              gap: 4,
+            }}
+          >
+            {categories.map((c) => {
+              const on = (draft.categories ?? []).includes(c.slug)
+              return (
+                <button
+                  key={c.slug}
+                  type="button"
+                  onClick={() => toggleCategory(c.slug)}
+                  style={{
+                    textAlign: 'left',
+                    padding: '6px 10px',
+                    border: `1.5px solid ${on ? 'var(--ink)' : 'var(--ink-15)'}`,
+                    background: on ? 'var(--ink)' : 'transparent',
+                    color: on ? 'var(--paper)' : 'var(--ink)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: 12,
+                    transition: 'all .12s',
+                  }}
+                >
+                  {on ? '✓ ' : '+ '}{c.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 

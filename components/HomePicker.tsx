@@ -38,6 +38,15 @@ type DealResult = {
   price_tier: string | null
 }
 
+const COMMON_SEARCHES = [
+  { label: 'Lulu and Georgia', term: 'Lulu and Georgia', type: 'brand' },
+  { label: 'Shoes', term: 'shoes', type: 'keyword' },
+  { label: 'Skincare', term: 'skincare', type: 'keyword' },
+  { label: 'Gap', term: 'Gap', type: 'brand' },
+  { label: 'Manolo Blahnik', term: 'Manolo Blahnik', type: 'brand' },
+  { label: 'Ethan Allen', term: 'Ethan Allen', type: 'brand' },
+] as const
+
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -237,6 +246,18 @@ export function HomePicker() {
       runSearch(next)
       return next
     })
+  }, [activeKeywords, runSearch])
+
+  const handleCommonSearch = useCallback((search: (typeof COMMON_SEARCHES)[number]) => {
+    setShowSuggestions(false)
+    setKeywordInput('')
+    if (search.type === 'brand') {
+      brandKeywordsRef.current.add(search.term)
+    }
+    if (activeKeywords.includes(search.term)) return
+    const next = [...activeKeywords, search.term]
+    setActiveKeywords(next)
+    runSearch(next)
   }, [activeKeywords, runSearch])
 
   const storeCount = pickedStores.length
@@ -540,6 +561,23 @@ export function HomePicker() {
                       opacity: 1,
                     }}
                   >{tier}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="common-searches" aria-label="Suggested searches">
+              <span className="common-searches-label">Try:</span>
+              <div className="common-searches-grid">
+                {COMMON_SEARCHES.map((search) => (
+                  <button
+                    key={search.term}
+                    type="button"
+                    className="common-search-tile"
+                    onClick={() => handleCommonSearch(search)}
+                    aria-pressed={activeKeywords.includes(search.term)}
+                  >
+                    {search.label}
+                  </button>
                 ))}
               </div>
             </div>
