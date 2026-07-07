@@ -53,6 +53,66 @@ describe('Admin gate', () => {
   })
 })
 
+describe('GET /api/admin/ingest-audit', () => {
+  it('marks stale running ingest runs timed_out before loading audit rows', async () => {
+    vi.stubEnv('ADMIN_EMAIL', 'admin@example.com')
+    const { service } = await mockSupabase(
+      { email: 'admin@example.com' },
+      {
+        ingest_runs: [
+          { data: null, error: null },
+          {
+            data: [
+              {
+                id: 'run_1',
+                mode: 'backfill',
+                lookback_hours: 24,
+                requested_limit: 20,
+                reprocess: false,
+                started_at: '2026-07-07T14:07:00.000Z',
+                completed_at: '2026-07-07T14:13:00.000Z',
+                emails_fetched: 20,
+                emails_selected: 20,
+                emails_deferred: 0,
+                deals_extracted: 0,
+                deals_inserted: 0,
+                status: 'timed_out',
+                error: 'Marked stale while loading ingest audit',
+              },
+            ],
+            error: null,
+          },
+        ],
+        ingest_email_audit: { data: [], error: null },
+        ingest_deal_candidates: { data: [], error: null },
+      },
+    )
+    const { GET } = await import('@/app/api/admin/ingest-audit/route')
+
+    const res = await GET({
+      nextUrl: new URL('http://localhost/api/admin/ingest-audit'),
+    } as never)
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      run_id: 'run_1',
+      emails: [],
+      candidates: [],
+    })
+    expect(service.queries.ingest_runs[0].update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'timed_out',
+        error: 'Marked stale while loading ingest audit',
+      }),
+    )
+    expect(service.queries.ingest_runs[0].eq).toHaveBeenCalledWith('status', 'running')
+    expect(service.queries.ingest_runs[0].lt).toHaveBeenCalledWith(
+      'started_at',
+      expect.any(String),
+    )
+  })
+})
+
 describe('POST /api/admin/respond-suggestion', () => {
   it('returns 401 when not authenticated', async () => {
     vi.stubEnv('ADMIN_EMAIL', 'admin@example.com')

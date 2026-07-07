@@ -33,6 +33,7 @@ export function makeQuery<T = unknown>(result: QueryResult<T>) {
     'eq',
     'neq',
     'gte',
+    'lt',
     'order',
     'range',
     'limit',

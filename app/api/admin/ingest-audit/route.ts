@@ -4,6 +4,11 @@ import { isAdminEmail } from '@/lib/admin'
 
 export const dynamic = 'force-dynamic'
 
+const INGEST_AUDIT_STALE_RUN_MS = Math.max(
+  5 * 60 * 1000,
+  Number(process.env.INGEST_STALE_RUN_MS) || 5.5 * 60 * 1000,
+)
+
 export async function GET(request: NextRequest) {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
@@ -15,6 +20,17 @@ export async function GET(request: NextRequest) {
   const requestedRunId = request.nextUrl.searchParams.get('run_id')
   const outcome = request.nextUrl.searchParams.get('outcome')
   const decision = request.nextUrl.searchParams.get('decision')
+  const staleStartedBefore = new Date(Date.now() - INGEST_AUDIT_STALE_RUN_MS).toISOString()
+
+  await db
+    .from('ingest_runs')
+    .update({
+      status: 'timed_out',
+      completed_at: new Date().toISOString(),
+      error: 'Marked stale while loading ingest audit',
+    })
+    .eq('status', 'running')
+    .lt('started_at', staleStartedBefore)
 
   const { data: runs, error: runsError } = await db
     .from('ingest_runs')

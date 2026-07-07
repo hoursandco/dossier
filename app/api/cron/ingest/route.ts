@@ -41,6 +41,7 @@ import {
 export const dynamic = 'force-dynamic'
 
 export const maxDuration = 300 // 5 minute max
+const INGEST_MAX_DURATION_MS = maxDuration * 1000
 
 // Extract display name from "Store Name <email@domain.com>" format
 function parseSenderName(from: string): string {
@@ -106,8 +107,16 @@ const INGEST_BACKFILL_MAX_PER_RUN = Math.max(
 )
 
 const INGEST_STALE_RUN_MS = Math.max(
-  5 * 60 * 1000,
-  Number(process.env.INGEST_STALE_RUN_MS) || 12 * 60 * 1000,
+  INGEST_MAX_DURATION_MS + 30 * 1000,
+  Number(process.env.INGEST_STALE_RUN_MS) || INGEST_MAX_DURATION_MS + 30 * 1000,
+)
+
+const INGEST_GRACEFUL_STOP_MS = Math.max(
+  60 * 1000,
+  Math.min(
+    INGEST_MAX_DURATION_MS - 30 * 1000,
+    Number(process.env.INGEST_GRACEFUL_STOP_MS) || INGEST_MAX_DURATION_MS - 90 * 1000,
+  ),
 )
 
 const INGEST_MAX_EMAIL_AGE_DAYS = Math.max(
@@ -374,6 +383,8 @@ export async function GET(request: NextRequest) {
   let auditRunId: string | null = null
   let apiCreditExhausted = false
   let rateLimitPauseUntil = 0
+  let gracefulDeadlineReached = false
+  const runStartedAtMs = Date.now()
 
   try {
     const staleStartedBefore = new Date(Date.now() - INGEST_STALE_RUN_MS).toISOString()
@@ -1315,7 +1326,9 @@ export async function GET(request: NextRequest) {
     // up the next email as soon as their current one finishes, eliminating
     // the head-of-line blocking of the previous batched approach.
     const tProcessStart = Date.now()
+    let emailWorkStarted = 0
     await runWithConcurrency(newEmails, effectiveConcurrency, async (email) => {
+      emailWorkStarted++
       try {
         await processEmail(email)
       } catch (err) {
@@ -1346,12 +1359,21 @@ export async function GET(request: NextRequest) {
         }
       }
     }, {
-      shouldAbort: () => apiCreditExhausted,
+      shouldAbort: () => {
+        if (apiCreditExhausted) return true
+        if (Date.now() - runStartedAtMs < INGEST_GRACEFUL_STOP_MS) return false
+        gracefulDeadlineReached = true
+        return true
+      },
       getPauseUntil: () => rateLimitPauseUntil,
     })
+    const deadlineDeferred = gracefulDeadlineReached
+      ? Math.max(0, newEmails.length - emailWorkStarted)
+      : 0
     console.log(
-      `[ingest] processed ${newEmails.length} emails in ${Date.now() - tProcessStart}ms ` +
-        `(${emailsWithDeals} with deals, ${emailsWithNoDeals} empty, ${newDeals} new deals)`
+      `[ingest] processed ${emailWorkStarted} of ${newEmails.length} emails in ${Date.now() - tProcessStart}ms ` +
+        `(${emailsWithDeals} with deals, ${emailsWithNoDeals} empty, ${newDeals} new deals` +
+        (deadlineDeferred > 0 ? `, ${deadlineDeferred} deferred before timeout)` : ')')
     )
 
     if (apiCreditExhausted) {
@@ -1403,8 +1425,8 @@ export async function GET(request: NextRequest) {
 
     const response: Record<string, unknown> = {
       emails_fetched: emails.length,
-      emails_processed: newEmails.length,
-      emails_deferred: deferred,
+      emails_processed: emailWorkStarted,
+      emails_deferred: deferred + deadlineDeferred,
       emails_with_deals: emailsWithDeals,
       emails_with_no_deals: emailsWithNoDeals,
       emails_skipped_stale: emailsSkippedStale,
@@ -1417,7 +1439,7 @@ export async function GET(request: NextRequest) {
       concurrency: effectiveConcurrency,
       reprocess,
       offset: selectedOffset,
-      next_offset: deferred > 0 ? selectedOffset + newEmails.length : null,
+      next_offset: deferred + deadlineDeferred > 0 ? selectedOffset + emailWorkStarted : null,
       audit_run_id: auditRunId,
       cursor: {
         last_uid: !forceDateWindow && processedUids.length > 0
@@ -1440,8 +1462,21 @@ export async function GET(request: NextRequest) {
           completed_at: new Date().toISOString(),
           deals_extracted: extractedCandidates,
           deals_inserted: dryRun ? 0 : newDeals,
-          status: apiCreditExhausted ? 'credit_exhausted' : failedUids.length > 0 ? 'completed_with_errors' : 'completed',
-          error: apiCreditExhausted ? 'Primary extraction provider API credits exhausted' : failedUids.length > 0 ? `${failedUids.length} email(s) failed` : null,
+          emails_deferred: deferred + deadlineDeferred,
+          status: apiCreditExhausted
+            ? 'credit_exhausted'
+            : failedUids.length > 0
+              ? 'completed_with_errors'
+              : deadlineDeferred > 0
+                ? 'completed_with_deferred'
+                : 'completed',
+          error: apiCreditExhausted
+            ? 'Primary extraction provider API credits exhausted'
+            : failedUids.length > 0
+              ? `${failedUids.length} email(s) failed`
+              : deadlineDeferred > 0
+                ? `Stopped before function timeout; ${deadlineDeferred} email(s) deferred`
+                : null,
         })
         .eq('id', auditRunId)
     }
