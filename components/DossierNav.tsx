@@ -64,7 +64,7 @@ export function DossierNav({
     <nav className="nav">
       <a className="brand" href="/">
         <span className="brand-badge">DEAL DOSSIER</span>
-        <span className="brand-sub">Today&rsquo;s sales, on demand.</span>
+        <span className="brand-sub">Pull every live sale.</span>
       </a>
       {(isAdmin || !signedIn) && (
         <div className="nav-links">

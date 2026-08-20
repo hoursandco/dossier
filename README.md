@@ -76,7 +76,7 @@ To test the cron jobs locally, call the endpoints directly with your `CRON_SECRE
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/ingest
 curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/process-extraction-jobs
-curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/send
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/weekly
 ```
 
 ---
@@ -91,7 +91,8 @@ Vercel auto-detects Next.js. Set all environment variables in the Vercel dashboa
 {
   "crons": [
     { "path": "/api/cron/ingest", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/send",   "schedule": "0 9 * * *" }
+    { "path": "/api/cron/weekly", "schedule": "0 13 * * 4" },
+    { "path": "/api/cron/process-extraction-jobs", "schedule": "0 14 * * *" }
   ]
 }
 ```
@@ -158,7 +159,7 @@ Vercel calls each cron path with a signed `Authorization: Bearer <token>` header
 | POST | `/api/billing/webhook` | Stripe signature | Sync subscription state from Stripe events |
 | GET | `/api/cron/ingest` | Cron secret | Scan Gmail, extract deals, store edition |
 | GET | `/api/cron/process-extraction-jobs` | Cron secret | Process queued OpenRouter shadow extraction jobs |
-| GET | `/api/cron/send` | Cron secret | Send personalized newsletters for today's send day |
+| GET | `/api/cron/weekly` | Cron secret | Send weekly watchlist emails and setup nudges |
 
 ---
 
@@ -167,8 +168,8 @@ Vercel calls each cron path with a signed `Authorization: Bearer <token>` header
 | Endpoint | Schedule | Purpose | Requires |
 |----------|----------|---------|----------|
 | `/api/cron/ingest` | Daily 07:00 UTC | Fetch promotional emails from Gmail, extract deals with Gemini, upsert deals and edition metadata | Gmail OAuth2, Gemini |
-| `/api/cron/process-extraction-jobs` | Every 5-15 minutes | Claim due OpenRouter shadow jobs, process snapshots, and retry transient failures | Supabase, OpenRouter |
-| `/api/cron/send` | Daily 09:00 UTC | Find subscribers whose send day matches today, filter and rank deals per preferences, send personalized HTML email | Resend, Supabase |
+| `/api/cron/process-extraction-jobs` | Daily 14:00 UTC | Claim due OpenRouter shadow jobs, process snapshots, and retry transient failures | Supabase, OpenRouter |
+| `/api/cron/weekly` | Weekly Thursday 13:00 UTC | Send watchlist emails or setup nudges to active subscribers with weekly email enabled | Resend, Supabase |
 
 ---
 

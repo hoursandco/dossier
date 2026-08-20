@@ -1,16 +1,16 @@
 {
   "crons": [
     {
+      "path": "/api/cron/ingest",
+      "schedule": "0 7 * * *"
+    },
+    {
       "path": "/api/cron/weekly",
       "schedule": "0 13 * * 4"
     },
     {
       "path": "/api/cron/process-extraction-jobs",
       "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron/cleanup-deal-images",
-      "schedule": "30 14 * * *"
     }
   ]
 }

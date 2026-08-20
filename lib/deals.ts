@@ -50,6 +50,18 @@ const DEAL_RANK_SCORE = (deal: Deal): number => {
   return 30
 }
 
+function normalizeDealKeyPart(value: string | null | undefined): string {
+  return (value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function normalizePromoCode(value: string | null | undefined): string {
+  return (value ?? '').trim().toUpperCase()
+}
+
+function normalizeDescriptionSnippet(value: string | null | undefined): string {
+  return normalizeDealKeyPart(value).slice(0, 50)
+}
+
 // Build a dedup key for a deal.
 // When a deal has no percent_off AND no promo_code, it's product-specific
 // (e.g. H-E-B "Buy X get Y free" items). Use a description snippet so each
@@ -62,13 +74,65 @@ export function makeDealKey(deal: { retailer: string; deal_type: string; percent
   }
   if (deal.percent_off == null && !deal.promo_code) {
     // Product-specific deal — use normalized description snippet as tiebreaker
-    const snippet = (deal.description ?? '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '')
-      .slice(0, 50)
+    const snippet = normalizeDescriptionSnippet(deal.description)
     return `${deal.retailer}||${deal.deal_type}||desc:${snippet}`
   }
   return `${deal.retailer}||${deal.deal_type}||${deal.percent_off ?? 'null'}`
+}
+
+export type DedupableDeal = Pick<
+  Deal,
+  'retailer' | 'deal_type' | 'percent_off' | 'promo_code' | 'description'
+> & Partial<Pick<Deal, 'created_at' | 'last_seen_at'>>
+
+const NO_QUANTIFIER_DEAL_TYPES = new Set<string>([
+  'free-shipping',
+  'free-item',
+  'flash-sale',
+  'bogo-free',
+  'bogo-half',
+  'loyalty',
+  'stackable',
+])
+
+// Reader-facing duplicate key. This intentionally collapses near-identical
+// extracted rows whose descriptions differ only in wording ("and" vs "&") or
+// repeated email copy. Use this for display surfaces and recent-pool ranking.
+export function makeDisplayDealKey(deal: DedupableDeal): string {
+  const retailer = normalizeDealKeyPart(deal.retailer)
+  const type = deal.deal_type ?? 'unknown'
+  const pct = deal.percent_off ?? 0
+  const code = normalizePromoCode(deal.promo_code)
+
+  if (type === 'amount-off') {
+    return `${retailer}::${type}::${normalizeDescriptionSnippet(deal.description)}::${code}`
+  }
+
+  if (NO_QUANTIFIER_DEAL_TYPES.has(type)) {
+    return `${retailer}::${type}::${code}`
+  }
+
+  return `${retailer}::${type}::${pct}::${code}`
+}
+
+function dealRecencyMs(deal: Partial<Pick<Deal, 'last_seen_at' | 'created_at'>>): number {
+  const raw = deal.last_seen_at ?? deal.created_at
+  if (!raw) return 0
+  const time = new Date(raw).getTime()
+  return Number.isFinite(time) ? time : 0
+}
+
+export function dedupeDealsForDisplay<T extends DedupableDeal>(deals: T[]): T[] {
+  const sorted = [...deals].sort((a, b) => dealRecencyMs(b) - dealRecencyMs(a))
+  const seen = new Set<string>()
+  const out: T[] = []
+  for (const deal of sorted) {
+    const key = makeDisplayDealKey(deal)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(deal)
+  }
+  return out
 }
 
 export interface DuplicateDealMetadata {
@@ -138,7 +202,7 @@ export function buildDuplicateDealRefresh(
 function dedupeDeals(deals: Deal[]): Deal[] {
   const seen = new Map<string, Deal>()
   for (const deal of deals) {
-    const key = makeDealKey(deal)
+    const key = makeDisplayDealKey(deal)
     const existing = seen.get(key)
     if (!existing || DEAL_RANK_SCORE(deal) > DEAL_RANK_SCORE(existing)) {
       seen.set(key, deal)

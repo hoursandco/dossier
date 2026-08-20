@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildDuplicateDealRefresh,
+  dedupeDealsForDisplay,
   mergeSubtypeIntoKeywords,
   rankDeals,
   filterDealsForSubscriber,
@@ -70,6 +71,65 @@ describe('rankDeals', () => {
     const original = [...deals]
     rankDeals(deals)
     expect(deals[0].percent_off).toBe(original[0].percent_off)
+  })
+
+  it('collapses repeated free-shipping deals with minor wording drift', () => {
+    const ranked = rankDeals([
+      makeDeal({
+        id: 'old',
+        retailer: 'Burberry',
+        deal_type: 'free-shipping',
+        percent_off: null,
+        description: 'Free Shipping & Returns on all orders.',
+        created_at: '2026-07-07T12:00:00Z',
+      }),
+      makeDeal({
+        id: 'new',
+        retailer: 'Burberry',
+        deal_type: 'free-shipping',
+        percent_off: null,
+        description: 'Free Shipping and Returns on all orders.',
+        created_at: '2026-07-09T12:00:00Z',
+      }),
+    ])
+
+    expect(ranked).toHaveLength(1)
+    expect(ranked[0].retailer).toBe('Burberry')
+  })
+})
+
+describe('dedupeDealsForDisplay', () => {
+  it('keeps one card for repeated same-percent retailer deals', () => {
+    const deduped = dedupeDealsForDisplay([
+      makeDeal({
+        id: 'old',
+        retailer: 'Credo Beauty',
+        percent_off: 10,
+        deal_type: 'percent-off',
+        description: '10% off high-performing safer products.',
+        last_seen_at: '2026-07-07T12:00:00Z',
+      }),
+      makeDeal({
+        id: 'new',
+        retailer: 'Credo Beauty',
+        percent_off: 10,
+        deal_type: 'percent-off',
+        description: '10% off high-performing safer products.',
+        last_seen_at: '2026-07-09T12:00:00Z',
+      }),
+    ])
+
+    expect(deduped).toHaveLength(1)
+    expect(deduped[0].id).toBe('new')
+  })
+
+  it('keeps distinct coupon codes from the same retailer', () => {
+    const deduped = dedupeDealsForDisplay([
+      makeDeal({ id: 'save30', retailer: 'J.Crew', percent_off: 30, promo_code: 'SAVE30' }),
+      makeDeal({ id: 'app30', retailer: 'J.Crew', percent_off: 30, promo_code: 'APP30' }),
+    ])
+
+    expect(deduped).toHaveLength(2)
   })
 })
 

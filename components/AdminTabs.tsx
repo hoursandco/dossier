@@ -53,44 +53,49 @@ export function AdminTabs({ tabs }: { tabs: AdminTabConfig[] }) {
     <>
       {/* ── Tab strip ──────────────────────────────────────────────── */}
       <div
+        className="admin-tabs"
         role="tablist"
         style={{
           display: 'flex',
-          gap: 2,
+          gap: 0,
           marginTop: 32,
           marginBottom: 28,
-          borderBottom: '2px solid var(--ink, #181612)',
-          flexWrap: 'wrap',
+          borderBottom: '1px solid var(--ink, #181612)',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
         }}
       >
         {tabs.map((t) => {
           const isActive = t.id === active
           return (
             <button
+              className="admin-tab"
               key={t.id}
               role="tab"
               aria-selected={isActive}
               type="button"
               onClick={() => goTo(t.id)}
               style={{
-                fontFamily: "'Stardos Stamp', 'Courier New', monospace",
-                fontSize: 12,
-                letterSpacing: '.18em',
-                textTransform: 'uppercase',
-                padding: '12px 18px 10px',
-                background: isActive ? 'var(--ink, #181612)' : 'transparent',
-                color: isActive ? 'var(--bone, #fff5d4)' : 'var(--ink-55, #6b6353)',
-                border: '2px solid var(--ink, #181612)',
-                borderBottom: 'none',
+                fontFamily: 'var(--mono)',
+                fontSize: 11.5,
+                letterSpacing: 0,
+                textTransform: 'none',
+                padding: '11px 14px',
+                background: 'transparent',
+                color: isActive ? 'var(--ink)' : 'var(--ink-55)',
+                border: 'none',
+                borderBottom: isActive ? '2px solid var(--ink)' : '2px solid transparent',
                 cursor: 'pointer',
-                marginBottom: '-2px',
+                marginBottom: '-1px',
                 transition: 'background .12s, color .12s',
                 position: 'relative',
+                whiteSpace: 'nowrap',
               }}
             >
               {t.label}
               {t.badge != null && t.badge !== '' && t.badge !== 0 && (
                 <span
+                  className="admin-tab-badge"
                   style={{
                     marginLeft: 8,
                     background: isActive ? 'var(--red, #d4322a)' : 'var(--red, #d4322a)',

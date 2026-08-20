@@ -3,8 +3,7 @@
 // + headline (with red-em treatment on the last word) + body. Text
 // only; the design system carries the visual identity.
 
-import { DossierNav } from '@/components/DossierNav'
-import { DlFooter } from '@/components/DlFooter'
+import { LegalLedger } from '@/components/LegalLedger'
 
 export const metadata = {
   title: 'Terms of Service — Deal Dossier',
@@ -68,78 +67,12 @@ const SECTIONS: Array<{ title: string; body: string }> = [
 
 export default function TermsPage() {
   return (
-    <>
-      <DossierNav />
-
-      <section className="page-head light">
-        <div className="page-head-inner">
-          <p className="page-kicker">— Legal —</p>
-          <h1 className="page-title">Terms of <em>service.</em></h1>
-          <p className="page-sub" style={{ marginBottom: 12 }}>
-            The rules of the road. Plain English, no surprises — what we promise, what we don&rsquo;t, and what each side is on the hook for.
-          </p>
-          <p style={{ fontFamily: "'Stardos Stamp', sans-serif", fontSize: 11, letterSpacing: '.25em', textTransform: 'uppercase', color: 'var(--ink-soft)', margin: 0 }}>
-            Last Updated · May 2026
-          </p>
-        </div>
-      </section>
-
-      <section className="form-section" style={{ padding: '64px 28px 80px' }}>
-        <div className="form-wrap-narrow" style={{ maxWidth: 760 }}>
-          {SECTIONS.map((s, i) => {
-            const num = String(i + 1).padStart(2, '0')
-            const parts = s.title.split(' ')
-            const lastWord = parts.pop() ?? s.title
-            const beforeLast = parts.join(' ')
-            return (
-              <article key={s.title} style={{ marginBottom: 48 }}>
-                <p className="form-step" style={{ margin: '0 0 8px' }}>
-                  — Section {num} —
-                </p>
-                <h2
-                  style={{
-                    fontFamily: "'Alfa Slab One', serif",
-                    fontWeight: 400,
-                    fontSize: 28,
-                    letterSpacing: '.04em',
-                    margin: '0 0 18px',
-                    lineHeight: 1.05,
-                    color: 'var(--ink)',
-                  }}
-                >
-                  {beforeLast ? `${beforeLast} ` : ''}
-                  <span
-                    style={{
-                      fontFamily: "'Alfa Slab One', serif",
-                      color: 'var(--ink)',
-                      textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)',
-                      padding: '0 .04em',
-                    }}
-                  >
-                    {lastWord}.
-                  </span>
-                </h2>
-                <p
-                  style={{
-                    fontFamily: "'Special Elite', monospace",
-                    fontSize: 15,
-                    lineHeight: 1.7,
-                    color: 'var(--ink-soft)',
-                    margin: 0,
-                  }}
-                >
-                  {s.body}
-                </p>
-                {i < SECTIONS.length - 1 && (
-                  <hr style={{ border: 0, borderTop: '2px dashed var(--ink)', margin: '40px 0 0' }} />
-                )}
-              </article>
-            )
-          })}
-        </div>
-      </section>
-
-      <DlFooter />
-    </>
+    <LegalLedger
+      eyebrow="Legal · Terms"
+      title="Terms of service."
+      summary="The rules of the road. Plain English, no surprises — what we promise, what we don’t, and what each side is on the hook for."
+      updated="May 2026"
+      sections={SECTIONS}
+    />
   )
 }

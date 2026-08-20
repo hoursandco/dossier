@@ -22,7 +22,8 @@ import {
   generateEmptyWatchlistNudgeEmail,
   type WatchSection,
 } from '@/lib/watchlistEmailGenerator'
-import { rankDeals, isJunkDeal } from '@/lib/deals'
+import { rankDeals, isJunkDeal, dedupeDealsForDisplay } from '@/lib/deals'
+import { isBlockedRetailer } from '@/lib/blockedRetailers'
 import { dealMatchesSearchTerm } from '@/lib/dealSearch'
 import { fetchStoreData } from '@/lib/stores'
 import {
@@ -55,62 +56,6 @@ interface WatchRow {
 // so "J.Crew" / "J. Crew" / "JCrew" all collapse to the same key.
 function normName(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '')
-}
-
-// Dedup key for the send-time collapse below. Gemini is more verbose
-// than gpt-4o-mini and will happily extract every mention of a
-// free-shipping offer as a separate "deal" (FP Movement standard
-// shipping, FP app express shipping, FP Movement standard shipping
-// "limited time"…). Those are the same promotion to a reader, so
-// collapse them. The key intentionally ignores description — that's
-// what was causing the dupes to slip past makeDealKey's hashing.
-//
-// We DO keep percent_off and promo_code in the key so a 30%-off coupon
-// and a 50%-off coupon at the same retailer remain distinct, and so
-// two percent-off deals with different codes (e.g. SAVE30 vs APP30)
-// both show up.
-function dedupKey(d: Deal): string {
-  const retailer = normName(d.retailer ?? '')
-  const type = d.deal_type ?? 'unknown'
-  const pct = d.percent_off ?? 0
-  const code = (d.promo_code ?? '').trim().toUpperCase()
-  if (type === 'amount-off') {
-    const snippet = (d.description ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 50)
-    return `${retailer}::${type}::${snippet}::${code}`
-  }
-  // For "no-quantifier" types like free-shipping, free-item, flash-sale,
-  // bogo-*, loyalty: there's nothing meaningful to distinguish two
-  // deals with the same retailer + type beyond the promo code, so they
-  // collapse aggressively. Percent-based types keep percent in the key.
-  const noQuantifier = new Set([
-    'free-shipping', 'free-item', 'flash-sale',
-    'bogo-free', 'bogo-half', 'loyalty', 'stackable',
-  ])
-  if (noQuantifier.has(type)) {
-    return `${retailer}::${type}::${code}`
-  }
-  return `${retailer}::${type}::${pct}::${code}`
-}
-
-// Collapse near-duplicate deals: keep the newest per dedup key.
-// Applied once to the pool so every per-watch section sees the
-// deduped set.
-function dedupeDeals(deals: Deal[]): Deal[] {
-  // Sort newest-first so the first occurrence we keep is the freshest.
-  const sorted = [...deals].sort((a, b) => {
-    const at = a.created_at ? new Date(a.created_at).getTime() : 0
-    const bt = b.created_at ? new Date(b.created_at).getTime() : 0
-    return bt - at
-  })
-  const seen = new Set<string>()
-  const out: Deal[] = []
-  for (const d of sorted) {
-    const k = dedupKey(d)
-    if (seen.has(k)) continue
-    seen.add(k)
-    out.push(d)
-  }
-  return out
 }
 
 // Deal types that survive the min_discount_pct filter regardless of
@@ -283,8 +228,10 @@ export async function sendWatchlistEmailForSubscriber(
   // Dedupe across the WHOLE pool — keep suppressed deals in scope so
   // we can pluck them out for the compact-list opt-ins. Main per-watch
   // sections then filter suppressed types back out.
-  const dedupedDeals = dedupeDeals(
-    (dealRows ?? []).filter((d): d is Deal => !isJunkDeal(d as Deal))
+  const dedupedDeals = dedupeDealsForDisplay(
+    (dealRows ?? []).filter(
+      (d): d is Deal => !isBlockedRetailer(d.retailer) && !isJunkDeal(d as Deal),
+    )
   )
 
   const { storeTiers, storeUrls, storeSpendTiers } = await fetchStoreData(appUrl)

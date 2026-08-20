@@ -230,4 +230,27 @@ describe('GET /api/deals/search', () => {
 
     await expect(response.json()).resolves.toMatchObject({ deals: [{ id: 'deal-altra' }] })
   })
+
+  it('treats an exact store name typed into the keyword search as a retailer search', async () => {
+    const gapDeal = {
+      ...recentDeals[0],
+      id: 'deal-gap',
+      retailer: 'Gap',
+      description: 'Save 40% on summer styles.',
+      keywords: ['summer styles'],
+    }
+    await mockSupabase(null, {
+      keywords: [{ data: [], error: null }],
+      categories: [{ data: [], error: null }],
+      stores: [
+        { data: [{ name: 'Gap', website: 'https://gap.com', price_tier: '$$' }], error: null },
+      ],
+      deals: { data: [gapDeal], error: null },
+    })
+    const { GET } = await import('@/app/api/deals/search/route')
+
+    const response = await GET(new NextRequest('http://localhost/api/deals/search?keyword=Gap'))
+
+    await expect(response.json()).resolves.toMatchObject({ deals: [{ id: 'deal-gap' }] })
+  })
 })

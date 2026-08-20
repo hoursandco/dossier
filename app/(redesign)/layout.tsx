@@ -25,7 +25,7 @@ export default function RedesignLayout({ children }: { children: React.ReactNode
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Stardos+Stamp:wght@400;700&family=Special+Elite&family=IM+Fell+English:ital@0;1&family=Bigshot+One&family=Bungee&family=Smokum&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Stardos+Stamp:wght@400;700&family=Special+Elite&family=IM+Fell+English:ital@0;1&family=Bigshot+One&family=Bungee&family=Smokum&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
       />
       <div className="dl-shell">
         <div className="dl-grain" aria-hidden="true" />

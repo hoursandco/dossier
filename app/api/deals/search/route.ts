@@ -14,6 +14,8 @@ import {
   expandItemSearchTerms,
   type ItemKeywordReview,
 } from '@/lib/itemCuration'
+import { dedupeDealsForDisplay } from '@/lib/deals'
+import { isBlockedRetailer } from '@/lib/blockedRetailers'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +30,7 @@ export async function GET(request: NextRequest) {
   const keywordsParam = request.nextUrl.searchParams.get('keywords')?.trim() ?? ''
   const keywordParam  = request.nextUrl.searchParams.get('keyword')?.trim() ?? ''
   const retailer      = request.nextUrl.searchParams.get('retailer')?.trim() ?? ''
+  const all           = request.nextUrl.searchParams.get('all') === '1'
 
   const rawKeywords = keywordsParam
     ? keywordsParam.split(',').map((k) => k.trim().toLowerCase()).filter(Boolean)
@@ -37,11 +40,22 @@ export async function GET(request: NextRequest) {
 
   let keywords = Array.from(new Set(rawKeywords))
 
-  if (keywords.length === 0 && !retailer) {
+  if (keywords.length === 0 && !retailer && !all) {
     return NextResponse.json({ deals: [] })
   }
 
   const supabase = createServiceClient()
+
+  let directory: RelationshipStore[] = []
+  if (retailer) {
+    const { data: directoryRows } = await supabase
+      .from('stores')
+      .select('id, name, parent_store_id, alias_of_store_id')
+      .eq('status', 'active')
+      .eq('is_active', true)
+      .limit(5000)
+    directory = (directoryRows ?? []) as RelationshipStore[]
+  }
 
   if (keywords.length > 0) {
     // Keyword curation lives on the keywords vocabulary table itself
@@ -78,13 +92,6 @@ export async function GET(request: NextRequest) {
   let retailerNames = retailer ? brandNamesIncludingAliases([retailer]) : []
 
   if (retailer) {
-    const { data: directoryRows } = await supabase
-      .from('stores')
-      .select('id, name, parent_store_id, alias_of_store_id')
-      .eq('status', 'active')
-      .eq('is_active', true)
-      .limit(5000)
-    const directory = (directoryRows ?? []) as RelationshipStore[]
     const targetStore = directory.find(
       (store) => normalizeRetailerName(store.name) === normalizeRetailerName(retailer),
     )
@@ -94,7 +101,7 @@ export async function GET(request: NextRequest) {
   }
 
   const SELECT =
-    'id, retailer, description, percent_off, deal_type, promo_code, expiration_date, original_link, affiliate_link, categories, keywords, redemption_channel, week_of, created_at, last_seen_at, source_email_link, image_url, image_alt, image_expires_at'
+    'id, retailer, description, percent_off, deal_type, promo_code, expiration_date, original_link, affiliate_link, categories, keywords, redemption_channel, week_of, created_at, last_seen_at, source_email_link'
 
   let query = supabase
     .from('deals')
@@ -126,17 +133,31 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ deals: [], debug_error: error }, { status: 500 })
   }
 
-  const deals = retailer
-    ? (data ?? []).filter((d) => {
+  // The ledger's single free-form box sends both products and stores through
+  // `keyword`. Preserve strict item matching, but recognize an exact retailer
+  // name in the live pool so a search such as "Gap" still serves Gap deals.
+  const typedRetailerNames = rawKeywords.length === 1
+    ? brandNamesIncludingAliases([rawKeywords[0]])
+    : []
+  const typedRetailerMatch = (dealRetailer: string | null | undefined) => {
+    const normalized = normalizeRetailerName(dealRetailer ?? '')
+    return typedRetailerNames.some((name) => normalizeRetailerName(name) === normalized)
+  }
+
+  const visibleData = (data ?? []).filter((d) => !isBlockedRetailer(d.retailer))
+  const matchedDeals = all
+    ? visibleData
+    : retailer
+    ? visibleData.filter((d) => {
         const normalized = normalizeRetailerName(d.retailer ?? '')
         return retailerNames.some((name) => normalizeRetailerName(name) === normalized)
       })
-    : (data ?? [])
-        .filter((d) => dealMatchesAnySearchTerm(d, keywords, {
+    : visibleData
+        .filter((d) => typedRetailerMatch(d.retailer) || dealMatchesAnySearchTerm(d, keywords, {
           includeRetailer: false,
           includeDescription: false,
         }))
-        .slice(0, 50)
+  const deals = dedupeDealsForDisplay(matchedDeals).slice(0, retailer ? 1000 : 50)
 
   console.log(`[deals/search] retailer="${retailer}" → ${deals.length} rows`)
   if (retailer && deals.length === 0) {
@@ -174,14 +195,10 @@ export async function GET(request: NextRequest) {
     const priceTier = storeTierByRetailer[d.retailer] ?? storeTierByRetailer[retailerKey] ?? null
     const website = storeWebsiteByRetailer[d.retailer] ?? storeWebsiteByRetailer[retailerKey] ?? null
     const affiliateLink = d.affiliate_link?.includes('google.com/search') ? null : d.affiliate_link
-    const imageExpired = d.image_expires_at && new Date(d.image_expires_at).getTime() <= Date.now()
-    const imageFields = imageExpired
-      ? { image_url: null, image_alt: null, image_expires_at: null }
-      : {}
     if (!d.affiliate_link && d.original_link.includes('google.com/search')) {
-      if (website) return { ...d, ...imageFields, affiliate_link: affiliateLink, original_link: website, store_website: website, price_tier: priceTier }
+      if (website) return { ...d, affiliate_link: affiliateLink, original_link: website, store_website: website, price_tier: priceTier }
     }
-    return { ...d, ...imageFields, affiliate_link: affiliateLink, store_website: website, price_tier: priceTier }
+    return { ...d, affiliate_link: affiliateLink, store_website: website, price_tier: priceTier }
   })
 
   return NextResponse.json({ deals: enriched })

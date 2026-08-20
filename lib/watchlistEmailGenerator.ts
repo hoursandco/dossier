@@ -2,38 +2,32 @@
 // watchlist or on the weekly send. Organized by the user's watches: one
 // section per "I'm shopping for X" entry, retailers grouped within.
 //
-// Dossier Look styling. Web fonts (Alfa Slab One / Stardos Stamp / Special
-// Elite / IM Fell English) degrade to Georgia / Courier on clients that
-// don't load them — the look holds via the cream paper, ink borders, and
-// the colored savings badges.
+// Email-safe version of the monochrome ledger UI used by the live site.
 
 import { format } from 'date-fns'
 import type { Deal } from '@/types'
 import { formatRedemptionChannel } from '@/lib/deals'
 
 // ── Dossier Look palette (literal hex — CSS vars don't work in mail) ──
-const FONT_DISPLAY = "'Alfa Slab One',Georgia,serif"
-const FONT_STAMP = "'Stardos Stamp','Courier New',monospace"
-const FONT_TYPE = "'Special Elite','Courier New',monospace"
-const FONT_BODY = "'IM Fell English',Georgia,serif"
-const CREAM = '#fcf8ed'       // outer page background
-const PAPER = '#fcf8ed'       // container / postscript panel
-const PANEL = '#fff5d4'       // body section background
-const DARK = '#0d0c0a'        // header + hero background
-const INK = '#181612'
-const INK_SOFT = '#2a261f'
-const CREAM_TEXT = '#fff8e2'
-const HERO_SUB = '#efe2bd'
-const RED = '#d4322a'
-const RED_DEEP = '#b3211a'
-const YELLOW = '#f4c623'
-const GREEN = '#4ea843'
-const MAGENTA = '#e8367e'
-const ORANGE = '#ee7c2f'
-const BLUE = '#2563a8'
-
-const FONT_LINK =
-  'https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=IM+Fell+English:ital@0;1&family=Special+Elite&family=Stardos+Stamp:wght@400;700&display=swap'
+const FONT_DISPLAY = "ui-monospace,'SFMono-Regular',Consolas,'Liberation Mono',monospace"
+const FONT_STAMP = FONT_DISPLAY
+const FONT_TYPE = FONT_DISPLAY
+const FONT_BODY = FONT_DISPLAY
+const CREAM = '#faf9f6'
+const PAPER = '#faf9f6'
+const PANEL = '#ffffff'
+const DARK = '#f1f0ec'
+const INK = '#111111'
+const INK_SOFT = '#737373'
+const CREAM_TEXT = '#111111'
+const HERO_SUB = '#737373'
+const RED = '#2a78d6'
+const RED_DEEP = '#2a78d6'
+const YELLOW = '#2a78d6'
+const GREEN = '#2a78d6'
+const MAGENTA = '#2a78d6'
+const ORANGE = '#2a78d6'
+const BLUE = '#2a78d6'
 
 export interface WatchSection {
   label: string          // human-readable: "Bath & Towels", "Womens Clothes — jeans"
@@ -105,7 +99,7 @@ function shadowLastWord(text: string, textColor: string = INK): string {
   if (words.length === 0) return ''
   const last = words.pop()!
   const prefix = words.length ? `${words.join(' ')} ` : ''
-  return `${prefix}<span style="font-family:${FONT_DISPLAY};color:${textColor};text-shadow:2px 2px 0 ${RED},4px 4px 0 ${RED_DEEP};padding:0 .04em;">${last}</span>`
+  return `${prefix}<span style="font-family:${FONT_DISPLAY};color:${textColor};">${last}</span>`
 }
 
 function dateStamp(): string {
@@ -161,9 +155,6 @@ function savingsBadge(deal: Deal): string {
 function dealRow(deal: Deal, storeUrls: Record<string, string>): string {
   const link = escape(bestDealLink(deal, storeUrls))
   const description = escape(deal.description)
-  const imageExpired = deal.image_expires_at && new Date(deal.image_expires_at).getTime() <= Date.now()
-  const imageUrl = !imageExpired && deal.image_url ? escape(deal.image_url) : ''
-  const imageAlt = escape(deal.image_alt || `${deal.retailer} product image`)
   const codeChip = deal.promo_code
     ? `<span style="display:inline-block;background:${YELLOW};border:1.5px solid ${INK};padding:4px 9px 3px;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:${INK};">CODE&nbsp;·&nbsp;${escape(deal.promo_code)}</span>`
     : ''
@@ -180,20 +171,10 @@ function dealRow(deal: Deal, storeUrls: Record<string, string>): string {
   const meta = codeChip || channelChip || expiry || sourceEmailLink
     ? `<div style="margin-top:8px;">${codeChip}${channelChip}${expiry}${sourceEmailLink}</div>`
     : ''
-  const imageCell = imageUrl
-    ? `
-                <td class="deal-image" valign="top" width="76" style="vertical-align:top;width:76px;padding-right:12px;">
-                  <a href="${link}" style="text-decoration:none;">
-                    <img src="${imageUrl}" alt="${imageAlt}" width="64" height="64" style="display:block;width:64px;height:64px;object-fit:cover;border:1.5px solid ${INK};background:#fff;" />
-                  </a>
-                </td>`
-    : ''
-
   return `
             <table class="deal-row" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                ${imageCell}
-                <td class="deal-left" valign="top" style="vertical-align:top;padding-right:14px;width:${imageUrl ? '54%' : '64%'};">
+                <td class="deal-left" valign="top" style="vertical-align:top;padding-right:14px;width:64%;">
                   <a href="${link}" style="font-family:${FONT_TYPE};font-size:16px;line-height:1.45;color:${INK};text-decoration:none;">${description}</a>
                   ${meta}
                 </td>
@@ -375,7 +356,6 @@ export function generateEmptyWatchlistNudgeEmail({
 <meta name="color-scheme" content="light only">
 <meta name="supported-color-schemes" content="light">
 <title>You haven't told us what you want yet · Deal Dossier</title>
-<link href="${FONT_LINK}" rel="stylesheet">
 <style>
   body { margin:0 !important; padding:0 !important; width:100% !important; background:${CREAM}; }
   table { border-collapse:collapse !important; }
@@ -546,7 +526,6 @@ export function generateWatchlistEmail({
 <meta name="color-scheme" content="light only">
 <meta name="supported-color-schemes" content="light">
 <title>Your watchlist deals · ${todayLong}</title>
-<link href="${FONT_LINK}" rel="stylesheet">
 <style>
   body { margin:0 !important; padding:0 !important; width:100% !important; background:${CREAM}; }
   table { border-collapse:collapse !important; }

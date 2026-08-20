@@ -37,6 +37,12 @@ import {
   isEmailOlderThanDays,
   selectEmailsForIngest,
 } from '@/lib/ingestSelection'
+import {
+  DEFAULT_EMAIL_IMAGE_URL_LIMIT,
+  MAX_EMAIL_IMAGE_URL_LIMIT,
+  extractEmailImageUrls,
+} from '@/lib/emailImages'
+import { isBlockedEmailSender, isBlockedRetailer } from '@/lib/blockedRetailers'
 
 export const dynamic = 'force-dynamic'
 
@@ -107,12 +113,20 @@ const INGEST_BACKFILL_MAX_PER_RUN = Math.max(
 
 const INGEST_STALE_RUN_MS = Math.max(
   5 * 60 * 1000,
-  Number(process.env.INGEST_STALE_RUN_MS) || 12 * 60 * 1000,
+  Number(process.env.INGEST_STALE_RUN_MS) || 6 * 60 * 1000,
 )
 
 const INGEST_MAX_EMAIL_AGE_DAYS = Math.max(
   1,
   Number(process.env.INGEST_MAX_EMAIL_AGE_DAYS) || 1,
+)
+
+const INGEST_MAX_IMAGE_URLS = Math.max(
+  1,
+  Math.min(
+    MAX_EMAIL_IMAGE_URL_LIMIT,
+    Number(process.env.INGEST_MAX_IMAGE_URLS) || DEFAULT_EMAIL_IMAGE_URL_LIMIT,
+  ),
 )
 
 // Returns true when an email body is mostly images — stripping tags leaves
@@ -134,84 +148,6 @@ function shouldScanImagesForDollarCoupons(
 ): boolean {
   if (extracted.some((deal) => deal.deal_type === 'amount-off')) return false
   return /\b(e-?coupons?|digital\s+(deals?|coupons?)|add\s+coupon|clip\s+coupon|view\s+coupons?|save\s+\$\d+(?:\.\d{2})?)\b/i.test(source)
-}
-
-function decodeHtmlAttr(value: string): string {
-  return value
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-}
-
-function parseDimension(value: string | undefined): number | null {
-  if (!value) return null
-  const match = value.match(/\d+/)
-  return match ? Number(match[0]) : null
-}
-
-function looksLikePromoImage(url: string, width: number | null, height: number | null): boolean {
-  const lower = url.toLowerCase()
-  if (!/^https?:\/\//i.test(url)) return false
-  if (lower.startsWith('data:') || lower.startsWith('cid:')) return false
-  if (/\.(svg|ico)(?:[?#]|$)/i.test(lower)) return false
-  if (/(pixel|tracking|beacon|openrate|spacer|blank|transparent|clear\.gif|1x1)/i.test(lower)) {
-    return false
-  }
-  if (width !== null && height !== null) {
-    if (width <= 2 || height <= 2) return false
-    if (width < 120 && height < 120) return false
-  }
-  return true
-}
-
-function extractEmailImageUrls(html: string): string[] {
-  const urls: string[] = []
-
-  const imgRegex = /<img\b[^>]*>/gi
-  const attrRegex = /\s(src|data-src|data-original|background|width|height|srcset)=["']([^"']+)["']/gi
-  let imgMatch
-  while ((imgMatch = imgRegex.exec(html)) !== null) {
-    const attrs = new Map<string, string>()
-    let attrMatch
-    while ((attrMatch = attrRegex.exec(imgMatch[0])) !== null) {
-      attrs.set(attrMatch[1].toLowerCase(), decodeHtmlAttr(attrMatch[2]))
-    }
-
-    const width = parseDimension(attrs.get('width'))
-    const height = parseDimension(attrs.get('height'))
-    const candidates = [
-      attrs.get('src'),
-      attrs.get('data-src'),
-      attrs.get('data-original'),
-      attrs.get('background'),
-    ]
-
-    const srcset = attrs.get('srcset')
-    if (srcset) {
-      candidates.push(
-        ...srcset
-          .split(',')
-          .map((entry) => entry.trim().split(/\s+/)[0])
-      )
-    }
-
-    for (const candidate of candidates) {
-      if (candidate && looksLikePromoImage(candidate, width, height)) {
-        urls.push(candidate)
-      }
-    }
-  }
-
-  const cssUrlRegex = /url\(["']?(https?:\/\/[^"')\s]+)["']?\)/gi
-  let cssMatch
-  while ((cssMatch = cssUrlRegex.exec(html)) !== null) {
-    const url = decodeHtmlAttr(cssMatch[1])
-    if (looksLikePromoImage(url, null, null)) urls.push(url)
-  }
-
-  return Array.from(new Set(urls)).slice(0, 8)
 }
 
 // Fetch the hosted "view in browser" version of an email. Retailers like
@@ -654,7 +590,6 @@ export async function GET(request: NextRequest) {
     let emailsWithDeals = 0
     let emailsWithNoDeals = 0
     let emailsSkippedStale = 0
-    let thumbnailJobsQueued = 0
     const processedEmailIds: string[] = []
     // Track per-email UIDs so we can advance the IMAP cursor only as far as
     // we've successfully processed. If one email fails mid-run, the cursor
@@ -861,6 +796,20 @@ export async function GET(request: NextRequest) {
         return
       }
 
+      // Block unwanted sources before body parsing, image fetches, or LLM calls.
+      if (isBlockedEmailSender(email.from)) {
+        console.log(`[ingest] skip blocked sender: ${email.from}`)
+        await finishEmailAudit(emailAuditId, {
+          outcome: 'blocked_sender_skipped',
+          outcome_detail: 'Sender matched the blocked-retailer list',
+          processing_ms: Date.now() - emailStartedAt,
+        })
+        await supabase.from('processed_emails').upsert({ email_id: email.id, week_of: weekOfStr })
+        processedEmailIds.push(email.id)
+        processedUids.push(email.uid)
+        return
+      }
+
       if (!reprocess && isEmailOlderThanDays(email.date, INGEST_MAX_EMAIL_AGE_DAYS)) {
         console.log(`[ingest] skip stale email (${INGEST_MAX_EMAIL_AGE_DAYS}d cutoff): ${email.id}`)
         await finishEmailAudit(emailAuditId, {
@@ -910,7 +859,7 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      imageUrlsForExtraction = extractEmailImageUrls(`${email.body}\n${emailBody}`)
+      imageUrlsForExtraction = extractEmailImageUrls(`${email.body}\n${emailBody}`, INGEST_MAX_IMAGE_URLS)
       let extracted = await extractDealsFromEmail(email.from, email.subject, emailBody, allCategories)
       console.log(`[ingest] ${email.from} | subject: ${email.subject} | text extracted: ${extracted.length}`)
 
@@ -997,6 +946,18 @@ export async function GET(request: NextRequest) {
         // Title-case all-lowercase LLM output ("carter's" → "Carter's")
         // without overriding mixed-case extractions
         const retailer = fixRetailerCase(deal.retailer)
+        if (isBlockedRetailer(retailer)) {
+          console.log(`[ingest] skipping blocked retailer: ${retailer}`)
+          rejectedForEmail++
+          await auditCandidate(
+            emailAuditId,
+            email.id,
+            deal as Record<string, unknown>,
+            'rejected_junk',
+            'Retailer matched the blocked-retailer list',
+          )
+          continue
+        }
         const normalizedDeal = {
           ...deal,
           retailer,
@@ -1208,34 +1169,6 @@ export async function GET(request: NextRequest) {
           insertedDeal?.id ?? null,
         )
 
-        if (insertedDeal?.id && imageUrlsForExtraction.length > 0) {
-          const { error: thumbnailJobError } = await supabase
-            .from('deal_thumbnail_jobs')
-            .upsert({
-              deal_id: insertedDeal.id,
-              retailer,
-              description: deal.description,
-              deal_type: deal.deal_type,
-              categories: mergedCategories,
-              keywords: dealRow.keywords,
-              image_urls: imageUrlsForExtraction,
-              status: 'pending',
-              next_attempt_at: new Date().toISOString(),
-              last_error: null,
-              completed_at: null,
-              locked_at: null,
-              locked_by: null,
-              updated_at: new Date().toISOString(),
-            }, {
-              onConflict: 'deal_id',
-            })
-          if (thumbnailJobError) {
-            console.error('[ingest] thumbnail job enqueue error:', JSON.stringify(thumbnailJobError))
-          } else {
-            thumbnailJobsQueued++
-          }
-        }
-
         // Upsert keywords into the global vocabulary table via a Postgres
         // function that properly increments deal_count on conflict (a plain
         // upsert would reset it to 1). Fire-and-forget — never blocks ingestion.
@@ -1409,7 +1342,6 @@ export async function GET(request: NextRequest) {
       emails_with_no_deals: emailsWithNoDeals,
       emails_skipped_stale: emailsSkippedStale,
       new_deals: newDeals,
-      thumbnail_jobs_queued: thumbnailJobsQueued,
       total_deals_this_week: totalDeals ?? 0,
       mode: forceDateWindow ? 'backfill' : 'cursor',
       lookback_hours: lookbackHours,

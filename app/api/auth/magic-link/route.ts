@@ -102,19 +102,15 @@ export async function POST(req: NextRequest) {
 
     const magicLink = data.properties.action_link
 
-    // ── Dossier Look palette (literal hex — CSS vars don't work in mail).
-    // Display/stamp/body fonts degrade to Georgia / Courier on clients
-    // that don't load web fonts (Gmail, Outlook) — the look survives via
-    // the cream paper, ink borders, and red accents. ──
-    const FONT_DISPLAY = "'Alfa Slab One','Georgia',serif"
-    const FONT_STAMP = "'Special Elite','Courier New',monospace"
-    const FONT_BODY = "'IM Fell English','Georgia',serif"
-    const CREAM = '#ece0c0'   // outer page background
-    const PAPER = '#fff8e2'   // card / panel
-    const INK = '#181612'
-    const RED = '#d4322a'
-    const RED_DEEP = '#8f1a14'
-    const INK_SOFT = '#4a443a'
+    // Ledger palette: mirrors the live search UI with email-safe fonts.
+    const FONT_MONO = "ui-monospace,'SFMono-Regular',Consolas,'Liberation Mono',monospace"
+    const GROUND = '#faf9f6'
+    const PAPER = '#ffffff'
+    const SOFT = '#f1f0ec'
+    const INK = '#111111'
+    const MUTED = '#737373'
+    const HAIR = '#a7a7a4'
+    const ACCENT = '#2a78d6'
 
     // Send the link ourselves via Resend — no Supabase SMTP needed
     const { error: emailError } = await getResend().emails.send({
@@ -130,11 +126,9 @@ export async function POST(req: NextRequest) {
 <meta name="color-scheme" content="light">
 <meta name="supported-color-schemes" content="light">
 <title>Your Deal Dossier sign-in link</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Special+Elite&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
-<!--[if mso]><style>* { font-family: Georgia, serif !important; }</style><![endif]-->
+<!--[if mso]><style>* { font-family: Consolas, monospace !important; }</style><![endif]-->
 <style>
-  body { margin:0; padding:0; background-color:${CREAM}; }
+  body { margin:0; padding:0; background-color:${GROUND}; }
   a { color: inherit; }
   @media only screen and (max-width:600px) {
     .hpad { padding-left: 26px !important; padding-right: 26px !important; }
@@ -142,40 +136,40 @@ export async function POST(req: NextRequest) {
   }
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:${CREAM};-webkit-font-smoothing:antialiased;">
+<body style="margin:0;padding:0;background-color:${GROUND};-webkit-font-smoothing:antialiased;">
 
-<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:${CREAM};padding:40px 16px 56px;">
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:${GROUND};padding:28px 16px 48px;font-family:${FONT_MONO};">
 <tr><td align="center">
 
   <!-- Wordmark -->
   <table width="560" cellpadding="0" cellspacing="0" role="presentation" style="max-width:560px;width:100%;">
-    <tr><td align="center" style="padding-bottom:22px;">
-      <span style="display:inline-block;background-color:${RED};border:2px solid ${INK};padding:9px 18px 7px;font-family:${FONT_DISPLAY};font-size:19px;letter-spacing:.06em;color:${PAPER};">DEAL DOSSIER</span>
+    <tr><td style="padding:0 0 16px;font-family:${FONT_MONO};font-size:13px;font-weight:700;letter-spacing:.06em;color:${INK};">
+      DEAL DOSSIER <span style="float:right;font-size:10px;font-weight:400;color:${MUTED};letter-spacing:0;">ACCOUNT ACCESS</span>
     </td></tr>
   </table>
 
   <!-- Card -->
-  <table width="560" cellpadding="0" cellspacing="0" role="presentation" style="max-width:560px;width:100%;background-color:${PAPER};border:3px solid ${INK};">
+  <table width="560" cellpadding="0" cellspacing="0" role="presentation" style="max-width:560px;width:100%;background-color:${PAPER};border:1px solid ${HAIR};">
     <tr>
-      <td class="hpad" style="padding:48px 40px 44px;">
+      <td class="hpad" style="padding:44px 40px 40px;font-family:${FONT_MONO};">
 
-        <p style="margin:0 0 16px;font-family:${FONT_STAMP};font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:${RED_DEEP};">— Sign In —</p>
+        <p style="margin:0 0 44px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:${ACCENT};">01 / SIGN IN</p>
 
-        <h1 class="htitle" style="margin:0 0 20px;font-family:${FONT_DISPLAY};font-weight:400;font-size:38px;line-height:1.08;color:${INK};">Your magic link is ready.</h1>
+        <h1 class="htitle" style="margin:0 0 18px;font-family:${FONT_MONO};font-weight:700;font-size:34px;line-height:1.05;letter-spacing:-.05em;color:${INK};">Your magic link<br>is ready.</h1>
 
-        <p style="margin:0 0 32px;font-family:${FONT_BODY};font-size:18px;line-height:1.55;color:${INK_SOFT};">
+        <p style="margin:0 0 28px;font-family:${FONT_MONO};font-size:13px;line-height:1.65;color:${MUTED};">
           Tap the button below to sign in to Deal Dossier. The link works once and expires in 24 hours.
         </p>
 
         <table cellpadding="0" cellspacing="0" role="presentation">
           <tr>
-            <td style="background-color:${RED};border:2px solid ${INK};">
-              <a href="${magicLink}" style="display:inline-block;font-family:${FONT_DISPLAY};font-size:14px;letter-spacing:.05em;color:${PAPER};text-decoration:none;padding:16px 30px 14px;">SIGN IN TO DEAL DOSSIER&nbsp;→</a>
+            <td style="background-color:${INK};border-radius:2px;">
+              <a href="${magicLink}" style="display:inline-block;font-family:${FONT_MONO};font-size:13px;color:${PAPER};text-decoration:none;padding:15px 22px;">Sign in to Deal Dossier&nbsp;→</a>
             </td>
           </tr>
         </table>
 
-        <p style="margin:32px 0 0;font-family:${FONT_BODY};font-style:italic;font-size:15px;line-height:1.55;color:${INK_SOFT};">
+        <p style="margin:32px 0 0;padding-top:18px;border-top:1px solid ${HAIR};font-family:${FONT_MONO};font-size:11px;line-height:1.6;color:${MUTED};">
           Didn&rsquo;t request this? You can safely ignore this email — someone may have typed your address by mistake.
         </p>
 
@@ -185,8 +179,8 @@ export async function POST(req: NextRequest) {
 
   <!-- Footer -->
   <table width="560" cellpadding="0" cellspacing="0" role="presentation" style="max-width:560px;width:100%;">
-    <tr><td align="center" style="padding:22px 20px 0;font-family:${FONT_STAMP};font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:${INK_SOFT};">
-      An Hours &amp; Co. publication · Link expires in 24 hours
+    <tr><td align="center" style="padding:18px 20px 0;font-family:${FONT_MONO};font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:${MUTED};">
+      Secure one-time link · An Hours &amp; Co. publication
     </td></tr>
   </table>
 

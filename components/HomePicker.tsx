@@ -18,6 +18,7 @@ import { formatRedemptionChannel } from '@/lib/deals'
 
 type StoreLite = { id: string; name: string }
 type KeywordSuggestion = { keyword: string; deal_count: number; type: 'keyword' | 'brand' }
+type PersistedPickerSearch = { keywords?: unknown; brands?: unknown }
 type DealResult = {
   id: string
   retailer: string
@@ -31,11 +32,38 @@ type DealResult = {
   store_website: string | null
   source_email_link: string | null
   redemption_channel: string | null
-  image_url: string | null
-  image_alt: string | null
-  image_expires_at: string | null
   week_of: string
   price_tier: string | null
+}
+
+const PICKER_SEARCH_STORAGE_KEY = 'dealdossier.homePicker.search.v1'
+
+function readPersistedPickerSearch(): { keywords: string[]; brands: string[] } | null {
+  try {
+    const raw = window.localStorage.getItem(PICKER_SEARCH_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as PersistedPickerSearch
+    const keywords = Array.isArray(parsed.keywords)
+      ? parsed.keywords.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : []
+    const keywordSet = new Set(keywords)
+    const brands = Array.isArray(parsed.brands)
+      ? parsed.brands.filter((value): value is string => typeof value === 'string' && keywordSet.has(value))
+      : []
+    return { keywords, brands }
+  } catch {
+    return null
+  }
+}
+
+function writePersistedPickerSearch(keywords: string[], brands: string[]) {
+  try {
+    if (keywords.length === 0) {
+      window.localStorage.removeItem(PICKER_SEARCH_STORAGE_KEY)
+      return
+    }
+    window.localStorage.setItem(PICKER_SEARCH_STORAGE_KEY, JSON.stringify({ keywords, brands }))
+  } catch {}
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -66,6 +94,7 @@ export function HomePicker() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [searchResults, setSearchResults] = useState<DealResult[] | null>(null)
   const [activeKeywords, setActiveKeywords] = useState<string[]>([])
+  const [activeKeywordsHydrated, setActiveKeywordsHydrated] = useState(false)
   const [searching, setSearching] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
@@ -117,7 +146,7 @@ export function HomePicker() {
           if (Array.isArray(d.allowed_price_tiers) && d.allowed_price_tiers.length > 0) {
             setAllowedTiers(new Set(d.allowed_price_tiers))
           }
-          const picksRes = await fetch('/api/store-picks')
+          const picksRes = await fetch('/api/store-picks', { cache: 'no-store' })
             .then((r) => (r.ok ? r.json() : { store_picks: [] }))
             .catch(() => ({ store_picks: [] }))
           const picks = (picksRes.store_picks ?? []) as Array<{ id: string; store_id: string; store_name?: string }>
@@ -207,6 +236,23 @@ export function HomePicker() {
     }
   }, [])
 
+  useEffect(() => {
+    const saved = readPersistedPickerSearch()
+    if (saved?.keywords.length) {
+      brandKeywordsRef.current = new Set(saved.brands)
+      setActiveKeywords(saved.keywords)
+      runSearch(saved.keywords)
+    }
+    setActiveKeywordsHydrated(true)
+  }, [runSearch])
+
+  useEffect(() => {
+    if (!activeKeywordsHydrated) return
+    const activeKeywordSet = new Set(activeKeywords)
+    const brands = Array.from(brandKeywordsRef.current).filter((brand) => activeKeywordSet.has(brand))
+    writePersistedPickerSearch(activeKeywords, brands)
+  }, [activeKeywords, activeKeywordsHydrated])
+
   const removeKeyword = useCallback((kw: string) => {
     brandKeywordsRef.current.delete(kw)
     setActiveKeywords((prev) => {
@@ -230,14 +276,14 @@ export function HomePicker() {
   }
 
   const searchBrand = useCallback((name: string) => {
-    if (activeKeywords.includes(name)) return
     brandKeywordsRef.current.add(name)
     setActiveKeywords((prev) => {
+      if (prev.includes(name)) return prev
       const next = [...prev, name]
       runSearch(next)
       return next
     })
-  }, [activeKeywords, runSearch])
+  }, [runSearch])
 
   const storeCount = pickedStores.length
   const removeStore = useCallback(async (id: string) => {
@@ -254,6 +300,21 @@ export function HomePicker() {
     setKeywordInput('')
     const term = s.type === 'brand' ? s.keyword : s.keyword.trim().toLowerCase()
     if (s.type === 'brand') {
+      brandKeywordsRef.current.add(term)
+    }
+    setActiveKeywords((prev) => {
+      if (prev.includes(term)) return prev
+      const next = [...prev, term]
+      runSearch(next)
+      return next
+    })
+  }, [runSearch])
+
+  const handleCommonSearch = useCallback((search: CommonSearch) => {
+    setShowSuggestions(false)
+    setKeywordInput('')
+    const term = search.type === 'brand' ? search.label : search.label.trim().toLowerCase()
+    if (search.type === 'brand') {
       brandKeywordsRef.current.add(term)
     }
     setActiveKeywords((prev) => {
@@ -544,6 +605,26 @@ export function HomePicker() {
               </div>
             </div>
 
+            <div className="common-searches" aria-label="Suggested searches">
+              <span className="common-searches-label">Try:</span>
+              <div className="common-searches-grid">
+                {COMMON_SEARCHES.map((search) => {
+                  const term = search.type === 'brand' ? search.label : search.label.toLowerCase()
+                  return (
+                    <button
+                      key={search.label}
+                      type="button"
+                      className="common-search-tile"
+                      aria-pressed={activeKeywords.includes(term)}
+                      onClick={() => handleCommonSearch(search)}
+                    >
+                      {search.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             {/* Active keyword chips */}
             {activeKeywords.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
@@ -772,8 +853,6 @@ function DealCard({ deal }: { deal: DealResult }) {
   const badge = formatDealType(deal.deal_type, deal.percent_off, deal.description)
   const link = resolveDealLink(deal)
   const redemptionLabel = formatRedemptionChannel(deal.redemption_channel)
-  const imageUrl = deal.image_url
-
   return (
     <div style={{
       padding: '16px 18px',
@@ -781,24 +860,7 @@ function DealCard({ deal }: { deal: DealResult }) {
       background: '#fffbe6',
       boxShadow: '3px 3px 0 var(--ink)',
     }}>
-      <div style={{ display: 'grid', gridTemplateColumns: imageUrl ? '88px minmax(0, 1fr)' : '1fr', gap: 14, alignItems: 'start' }}>
-        {imageUrl && (
-          <a href={link || '#'} target="_blank" rel="noopener noreferrer" style={{ display: 'block' }}>
-            <img
-              src={imageUrl}
-              alt={deal.image_alt || `${deal.retailer} product image`}
-              loading="lazy"
-              style={{
-                width: 88,
-                height: 88,
-                objectFit: 'cover',
-                border: '1.5px solid var(--ink)',
-                background: '#fff',
-                display: 'block',
-              }}
-            />
-          </a>
-        )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14, alignItems: 'start' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
             <div>
@@ -881,3 +943,20 @@ function DealCard({ deal }: { deal: DealResult }) {
 }
 
 const PRICE_TIERS = ['$', '$$', '$$$', '$$$$'] as const
+type CommonSearch = { label: string; type: 'brand' | 'keyword' }
+const COMMON_SEARCHES: CommonSearch[] = [
+  { label: 'AllModern', type: 'brand' },
+  { label: 'CB2', type: 'brand' },
+  { label: 'Friends With Frank', type: 'brand' },
+  { label: 'FWRD', type: 'brand' },
+  { label: 'Gap', type: 'brand' },
+  { label: 'Haven Well Within', type: 'brand' },
+  { label: 'Hemi Blurr', type: 'brand' },
+  { label: 'ME+EM', type: 'brand' },
+  { label: 'Rains', type: 'brand' },
+  { label: 'Rebag', type: 'brand' },
+  { label: 'Salomon', type: 'brand' },
+  { label: 'Shoes', type: 'keyword' },
+  { label: 'Skincare', type: 'keyword' },
+  { label: 'The Citizenry', type: 'brand' },
+]

@@ -180,37 +180,19 @@ export default async function AdminPage() {
 
   const dataTab = (
     <>
-      {/* 01 Pipeline Totals — moved above subscribers per request */}
+      {/* 01 Operations snapshot */}
       <Reveal delay={120}>
         <div className="admin-section-label">
-          <SectionLabel n="01">Pipeline Totals</SectionLabel>
+          <SectionLabel n="01">Operations Snapshot</SectionLabel>
         </div>
-        <div className="admin-stat-row admin-stat-row-2">
+        <div className="admin-stat-row admin-stat-dashboard">
           {[
-            { n: totalEmailsScanned, l: 'Emails Scanned' },
-            { n: totalDealsFound, l: 'Deals Extracted' },
-          ].map(({ n, l }) => (
-            <div key={l} className="admin-stat">
-              <div className="admin-stat-num">
-                <FlapNumber value={String(n)} />
-              </div>
-              <div className="t-meta admin-stat-label">{l}</div>
-            </div>
-          ))}
-        </div>
-      </Reveal>
-
-      {/* 02 Subscribers */}
-      <Reveal delay={160}>
-        <div className="admin-section-label" style={{ marginTop: 64 }}>
-          <SectionLabel n="02">Subscribers</SectionLabel>
-        </div>
-        <div className="admin-stat-row admin-stat-row-5">
-          {[
+            { n: totalEmailsScanned, l: 'Emails Scanned', sub: 'Pipeline', accent: false },
+            { n: totalDealsFound, l: 'Deals Extracted', sub: 'Pipeline', accent: false },
             {
               n: totalSubscribers ?? 0,
               l: 'Total Subscribers',
-              sub: null,
+              sub: 'Audience',
               accent: false,
             },
             {
@@ -219,11 +201,11 @@ export default async function AdminPage() {
               sub:
                 totalSubscribers && totalSubscribers > 0
                   ? `${Math.round(((activeSubscribers ?? 0) / totalSubscribers) * 100)}% of total`
-                  : null,
+                  : 'Audience',
               accent: false,
             },
-            { n: freeCount, l: 'Free Tier', sub: null, accent: false },
-            { n: paidCount, l: 'Paid Tier', sub: null, accent: false },
+            { n: freeCount, l: 'Free Tier', sub: 'Audience', accent: false },
+            { n: paidCount, l: 'Paid Tier', sub: 'Audience', accent: false },
             { n: compedCount, l: 'Comped', sub: '100%-off codes', accent: false },
             {
               n: newThisWeek ?? 0,
@@ -246,11 +228,11 @@ export default async function AdminPage() {
         </div>
       </Reveal>
 
-      {/* 03 / 04 / 05 — Top Retailers · Deal Producers · Zero-Deal */}
+      {/* 02 / 03 / 04 — Top Retailers · Deal Producers · Zero-Deal */}
       <div className="admin-3col" style={{ marginTop: 32 }}>
         <Reveal>
           <div className="admin-card admin-card-tight">
-            <SectionLabel n="03">Top Retailers · 30 Days</SectionLabel>
+            <SectionLabel n="02">Top Retailers · 30 Days</SectionLabel>
             <div className="admin-list" style={{ marginTop: 20 }}>
               {topRetailerList.length === 0 ? (
                 <p className="t-meta" style={{ color: 'var(--ink-40)' }}>
@@ -272,7 +254,7 @@ export default async function AdminPage() {
 
         <Reveal delay={80}>
           <div className="admin-card admin-card-tight">
-            <SectionLabel n="04">Deal-Producing Newsletters</SectionLabel>
+            <SectionLabel n="03">Deal-Producing Newsletters</SectionLabel>
             <div className="admin-list" style={{ marginTop: 20 }}>
               {dealProducers.length === 0 ? (
                 <p className="t-meta" style={{ color: 'var(--ink-40)' }}>
@@ -295,7 +277,7 @@ export default async function AdminPage() {
 
         <Reveal delay={160}>
           <div className="admin-card admin-card-tight">
-            <SectionLabel n="05">Zero-Deal · Consider Unsub</SectionLabel>
+            <SectionLabel n="04">Zero-Deal · Consider Unsub</SectionLabel>
             {zeroDealSenders.length === 0 ? (
               <p style={{ marginTop: 20, fontSize: 13, color: 'var(--ink-55)' }}>
                 All scanned senders have produced at least one deal.
@@ -498,56 +480,14 @@ export default async function AdminPage() {
           only via the middleware/isAdminEmail check above). */}
       <DossierNav signedIn={true} isAdmin={true} />
 
-      <section style={{ padding: 'clamp(48px, 6vw, 72px) 0 clamp(56px, 7vw, 80px)' }}>
+      <section className="admin-ledger-shell">
         <div className="wrap">
           {/* Header */}
           <div className="admin-header">
             <div>
-              <Reveal>
-                <div
-                  style={{
-                    fontFamily: "'Stardos Stamp', sans-serif",
-                    fontSize: 11,
-                    letterSpacing: '.4em',
-                    textTransform: 'uppercase',
-                    color: 'var(--red-deep)',
-                  }}
-                >
-                  — Dashboard —
-                </div>
-              </Reveal>
-              <Reveal delay={80}>
-                <h1
-                  style={{
-                    fontFamily: "'Alfa Slab One', serif",
-                    fontWeight: 400,
-                    fontSize: 'clamp(40px, 5vw, 72px)',
-                    marginTop: 16,
-                    lineHeight: 1,
-                    letterSpacing: '.04em',
-                    color: 'var(--ink)',
-                    textIndent: '.04em',
-                  }}
-                >
-                  Admin{' '}
-                  <span style={{ fontFamily: "'Alfa Slab One', serif", color: 'var(--ink)', textShadow: '2px 2px 0 var(--red), 4px 4px 0 var(--red-deep)', padding: '0 .04em' }}>
-                    Overview.
-                  </span>
-                </h1>
-              </Reveal>
-              <Reveal delay={160}>
-                <p
-                  style={{
-                    marginTop: 16,
-                    fontFamily: "'IM Fell English', serif",
-                    fontStyle: 'italic',
-                    color: 'var(--ink-soft)',
-                    fontSize: 16,
-                  }}
-                >
-                  Internal operations · Cron + Pipeline + Subscribers
-                </p>
-              </Reveal>
+              <div className="admin-ledger-eyebrow">Operations · Internal</div>
+              <h1>Admin overview.</h1>
+              <p>Pipeline health, subscribers, review queues, and directory controls.</p>
             </div>
             <div className="admin-actions" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <RunIngestButton />

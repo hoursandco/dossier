@@ -14,10 +14,10 @@ import { createClient } from '@/lib/supabase/client'
 import { DossierNav } from '@/components/DossierNav'
 import { DlFooter } from '@/components/DlFooter'
 
-const STAR_POINTS =
-  '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
+const STAR_POINTS = '100,2 113,28 142,12 142,42 172,42 156,67 184,79 159,98 184,118 156,128 172,154 142,154 142,184 113,168 100,194 87,168 58,184 58,154 28,154 44,128 16,118 41,98 16,79 44,67 28,42 58,42 58,12 87,28'
 
 interface KnownStore {
+  id: string
   name: string
   website: string
   status: string
@@ -37,6 +37,8 @@ interface Category {
   label: string
 }
 
+interface StorePick { id: string; store_id: string }
+
 // Normalize a brand name for fuzzy matching — strips punctuation + lowercases.
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -50,6 +52,9 @@ export default function PreviewSuggest() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [knownStores, setKnownStores] = useState<KnownStore[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [storePicks, setStorePicks] = useState<StorePick[]>([])
+  const [storeSearch, setStoreSearch] = useState('')
+  const [busyStoreId, setBusyStoreId] = useState<string | null>(null)
 
   const [storeName, setStoreName] = useState('')
   const [website, setWebsite] = useState('')
@@ -67,13 +72,15 @@ export default function PreviewSuggest() {
         return
       }
       try {
-        const [storesRes, catsRes, adminRes] = await Promise.all([
-          fetch('/api/stores').then((r) => r.json()),
+        const [storesRes, catsRes, adminRes, picksRes] = await Promise.all([
+          fetch('/api/stores?confirmed=true').then((r) => r.json()),
           fetch('/api/categories').then((r) => (r.ok ? r.json() : { categories: [] })),
           fetch('/api/admin/check').then((r) => r.json()).catch(() => ({ isAdmin: false })),
+          fetch('/api/store-picks').then((r) => (r.ok ? r.json() : { store_picks: [] })),
         ])
         const stores: KnownStore[] = (storesRes.stores ?? []).map(
           (s: { name: string; website: string; status?: string; categories?: string[]; price_tier?: string | null; date_added?: string }) => ({
+            id: (s as { id?: string }).id ?? s.website,
             name: s.name,
             website: s.website,
             status: s.status ?? 'active',
@@ -84,6 +91,7 @@ export default function PreviewSuggest() {
         )
         setKnownStores(stores)
         setCategories(catsRes.categories ?? [])
+        setStorePicks(picksRes.store_picks ?? [])
         setIsAdmin(!!adminRes.isAdmin)
       } catch (err) {
         console.error(err)
@@ -93,31 +101,6 @@ export default function PreviewSuggest() {
     }
     load()
   }, [router])
-
-  // Sticker pop on header
-  useEffect(() => {
-    if (loading) return
-    const root = rootRef.current
-    if (!root) return
-    const liftRotation = (el: HTMLElement) => {
-      const t = el.style.transform || ''
-      const m = t.match(/rotate\(([-\d.]+)deg\)/)
-      if (m) {
-        el.style.setProperty('--r', m[1] + 'deg')
-        const cleaned = t.replace(/rotate\([^)]+\)/, '').replace(/\s+/g, ' ').trim()
-        el.style.transform = cleaned
-      }
-    }
-    const heroStickers = root.querySelectorAll<HTMLElement>('.head-stickers .s')
-    heroStickers.forEach((el, i) => {
-      liftRotation(el)
-      el.classList.add('sticker-pop')
-      el.style.setProperty('--d', (200 + i * 90) + 'ms')
-    })
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      heroStickers.forEach((el) => el.classList.add('in'))
-    }))
-  }, [loading])
 
   // Live autofill match — does the typed name look like a brand we already track?
   const existingMatch = useMemo(() => {
@@ -155,6 +138,38 @@ export default function PreviewSuggest() {
       return ''
     }
   }
+
+  const pickedIds = useMemo(() => new Set(storePicks.map((pick) => pick.store_id)), [storePicks])
+  const visibleStores = useMemo(() => {
+    const q = normalize(storeSearch)
+    return knownStores
+      .filter((store) => store.status === 'active')
+      .filter((store) => !q || normalize(store.name).includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [knownStores, storeSearch])
+
+  const toggleWatch = useCallback(async (storeId: string) => {
+    setBusyStoreId(storeId)
+    try {
+      const existing = storePicks.find((pick) => pick.store_id === storeId)
+      if (existing) {
+        const res = await fetch(`/api/store-picks/${existing.id}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Could not update your watchlist.')
+        setStorePicks((current) => current.filter((pick) => pick.id !== existing.id))
+      } else {
+        const res = await fetch('/api/store-picks', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ store_id: storeId }),
+        })
+        if (!res.ok) throw new Error('Could not update your watchlist.')
+        const refreshed = await fetch('/api/store-picks').then((r) => r.json())
+        setStorePicks(refreshed.store_picks ?? [])
+      }
+    } catch (err) {
+      setErrMsg(err instanceof Error ? err.message : 'Could not update your watchlist.')
+    } finally {
+      setBusyStoreId(null)
+    }
+  }, [storePicks])
 
   // Get readable category labels from slugs (cap at 2 for card display)
   const categoryLabels = useCallback((slugs: string[]): string => {
@@ -246,6 +261,87 @@ export default function PreviewSuggest() {
       </div>
     )
   }
+
+  if (!loading) return (
+    <div ref={rootRef} className="suggest-ledger">
+      <DossierNav active="suggest" signedIn isAdmin={isAdmin} />
+
+      <main className="suggest-ledger-main">
+        <div className="suggest-ledger-intro">
+          <span>Suggest a store</span>
+          <p>We track {knownStores.length.toLocaleString()} retailers that ship within the USA. Tell us who belongs in the dossier.</p>
+        </div>
+
+        <section className="suggest-ledger-top">
+          <div className="suggest-panel suggest-form-panel">
+            {submitted ? (
+              <div className="suggest-success">
+                <span className="suggest-eyebrow">Tip received</span>
+                <h1>Thanks. We&rsquo;ll take a look.</h1>
+                <p>If the store fits, its sales will start appearing across Deal Dossier.</p>
+                <button type="button" onClick={() => { setSubmitted(false); setStoreName(''); setWebsite('') }}>Suggest another store</button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit}>
+                <span className="suggest-eyebrow">The tip-off</span>
+                <h1>Tell us about a store we should be watching.</h1>
+                <p className="suggest-panel-copy">Two quick details. We&rsquo;ll check the store&rsquo;s sales, shipping, and email program.</p>
+                {errMsg && <div className="suggest-error" role="alert">{errMsg}</div>}
+                <label className="suggest-input">
+                  <span>Store name</span>
+                  <input type="text" value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="e.g. Buck Mason" required />
+                </label>
+                {autofillBanner}
+                <label className="suggest-input">
+                  <span>Website</span>
+                  <input type="url" value={website} onChange={(event) => setWebsite(event.target.value)} placeholder="https://" required />
+                </label>
+                <div className="suggest-submit-line">
+                  <button className="suggest-primary" type="submit" disabled={submitting}>{submitting ? 'Sending…' : 'Send suggestion →'}</button>
+                  <span>USA shipping required</span>
+                </div>
+              </form>
+            )}
+          </div>
+
+          <aside className="suggest-panel suggest-eval-panel">
+            <span className="suggest-eyebrow">Our criteria</span>
+            <h2>How we <em>evaluate</em>.</h2>
+            <ol>
+              <li><b>01</b><div><strong>Real sales</strong><p>Meaningful, occasional discounts—not permanent markdown theater.</p></div></li>
+              <li><b>02</b><div><strong>Ships to the USA</strong><p>The store must fulfill orders within the United States.</p></div></li>
+              <li><b>03</b><div><strong>An email signal</strong><p>Promo emails are our source of truth for catching each sale.</p></div></li>
+            </ol>
+          </aside>
+        </section>
+
+        <section className="suggest-directory" aria-labelledby="directory-heading">
+          <div className="suggest-section-head">
+            <div><span className="suggest-eyebrow">Store directory</span><h2 id="directory-heading">View or watch every store.</h2></div>
+            <label className="suggest-directory-search"><span>⌕</span><input value={storeSearch} onChange={(event) => setStoreSearch(event.target.value)} placeholder="Search stores" aria-label="Search stores" /></label>
+          </div>
+          <div className="suggest-directory-meta">{visibleStores.length.toLocaleString()} {visibleStores.length === 1 ? 'store' : 'stores'} · select Watch to add one to your list</div>
+          <div className="suggest-store-head"><span>Store</span><span>Price</span><span>Watch</span></div>
+          <div className="suggest-store-list">
+            {visibleStores.map((store) => {
+              const watching = pickedIds.has(store.id)
+              return <div className="suggest-store-row" key={store.id}>
+                <a href={store.website.startsWith('http') ? store.website : `https://${store.website}`} target="_blank" rel="noopener noreferrer"><strong>{store.name}</strong><small>{store.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}</small></a>
+                <span>{store.price_tier || '—'}</span>
+                <button className={watching ? 'watching' : ''} type="button" disabled={busyStoreId === store.id} onClick={() => toggleWatch(store.id)}>{busyStoreId === store.id ? '…' : watching ? '✓ Watching' : '+ Watch'}</button>
+              </div>
+            })}
+          </div>
+        </section>
+
+        {recentStores.length > 0 && <section className="suggest-recent" aria-labelledby="recent-heading">
+          <div className="suggest-section-head"><div><span className="suggest-eyebrow">Just in</span><h2 id="recent-heading">Recently <em>added</em>.</h2></div></div>
+          <div className="suggest-recent-list">{recentStores.map((store) => <div key={store.name}><span>{formatSince(store.date_added)}</span><strong>{store.name}</strong><small>{categoryLabels(store.categories)}</small></div>)}</div>
+        </section>}
+      </main>
+      <DlFooter />
+    </div>
+  )
 
   return (
     <div ref={rootRef}>

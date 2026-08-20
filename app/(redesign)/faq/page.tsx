@@ -37,12 +37,14 @@ export default async function FaqPage() {
   const brandsLabel = brandsMarketingCount(count ?? 0)
 
   return (
-    <>
+    <div className="legal-ledger faq-ledger">
       <DossierNav />
 
-      <section className="section faq" style={{ paddingTop: 'clamp(40px, 6vw, 76px)' }}>
-        <h2 className="kicker">— Questions —</h2>
-        <h2 className="title">Worth <em>asking.</em></h2>
+      <main className="legal-ledger-main">
+        <header className="legal-ledger-header">
+          <div><span className="legal-ledger-eyebrow">Help · FAQ</span><h1>Worth asking.</h1></div>
+          <div className="legal-ledger-summary"><p>How Deal Dossier finds sales, ranks the useful ones, and keeps your inbox quiet.</p><span>{brandsLabel} brands monitored</span></div>
+        </header>
 
         <div className="faq-list">
           <details className="faq-item" open>
@@ -111,9 +113,9 @@ export default async function FaqPage() {
             </div>
           </details>
         </div>
-      </section>
+      </main>
 
       <DlFooter />
-    </>
+    </div>
   )
 }
